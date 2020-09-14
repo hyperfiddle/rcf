@@ -4,7 +4,7 @@
   (:require [taoensso.timbre :refer [error]]
             [clojure.test]))
 
-;; ## When and How to run tests
+;; ## When and how to run tests
 ;;
 ;; For now, tests are run multiple times because the "tests" macro registers
 ;; and also runs the tests.
@@ -26,6 +26,39 @@
 ;;      are cleared.
 ;; - [ ] when the last "tests" block in a ns is executed, it runs the tests for
 ;;       this ns.
+
+;; ## Test selectors
+;; - The CLI runner should:
+;;   - [ ] run all tests if no args are provided
+;;   - [ ] otherwise proceed with a:
+;;         - whitelist logic using one or more namespace selectors (the args):
+;;           - [ ] a ns name
+;;           - [ ] a ns glob ("my.ns.*")
+;;           - [ ] a regex
+;;           - [ ] a predicate fn
+;;         - and a blacklist logic using these same selectors but:
+;;           - [ ] prefixed with "!" (ns name & ns globs only).
+;;           - [ ] or by providing a sequence to an ":exclude" option
+;; - The test! fn behaves the same but when no args are provided:
+;;   - [ ] it runs tests for the local namespace if it possesses minitest tests.
+;;   - [ ] it runs all the tests otherwise (for instance in the REPL from the
+;;         "user" namespace).
+
+;; ## Config
+;; - Options:
+;;   - [ ] :fail-early.
+;;   - [ ] :break-on-failure (like https://github.com/ConradIrwin/pry-rescue).
+;;   - [ ] :silent-success.
+;; - [ ] a default config for each environment (CLI, REPL, on-load).
+;; - [ ] which can be overriden in a project's minitest.edn file
+;; - [ ] which can be overriden by ENV_VARS
+;; - [ ] which can be overriden by args passed to the test! fn or the CLI runner
+
+;; ## Report format
+;; - [ ] JUnit (a bit more work for a bit more readability in CIs, especially with
+;;       lot of tests).
+;; - [ ] std out is enough (not great with lot of tests)
+
 
 (declare tests test!)
 (def ^:dynamic *tests* (atom {}))
@@ -117,6 +150,12 @@
 
 ;; TODO:
 ;; - [ ] tests should not run twice (when loaded, then when they are run)
+;; - [ ] display usage
+;; - [ ] options are passed in a bash style (e.g. --option "value")
+;; - [ ] or options are passed clojure style (e.g. :option "value")
 (defn -main [& _args]
   (doseq [ns (keys @*tests*)]
     (test! ns)))
+
+;; TODO:
+;; - [ ] a nice README.
