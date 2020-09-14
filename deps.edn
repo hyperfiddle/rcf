@@ -1,0 +1,3 @@
+{:deps
+ {meander/epsilon {:mvn/version "0.0.488"}
+  com.taoensso/timbre {:mvn/version "4.10.0"}}}
