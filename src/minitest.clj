@@ -9,30 +9,32 @@
 (def ^:dynamic *tests* (atom {}))
 
 (defmacro tests [& body]
-  `(do
-     (swap! *tests* assoc (ns-name *ns*) '~body)
-     ; if repl mode, just run them
-     (test!)))                                              ; danger
+  ;; One fn per "tests" block
+  (let [parsed (m/rewrite (vec body)
+                          [] []
+                          [!xs ... '=> ?v & ?more]
+                          [[[!xs ...] ?v] & (m/cata ?more)])
+        code (for [[forms expected] parsed]
+               `(try
+                  (doseq [form# '~forms]
+                    (let [v# (eval form#)]
+                      (set! *3 *2) (set! *2 *1) (set! *1 v#)))
+                  (let [e# (eval '~expected)]
+                    (if (= *1 e#)
+                      (println '~'test '~'passed '~(last forms) '~'=> '~expected)
+                      (error   '~'test '~'failed '~(last forms) '~'=> '~expected e#)))
+                  (catch Exception e#
+                    ;; continue
+                    (error e#))))]
+    `(do
+       (swap! *tests* update (ns-name *ns*) (fnil conj []) (do ~@code))
+       ; if repl mode, just run them
+       (test!))))                                             ; danger
 
 (defn test!
   ([] (test! (ns-name *ns*)))
   ([ns]
-   (let [parsed (m/rewrite (vec (get @*tests* ns))
-                  [] []
-                  [!xs ... '=> ?v & ?more]
-                  [[[!xs ...] ?v] & (m/cata ?more)])]
-     (doseq [[forms expected] parsed]
-       (try
-         (doseq [form forms]
-           (let [v (eval form)]
-             (set! *3 *2) (set! *2 *1) (set! *1 v)))
-         (let [e (eval expected)]
-           (if (= *1 e)
-             (println 'test 'passed (last forms) '=> expected)
-             (error 'test 'failed (last forms) '=> expected e)))
-         (catch Exception e
-           ; continue
-           (error e)))))))
+   (run! eval (get @*tests* (ns-name ns)))))
 
 (tests
   1
@@ -44,3 +46,6 @@
   nil => nil
   nil => true
   )
+
+(tests 1 => 1)
+(tests (count (get @*tests* (ns-name *ns*) )) => 2)
