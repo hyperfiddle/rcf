@@ -1,8 +1,8 @@
 (ns minitest
+  (:gen-class)
   (:refer-clojure :exclude [test])
   (:require [taoensso.timbre :refer [error]]
             [clojure.test]))
-
 
 ;; ## When and How to run tests
 ;;
@@ -79,3 +79,44 @@
 (alter-var-root #'clojure.test/*load-tests* (constantly false))
 (try (tests :should-not-load => :should-not-load)
   (finally (alter-var-root #'clojure.test/*load-tests* (constantly true))))
+
+(comment
+  ;; These are Koacha's runner CLI options, just as a source of inspiration
+  (def ^:private cli-options
+    [["-c" "--config-file FILE"   "Config file to read."
+      :default "tests.edn"]
+     [nil  "--print-config"       "Print out the fully merged and normalized config, then exit."]
+     [nil  "--print-test-plan"    "Load tests, build up a test plan, then print out the test plan and exit."]
+     [nil  "--print-result"       "Print the test result map as returned by the Kaocha API."]
+     [nil  "--fail-fast"          "Stop testing after the first failure."]
+     [nil  "--[no-]color"         "Enable/disable ANSI color codes in output. Defaults to true."]
+     [nil  "--[no-]watch"         "Watch filesystem for changes and re-run tests."]
+     [nil  "--reporter SYMBOL"    "Change the test reporter, can be specified multiple times."
+      :parse-fn (fn [s]
+                  (let [sym (symbol s)]
+                    (if (qualified-symbol? sym)
+                      sym
+                      (symbol "kaocha.report" s))))
+      :assoc-fn accumulate]
+     [nil "--plugin KEYWORD"      "Load the given plugin."
+      :parse-fn (fn [s]
+                  (let [kw (parse-kw s)]
+                    (if (qualified-keyword? kw)
+                      kw
+                      (keyword "kaocha.plugin" s))))
+      :assoc-fn accumulate]
+     [nil "--profile KEYWORD"     "Configuration profile. Defaults to :default or :ci."
+      :parse-fn parse-kw]
+     [nil "--version"             "Print version information and quit."]
+
+     ;; Clojure CLI tools intercepts --help, so we add --test-help, but in other
+     ;; circumstances it should still work.
+     [nil "--help"                "Display this help message."]
+     ["-H" "--test-help"          "Display this help message."]])
+  )
+
+;; TODO:
+;; - [ ] tests should not run twice (when loaded, then when they are run)
+(defn -main [& _args]
+  (doseq [ns (keys @*tests*)]
+    (test! ns)))
