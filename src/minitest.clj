@@ -1,8 +1,6 @@
 (ns minitest
   (:refer-clojure :exclude [test])
-  (:require
-    [meander.epsilon :as m]
-    [taoensso.timbre :refer [error]]))
+  (:require [taoensso.timbre :refer [error]]))
 
 
 (declare tests test!)
@@ -10,19 +8,17 @@
 
 (defmacro tests [& body]
   ;; One fn per "tests" block
-  (let [parsed (m/rewrite (vec body)
-                          [] []
-                          [!xs ... '=> ?v & ?more]
-                          [[[!xs ...] ?v] & (m/cata ?more)])
-        code (for [[forms expected] parsed]
+  (let [parsed (->> (partition 3 1 body)
+                    (filter #(-> % second (= '=>)))
+                    (map (juxt first #(nth % 2))))
+        code (for [[form expected] parsed]
                `(try
-                  (doseq [form# '~forms]
-                    (let [v# (eval form#)]
-                      (set! *3 *2) (set! *2 *1) (set! *1 v#)))
+                  (let [v# (eval '~form)]
+                    (set! *3 *2) (set! *2 *1) (set! *1 v#))
                   (let [e# (eval '~expected)]
                     (if (= *1 e#)
-                      (println '~'test '~'passed '~(last forms) '~'=> '~expected)
-                      (error   '~'test '~'failed '~(last forms) '~'=> '~expected e#)))
+                      (println '~'test '~'passed '~form '~'=> '~expected)
+                      (error   '~'test '~'failed '~form '~'=> '~expected e#)))
                   (catch Exception e#
                     ;; continue
                     (error e#))))]
