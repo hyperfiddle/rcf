@@ -58,7 +58,6 @@
 ;;       lot of tests).
 ;; - [ ] std out is enough (not great with lot of tests)
 
-
 (declare tests test!)
 (def ^:dynamic *tests* (atom {}))
 
@@ -81,6 +80,50 @@
          (swap! *tests* update (ns-name *ns*) concat ~(vec cases))
          ; if repl mode, just run them
          (test!)))))                                             ; danger
+;; Taken from https://gist.github.com/danielpcox/c70a8aa2c36766200a95
+(defn- deep-merge [& maps]
+  (apply merge-with (fn [& args]
+                      (if (every? #(or (map? %) (nil? %)) args)
+                        (apply deep-merge args)
+                        (last args)))
+         maps))
+
+(def ^:dynamic *profile* nil)
+
+(def ^:private default-config
+  {:fail-early       false
+   :silent-success   false
+   :break-on-failure false ; TODO
+   :formatter        :simple
+   :load-tests       true
+   :on-load {:store  true
+             :run    false}
+   :on-eval {:store  false
+             :run    true}
+   :profiles {:production  {:load-tests       false}
+              :development {:break-on-failure true}}})
+
+(defn- read-config []
+  (let [f (io/file "./minitest.edn")]
+    (-> (or (when (.exists f) f)
+            (io/resource "minitest.edn"))
+        (some-> slurp edn/read-string)
+        (->> (deep-merge default-config)))))
+
+(def ^:dynamic *config* (read-config))
+
+(defn- config-val
+  ([val] (config-val *profile* val))
+  ([profile-k val]
+   (let [profiles    (:profiles *config*)
+         raw-profile (get profiles profile-k)
+         profile     (->> (if (sequential? raw-profile)
+                            raw-profile
+                            [raw-profile])
+                          (map #(if (map? %) % (get profiles %)))
+                          (apply deep-merge))
+         config      (merge (dissoc *config* :profiles) profile)]
+     (get config val))))
 
 (defn- run-test! [[test-form test-thunk expect-form expect-thunk]]
   (let [test-v   (test-thunk)
@@ -90,10 +133,26 @@
       (println "test passed" test-form "=>" expect-v)
       (println "test failed" test-form "=>" expect-v))))
 
+(defmacro tests [& body]
+  (when (should-load-tests?)
+    (let [parsed (->> (partition 3 1 body)
+                      (filter (->| second #{'=>}))
+                      (map (juxt first last))) ;; test & expectation
+          cases  (->> parsed
+                      (map (juxt (->| first  as-quote) (->| first  as-thunk)
+                                 (->| second as-quote) (->| second as-thunk))))]
+      `(do (when (should-load-tests?)
+             (swap! *tests* update (ns-name *ns*) concat ~(vec cases)))
+           (when (should-run-tests?)
+             (test!))))))
+
+
+
 (defn test!
   ([] (test! (ns-name *ns*)))
   ([ns]
-   (run! run-test! (get @*tests* (ns-name ns)))))
+   (when (should-run-tests?)
+     (run! run-test! (get @*tests* (ns-name ns))))))
 
 (tests
   Bla bla bla
