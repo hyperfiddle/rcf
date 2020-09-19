@@ -1,8 +1,7 @@
 (ns minitest
   (:gen-class)
   (:refer-clojure :exclude [test])
-  (:require [taoensso.timbre :refer [error]]
-            [clojure.test]))
+  (:require [clojure.test]))
 
 ;; ## When and how to run tests
 ;;
@@ -89,7 +88,7 @@
         expect-v (expect-thunk)]
     (if (= test-v expect-v)
       (println "test passed" test-form "=>" expect-v)
-      (error   "test failed" test-form "=>" expect-v expect-form))))
+      (println "test failed" test-form "=>" expect-v))))
 
 (defn test!
   ([] (test! (ns-name *ns*)))
