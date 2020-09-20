@@ -1,15 +1,18 @@
 (ns minitest
   (:gen-class)
   (:refer-clojure :exclude [test])
-  (:require [clojure.test]))
+  (:require [clojure.test]
+            [robert.hooke    :refer [add-hook]]
+            [clojure.java.io :as io]
+            [clojure.edn     :as edn]
+            [clojure.string  :as str]))
 
 ;; ## When and how to run tests
-;;
-;; For now, tests are run multiple times because the "tests" macro registers
-;; and also runs the tests.
-;; What I suggest or understood from your requirements:
-;; - [√] tests have absolutely no impact in production (i.e. the macro expands
-;;       to nothing).
+;; - [√] tests are run once
+;; - [√] tests have absolutely no impact (i.e. the macro expands
+;;       to nothing) when configured for a production environment.
+;; - [√] tests are registered or run at load time or with eval according to the
+;;       config.
 ;; - [ ] when tests are run via the clj test runner or explicitly in the repl
 ;;       with the test! fn:
 ;;       - successes: reported.
@@ -17,14 +20,6 @@
 ;; - [ ] when tests are *implicitly* run from the repl:
 ;;       - successes: silenced.
 ;;       - failures: reported.
-
-;; ## Implicitly run tests
-;; In development (.i.e not in production), tests are run implicitly:
-;; - [ ] unless it is disabled by a flag.
-;; - [ ] when the first "tests" block in a ns is executed, tests for this ns
-;;      are cleared.
-;; - [ ] when the last "tests" block in a ns is executed, it runs the tests for
-;;       this ns.
 
 ;; ## Test selectors
 ;; - The CLI runner should:
@@ -60,26 +55,12 @@
 
 (declare tests test!)
 (def ^:dynamic *tests* (atom {}))
+(def ^:dynamic *profile* nil)
 
 (def ^:private ->|      #(apply comp (reverse %&)))
 (def ^:private as-thunk #(do `(fn [] ~%)))
 (def ^:private as-quote #(do `'~%))
 
-(defmacro tests [& body]
-  (when (and clojure.test/*load-tests*
-             ;; - [ ] Do you want a minitest specific flag for running tests ?
-             ;;       https://github.com/marick/Midje/wiki/Production-mode
-             )
-    (let [parsed (->> (partition 3 1 body)
-                      (filter (->| second #{'=>}))
-                      (map (juxt first last))) ;; test & expectation
-          cases  (->> parsed
-                      (map (juxt (->| first  as-quote) (->| first  as-thunk)
-                                 (->| second as-quote) (->| second as-thunk))))]
-      `(do
-         (swap! *tests* update (ns-name *ns*) concat ~(vec cases))
-         ; if repl mode, just run them
-         (test!)))))                                             ; danger
 ;; Taken from https://gist.github.com/danielpcox/c70a8aa2c36766200a95
 (defn- deep-merge [& maps]
   (apply merge-with (fn [& args]
@@ -88,9 +69,13 @@
                         (last args)))
          maps))
 
-(def ^:dynamic *profile* nil)
 
-(def ^:private default-config
+
+(def default-config
+  "Any config you may provide to minitest will merge into this base
+  configuration map.
+
+  See `(source default-config)`."
   {:fail-early       false
    :silent-success   false
    :break-on-failure false ; TODO
@@ -107,25 +92,51 @@
   (let [f (io/file "./minitest.edn")]
     (-> (or (when (.exists f) f)
             (io/resource "minitest.edn"))
-        (some-> slurp edn/read-string)
-        (->> (deep-merge default-config)))))
+        (some-> slurp edn/read-string))))
 
 (def ^:dynamic *config* (read-config))
 
-(defn- config-val
-  ([val] (config-val *profile* val))
-  ([profile-k val]
-   (let [profiles    (:profiles *config*)
-         raw-profile (get profiles profile-k)
-         profile     (->> (if (sequential? raw-profile)
-                            raw-profile
-                            [raw-profile])
-                          (map #(if (map? %) % (get profiles %)))
-                          (apply deep-merge))
-         config      (merge (dissoc *config* :profiles) profile)]
-     (get config val))))
+(defn- profile-config [profile]
+  (let [profiles (:profiles *config*)
+        raw-profile (get profiles profile)]
+    (->> (if (sequential? raw-profile)
+           raw-profile
+           [raw-profile])
+         (map #(cond (map? %)        %
+                     (sequential? %) (profile-config %)
+                     :else           (get profiles %)))
+         (apply deep-merge))))
 
-(defn- run-test! [[test-form test-thunk expect-form expect-thunk]]
+(defn config
+  ([] (config *profile*))
+  ([profile]
+   (deep-merge default-config
+               (dissoc *config* :profiles)
+               (profile-config profile))))
+
+(defn- clear-tests [ns-name]
+  (swap! *tests* dissoc ns-name))
+
+(def ^:no-doc ^:dynamic *currently-loading* false)
+
+(defn hook-around-load [orig-load & paths]
+  (doseq [p paths]
+    (-> p
+        (str/replace #"^/" "")
+        (str/replace "/" ".")
+        symbol
+        clear-tests))
+  (binding [*currently-loading* true]
+    (apply orig-load paths)))
+
+(defn- load-tests? []
+  (and clojure.test/*load-tests*
+       (-> (config) :load-tests)))
+
+(when (load-tests?)
+  (add-hook #'clojure.core/load #'hook-around-load))
+
+(defn ^:no-doc run-test! [[test-form test-thunk expect-form expect-thunk]]
   (let [test-v   (test-thunk)
         _        (do (set! *3 *2) (set! *2 *1) (set! *1 test-v))
         expect-v (expect-thunk)]
@@ -134,25 +145,24 @@
       (println "test failed" test-form "=>" expect-v))))
 
 (defmacro tests [& body]
-  (when (should-load-tests?)
+  (when (load-tests?)
     (let [parsed (->> (partition 3 1 body)
                       (filter (->| second #{'=>}))
-                      (map (juxt first last))) ;; test & expectation
-          cases  (->> parsed
-                      (map (juxt (->| first  as-quote) (->| first  as-thunk)
-                                 (->| second as-quote) (->| second as-thunk))))]
-      `(do (when (should-load-tests?)
-             (swap! *tests* update (ns-name *ns*) concat ~(vec cases)))
-           (when (should-run-tests?)
-             (test!))))))
-
-
+                      (map (juxt first last)))] ;; test & expectation
+      `(let [cases# ~(mapv (juxt (->| first  as-quote) (->| first  as-thunk)
+                                 (->| second as-quote) (->| second as-thunk))
+                           parsed)
+             conf#  (config)
+             mode#  (if *currently-loading* :on-load :on-eval)]
+         (do (when (-> conf# mode# :store)
+               (swap! *tests* update (ns-name *ns*) concat cases#))
+             (when (-> conf# mode# :run)
+               (run! run-test! cases#)))))))
 
 (defn test!
   ([] (test! (ns-name *ns*)))
   ([ns]
-   (when (should-run-tests?)
-     (run! run-test! (get @*tests* (ns-name ns))))))
+   (run! run-test! (get @*tests* (ns-name ns)))))
 
 (tests
   Bla bla bla
@@ -207,7 +217,7 @@
   )
 
 ;; TODO:
-;; - [ ] tests should not run twice (when loaded, then when they are run)
+;; - [√] tests should not run twice (when loaded, then when they are run)
 ;; - [ ] display usage
 ;; - [ ] options are passed in a bash style (e.g. --option "value")
 ;; - [ ] or options are passed clojure style (e.g. :option "value")
