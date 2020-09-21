@@ -14,7 +14,8 @@
 ;; - [√] tests are registered and/or run at load time or with eval according
 ;;       to the config.
 ;; - [√] tests are run once every var has loaded to avoid introduce code
-;;       ordering problems to the already overwhelmed programmer..
+;;       ordering problems to the already overwhelmed programmer.
+;; - [√] `test!` can be used at load time to run the tests registered so far.
 ;; - [ ] when tests are run via the clj test runner or explicitly in the repl
 ;;       with the test! fn:
 ;;       - successes: reported.
@@ -132,19 +133,29 @@
       (println "test failed" test-form "=>" expect-v))))
 
 (def ^:no-doc ^:dynamic *currently-loading* false)
-(def ^:no-doc ^:dynamic *tests-to-run* nil)
+(def ^:no-doc ^:dynamic *tests-to-process*  nil)
+
+(defn run-tests-now!       [cases]    (run! run-test! cases))
+(defn store-tests!         [ns cases] (swap! *tests* update ns concat cases))
+(defn run-tests-gradually! [ns cases] (swap! *tests-to-process*
+                                             update ns run-tests-now!))
+(defn process-after-load!  [ns cases] (swap! *tests-to-process*
+                                            update ns concat cases))
 
 (defn hook-around-load [orig-load & paths]
-  (doseq [p paths]
-    (-> p
-        (str/replace #"^/" "")
-        (str/replace "/" ".")
-        symbol
-        clear-tests))
   (binding [*currently-loading* true
-            *tests-to-run*      (atom '())]
-    (let [result (apply orig-load paths)]
-      (run! run-test! @*tests-to-run*)
+            *tests-to-process* (atom nil)]
+    (let [nss    (->> paths (map #(-> %
+                                      (str/replace #"^/" "")
+                                      (str/replace "/" ".")
+                                      symbol)))
+          result (do (run! clear-tests nss)
+                     (apply orig-load paths))
+          conf   (config)]
+      (when (-> conf :on-load :store)
+        (run! #(apply store-tests! %) @*tests-to-process*))
+      (when (-> conf :on-load :run)
+        (run! #(apply run-tests-now! %) @*tests-to-process*))
       result)))
 
 (when (load-tests?)
@@ -159,18 +170,26 @@
                                  (->| second as-quote) (->| second as-thunk))
                            parsed)
              conf#  (config)
-             mode#  (if *currently-loading* :on-load :on-eval)]
+             mode#  (if *currently-loading* :on-load :on-eval)
+             ns#    (ns-name *ns*)]
          (do (when (-> conf# mode# :store)
-               (swap! *tests* update (ns-name *ns*) concat cases#))
+               (if *currently-loading*
+                 (process-after-load! ns# cases#)
+                 (store-tests! ns# cases#)))
              (when (-> conf# mode# :run)
-               (if (= mode# :on-load)
-                 (swap! *tests-to-run* concat cases#)
-                 (run! run-test! cases#))))))))
+               (if *currently-loading*
+                 ;; Run the tests after vars have been loaded to avoid code
+                 ;; ordering issues. So store the tests unless it has been done.
+                 (when-not (-> conf# mode# :store)
+                   (process-after-load! ns# cases#))
+                 (run-tests-now! cases#))))))))
 
 (defn test!
   ([] (test! (ns-name *ns*)))
   ([ns]
-   (run! run-test! (get @*tests* (ns-name ns)))))
+   (if *currently-loading*
+     (run-tests-gradually! ns *tests-to-process*)
+     (run-tests-now! (get @*tests* ns)))))
 
 ;; (binding [... does not work since "tests" is a macro.
 (alter-var-root #'clojure.test/*load-tests* (constantly false))

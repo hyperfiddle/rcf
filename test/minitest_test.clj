@@ -1,7 +1,8 @@
 (ns minitest-test
   (:require [clojure.test   :refer [deftest testing is]]
             [clojure.string :as str]
-            [minitest       :refer [tests test! *tests* *currently-loading*]]))
+            [minitest       :refer [tests test! *tests* *currently-loading*
+                                    *config*]]))
 
 (deftest test-on-load
   (reset! *tests* {})
@@ -11,14 +12,17 @@
     (testing "tests are not run"
       (is (= "" printed)))))
 
+(defn- second-form-in-file [f]
+  (-> (str \[ (slurp f) \])
+      read-string
+      second))
+
 (deftest test-on-eval
   (reset! *tests* {})
   (let [printed (with-out-str
                   (binding [*currently-loading* false]
-                    (-> (str \[ (slurp "test/minitest_test_namespace.clj") \])
-                        read-string
-                        second
-                        eval)))]
+                    (-> (second-form-in-file "test/minitest_test_namespace.clj")
+                                        eval)))]
     (testing "tests are not registered"
       (is (= 0 (count (get @*tests* (ns-name *ns*))))))
     (testing "tests are run once"
