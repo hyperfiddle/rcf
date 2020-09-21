@@ -11,8 +11,10 @@
 ;; - [√] tests are run once
 ;; - [√] tests have absolutely no impact (i.e. the macro expands
 ;;       to nothing) when configured for a production environment.
-;; - [√] tests are registered or run at load time or with eval according to the
-;;       config.
+;; - [√] tests are registered and/or run at load time or with eval according
+;;       to the config.
+;; - [√] tests are run once every var has loaded to avoid introduce code
+;;       ordering problems to the already overwhelmed programmer..
 ;; - [ ] when tests are run via the clj test runner or explicitly in the repl
 ;;       with the test! fn:
 ;;       - successes: reported.
@@ -117,24 +119,9 @@
 (defn- clear-tests [ns-name]
   (swap! *tests* dissoc ns-name))
 
-(def ^:no-doc ^:dynamic *currently-loading* false)
-
-(defn hook-around-load [orig-load & paths]
-  (doseq [p paths]
-    (-> p
-        (str/replace #"^/" "")
-        (str/replace "/" ".")
-        symbol
-        clear-tests))
-  (binding [*currently-loading* true]
-    (apply orig-load paths)))
-
 (defn- load-tests? []
   (and clojure.test/*load-tests*
        (-> (config) :load-tests)))
-
-(when (load-tests?)
-  (add-hook #'clojure.core/load #'hook-around-load))
 
 (defn ^:no-doc run-test! [[test-form test-thunk expect-form expect-thunk]]
   (let [test-v   (test-thunk)
@@ -143,6 +130,25 @@
     (if (= test-v expect-v)
       (println "test passed" test-form "=>" expect-v)
       (println "test failed" test-form "=>" expect-v))))
+
+(def ^:no-doc ^:dynamic *currently-loading* false)
+(def ^:no-doc ^:dynamic *tests-to-run* nil)
+
+(defn hook-around-load [orig-load & paths]
+  (doseq [p paths]
+    (-> p
+        (str/replace #"^/" "")
+        (str/replace "/" ".")
+        symbol
+        clear-tests))
+  (binding [*currently-loading* true
+            *tests-to-run*      (atom '())]
+    (let [result (apply orig-load paths)]
+      (run! run-test! @*tests-to-run*)
+      result)))
+
+(when (load-tests?)
+  (add-hook #'clojure.core/load #'hook-around-load))
 
 (defmacro tests [& body]
   (when (load-tests?)
@@ -157,24 +163,14 @@
          (do (when (-> conf# mode# :store)
                (swap! *tests* update (ns-name *ns*) concat cases#))
              (when (-> conf# mode# :run)
-               (run! run-test! cases#)))))))
+               (if (= mode# :on-load)
+                 (swap! *tests-to-run* concat cases#)
+                 (run! run-test! cases#))))))))
 
 (defn test!
   ([] (test! (ns-name *ns*)))
   ([ns]
    (run! run-test! (get @*tests* (ns-name ns)))))
-
-(tests
-  Bla bla bla
-  (inc 42) => 43
-  (inc 3) => 4
-  (inc 3) => 5
-  nil => nil
-  nil => true)
-
-;; Tests can refer to the lexical environment
-(let [a 1]
-  (tests a => 1))
 
 ;; (binding [... does not work since "tests" is a macro.
 (alter-var-root #'clojure.test/*load-tests* (constantly false))
@@ -227,3 +223,4 @@
 
 ;; TODO:
 ;; - [ ] a nice README.
+;; - [ ] more private vars

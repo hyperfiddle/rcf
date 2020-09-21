@@ -1,13 +1,13 @@
 (ns minitest-test
-  (:require [clojure.test   :refer [deftest is]]
+  (:require [clojure.test   :refer [deftest testing is]]
             [clojure.string :as str]
-            [minitest       :refer [tests *tests* *currently-loading*]]))
+            [minitest       :refer [tests test! *tests* *currently-loading*]]))
 
 (deftest test-on-load
   (reset! *tests* {})
   (let [printed (with-out-str (require 'minitest-test-namespace :reload))]
     (testing "tests are registered"
-      (is (= 1 (count (get @*tests* 'minitest-test-namespace)))))
+      (is (> (count (get @*tests* 'minitest-test-namespace)) 0)))
     (testing "tests are not run"
       (is (= "" printed)))))
 
@@ -17,7 +17,7 @@
                   (binding [*currently-loading* false]
                     (-> (str \[ (slurp "test/minitest_test_namespace.clj") \])
                         read-string
-                        last
+                        second
                         eval)))]
     (testing "tests are not registered"
       (is (= 0 (count (get @*tests* (ns-name *ns*))))))
@@ -34,4 +34,27 @@
         (testing "tests are not run"
           (is (= "" printed)))))))
 
+
+;; - [√] A "bug". We don't want to have to order the tests any differently
+;;       than the rest of the code
+(declare inc-it*)
+
+(defn inc-it [x]
+  (inc-it* x))
+
+(tests (inc-it 1) => 2)
+(tests (inc-it 2) => 3)
+
+(defn inc-it* [x]
+  (inc x))
+;; Raises: Attempting to call unbound fn: #'minitest/inc-it*.
+;; Solution: run the tests after clojure.core/load is done defining the vars.
+
+
+;; - [√] Tests can refer to the lexical environment
+(let [a 1]
+  (tests a => 1))
+
+
 (clojure.test/run-tests)
+(test!)
