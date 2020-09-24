@@ -1,11 +1,19 @@
 (ns minitest
   (:gen-class)
   (:refer-clojure :exclude [test])
-  (:require [clojure.test]
-            [robert.hooke    :refer [add-hook]]
-            [clojure.java.io :as io]
-            [clojure.edn     :as edn]
-            [clojure.string  :as str]))
+  (:require [clojure.test]))
+
+(declare tests test!)
+(def ^:dynamic *tests* (atom {}))
+(def ^:dynamic *profile* nil)
+
+(declare config)
+(defn- load-tests? []
+  (and clojure.test/*load-tests*
+       (-> (config) :load-tests)))
+
+(load "config")
+(load "monkeypatch_load")
 
 ;; ## When and how to run tests
 ;; - [√] tests are run once
@@ -57,73 +65,9 @@
 ;;       lot of tests).
 ;; - [ ] std out is enough (not great with lot of tests)
 
-(declare tests test!)
-(def ^:dynamic *tests* (atom {}))
-(def ^:dynamic *profile* nil)
-
 (def ^:private ->|      #(apply comp (reverse %&)))
 (def ^:private as-thunk #(do `(fn [] ~%)))
 (def ^:private as-quote #(do `'~%))
-
-;; Taken from https://gist.github.com/danielpcox/c70a8aa2c36766200a95
-(defn- deep-merge [& maps]
-  (apply merge-with (fn [& args]
-                      (if (every? #(or (map? %) (nil? %)) args)
-                        (apply deep-merge args)
-                        (last args)))
-         maps))
-
-
-
-(def default-config
-  "Any config you may provide to minitest will merge into this base
-  configuration map.
-
-  See `(source default-config)`."
-  {:fail-early       false
-   :silent-success   false
-   :break-on-failure false ; TODO
-   :formatter        :simple
-   :load-tests       true
-   :on-load {:store  true
-             :run    false}
-   :on-eval {:store  false
-             :run    true}
-   :profiles {:production  {:load-tests       false}
-              :development {:break-on-failure true}}})
-
-(defn- read-config []
-  (let [f (io/file "./minitest.edn")]
-    (-> (or (when (.exists f) f)
-            (io/resource "minitest.edn"))
-        (some-> slurp edn/read-string))))
-
-(def ^:dynamic *config* (read-config))
-
-(defn- profile-config [profile]
-  (let [profiles (:profiles *config*)
-        raw-profile (get profiles profile)]
-    (->> (if (sequential? raw-profile)
-           raw-profile
-           [raw-profile])
-         (map #(cond (map? %)        %
-                     (sequential? %) (profile-config %)
-                     :else           (get profiles %)))
-         (apply deep-merge))))
-
-(defn config
-  ([] (config *profile*))
-  ([profile]
-   (deep-merge default-config
-               (dissoc *config* :profiles)
-               (profile-config profile))))
-
-(defn- clear-tests [ns-name]
-  (swap! *tests* dissoc ns-name))
-
-(defn- load-tests? []
-  (and clojure.test/*load-tests*
-       (-> (config) :load-tests)))
 
 (defn ^:no-doc run-test! [[test-form test-thunk expect-form expect-thunk]]
   (let [test-v   (test-thunk)
@@ -132,9 +76,6 @@
     (if (= test-v expect-v)
       (println "test passed" test-form "=>" expect-v)
       (println "test failed" test-form "=>" expect-v))))
-
-(def ^:no-doc ^:dynamic *currently-loading* false)
-(def ^:no-doc ^:dynamic *tests-to-process*  nil)
 
 (defn run-tests-now!            [_ns cases](run! run-test! cases))
 (defn store-tests!              [ns cases] (swap! *tests* update ns
@@ -149,26 +90,6 @@
                                                (run! #(apply run-tests-now! %)
                                                      @*tests-to-process*))
                                              (reset! *tests-to-process* nil)))
-
-
-
-(defn hook-around-load [orig-load & paths]
-  (binding [*currently-loading* true
-            *tests-to-process* (atom nil)]
-    (let [nss    (->> paths (map #(-> %
-                                      (str/replace #"^/" "")
-                                      (str/replace "/" ".")
-                                      symbol)))
-          result (do (run! clear-tests nss)
-                     (apply orig-load paths))
-          conf   (config)]
-      (when (or (-> conf :on-load :store)
-                (-> conf :on-load :run))
-        (run! #(apply process-tests-now! %) @*tests-to-process*))
-      result)))
-
-(when (load-tests?)
-  (add-hook #'clojure.core/load #'hook-around-load))
 
 (defmacro tests [& body]
   (when (load-tests?)
