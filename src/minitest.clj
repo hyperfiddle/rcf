@@ -14,6 +14,7 @@
 
 (load "config")
 (load "monkeypatch_load")
+(load "report")
 
 ;; ## When and how to run tests
 ;; - [√] tests are run once
