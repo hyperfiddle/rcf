@@ -20,11 +20,11 @@
 (def ^:private ->|  #(apply comp (reverse %&)))
 (def ^:private call #(apply %1 %&))
 
-(load "monkeypatch_load")
 (load "reporter")
 (load "ns_selector")
 (load "runner")
 (load "config")
+(load "monkeypatch_load")
 
 
 ;; ## When and how to run tests

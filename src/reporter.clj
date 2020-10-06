@@ -1,6 +1,8 @@
 (require '[clojure.repl   :refer [pst]]
          '[clojure.pprint :refer [pprint]])
 
+(declare config)
+
 (defprotocol ReporterP
   (before-all  [this ns->tests])
   (before-ns   [this ns-name tests])

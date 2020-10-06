@@ -1,6 +1,7 @@
 
 (declare config)
 (def ^:dynamic *config*)
+(def ^:dynamic *currently-loading*)
 
 (def default-config
   "Any config you may provide to minitest will merge into this base
