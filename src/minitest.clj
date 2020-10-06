@@ -1,7 +1,12 @@
 (ns minitest
   (:gen-class)
-  (:refer-clojure :exclude [test])
-  (:require [clojure.test]))
+  (:refer-clojure :exclude [test unquote])
+  (:require [clojure.test]
+            [clojure.java.io              :as io]
+            [clojure.edn                  :as edn]
+            [clojure.string               :as str]
+            [clojure.tools.namespace.find :refer [find-namespaces-in-dir]]
+            [clojure.walk                 :refer [postwalk]]))
 
 (declare tests test!)
 (def ^:dynamic *tests* (atom {}))
@@ -12,9 +17,15 @@
   (and clojure.test/*load-tests*
        (-> (config) :load-tests)))
 
-(load "config")
+(def ^:private ->|  #(apply comp (reverse %&)))
+(def ^:private call #(apply %1 %&))
+
 (load "monkeypatch_load")
-(load "report")
+(load "reporter")
+(load "ns_selector")
+(load "runner")
+(load "config")
+
 
 ;; ## When and how to run tests
 ;; - [√] tests are run once
@@ -59,114 +70,170 @@
 ;; - [ ] a default config for each environment (CLI, REPL, on-load).
 ;; - [ ] which can be overriden in a project's minitest.edn file
 ;; - [ ] which can be overriden by ENV_VARS
-;; - [ ] which can be overriden by args passed to the test! fn or the CLI runner
+;; - [ ] which can be overriden by args passed to the test! fn or the CLI Runner
 
 ;; ## Report format
 ;; - [ ] JUnit (a bit more work for a bit more readability in CIs, especially with
 ;;       lot of tests).
 ;; - [ ] std out is enough (not great with lot of tests)
 
-(def ^:private ->|      #(apply comp (reverse %&)))
+(defn- construct-record [conf k assert-proto]
+  (let [c (get-in conf [k :class])]
+    (-> (.getCanonicalName c)
+        ;; replace the last occurence of "." with "/map->" to find
+        ;; the fully-qualified name of the constructor fn
+        (str/replace #"\.(?=[^.]+$)" "/map->") ;; (?=...) is a regex lookahead
+        (str/replace \_ \-) ;; TODO: other chars to replace ?
+        symbol resolve deref
+        (call {:opts  (get conf k)
+               :store (atom {})}))))
+
+(def ^:private runner   #(construct-record % :runner   RunnerP))
+(def ^:private reporter #(construct-record % :reporter ReporterP))
+(def ^:dynamic *runner*)
+(def ^:dynamic *reporter*)
+
+(defn- run-and-report! [x]
+  (condp call x
+    map?    (let [conf (config)]
+              (binding [*runner*   (runner conf)
+                        *reporter* (reporter conf)]
+                (before-all    *reporter* x)
+                (run-nss-tests *runner*   x)
+                (after-all     *reporter* x)))
+    vector? (let [[ns-name y] x]
+              (condp call y
+                  sequential? (do (before-ns    *reporter* ns-name y)
+                                  (run-ns-tests *runner*   ns-name y)
+                                  (after-ns     *reporter* ns-name y))
+                  map?        (do (before-each  *reporter* ns-name y)
+                                  (->> (run-one-test *runner*   ns-name y)
+                                       (after-each   *reporter* ns-name)))))))
+
+
+(defmacro ^:private ensuring-runner&reporter [& body]
+  `(let [c# (config)]
+     (binding [*runner*   (if-not (bound? #'*runner*)   (runner   c#) *runner*)
+               *reporter* (if-not (bound? #'*reporter*) (reporter c#) *reporter*)]
+       ~@body)))
+
+(defn run-tests-now!             [ns cases] (ensuring-runner&reporter
+                                              (run!
+                                                #(run-and-report! [ns %])
+                                                cases)))
+(defn store-tests!               [ns cases] (swap! *tests* update ns
+                                                   concat cases))
+(defn process-tests-after-load!  [ns cases] (swap! *tests-to-process*
+                                                   update ns concat cases))
+(defn process-tests-on-load-now! [ns cases] (let [conf (config)]
+                                              (when (-> conf :on-load :store)
+                                                (run! #(apply store-tests! %)
+                                                      @*tests-to-process*))
+                                              (when (-> conf :on-load :run)
+                                                (run! #(apply run-tests-now! %)
+                                                      @*tests-to-process*))
+                                              (reset! *tests-to-process* nil)))
+
+(defn- juxtmap [m]
+  (fn [& args]
+    (->> m
+         (map (fn [[k v]]
+                [k (apply v args)]))
+         (into (empty m)))))
+
 (def ^:private as-thunk #(do `(fn [] ~%)))
 (def ^:private as-quote #(do `'~%))
-
-(defn ^:no-doc run-test! [[test-form test-thunk expect-form expect-thunk]]
-  (let [test-v   (test-thunk)
-        _        (do (set! *3 *2) (set! *2 *1) (set! *1 test-v))
-        expect-v (expect-thunk)]
-    (if (= test-v expect-v)
-      (println "test passed" test-form "=>" expect-v)
-      (println "test failed" test-form "=>" expect-v))))
-
-(defn run-tests-now!            [_ns cases](run! run-test! cases))
-(defn store-tests!              [ns cases] (swap! *tests* update ns
-                                                  concat cases))
-(defn process-tests-after-load! [ns cases] (swap! *tests-to-process*
-                                                  update ns concat cases))
-(defn process-tests-now!        [ns cases] (let [conf (config)]
-                                             (when (-> conf :on-load :store)
-                                               (run! #(apply store-tests! %)
-                                                     @*tests-to-process*))
-                                             (when (-> conf :on-load :run)
-                                               (run! #(apply run-tests-now! %)
-                                                     @*tests-to-process*))
-                                             (reset! *tests-to-process* nil)))
 
 (defmacro tests [& body]
   (when (load-tests?)
     (let [parsed (->> (partition 3 1 body)
                       (filter (->| second #{'=>}))
-                      (map (juxt first last)))] ;; test & expectation
-      `(let [cases# ~(mapv (juxt (->| first  as-quote) (->| first  as-thunk)
-                                 (->| second as-quote) (->| second as-thunk))
-                           parsed)
+                      (map (juxt first last)))] ;; [test, expectation]
+      `(let [cases# ~(mapv
+                       (juxtmap
+                         {:test        (juxtmap {:form  (->| first as-quote)
+                                                 :thunk (->| first as-thunk)})
+                          :expectation (juxtmap {:form  (->| second as-quote)
+                                                 :thunk (->| second as-thunk)})})
+                       parsed)
              conf#  (config)
-             mode#  (if *currently-loading* :on-load :on-eval)
              ns#    (ns-name *ns*)]
          (if *currently-loading*
-           (when (or (-> conf# mode# :store)
-                     (-> conf# mode# :run))
+           (when (or (-> conf# :on-load :store)
+                     (-> conf# :on-load :run))
              (process-tests-after-load! ns# cases#))
-           (do (when (-> conf# mode# :store) (store-tests! ns# cases#))
-               (when (-> conf# mode# :run)   (run-tests-now! ns# cases#))))))))
+           (do (when (-> conf# :on-eval :store) (store-tests!   ns# cases#))
+               (when (-> conf# :on-eval :run)   (run-tests-now! ns# cases#))))))))
+
+(defn- find-test-namespaces []
+  (let [dir  (-> (config) :dir)
+        dirs (set (if (coll? dir) dir [dir]))]
+    ;; TODO: won't look for cljs files
+    (mapcat (->| io/file find-namespaces-in-dir)
+            dirs)))
+
+(defn- config-kw? [x]
+  (and (keyword? x)
+       (not (#{:exclude :all} x)))) ;; kws used for namespace selection
 
 (defn test!
-  ([] (test! (ns-name *ns*)))
-  ([ns]
-   (if *currently-loading*
-     ;; Force execution of tests
-     (binding [*config* (assoc-in *config* [:on-load :run] true)]
-       (process-tests-now! ns *tests-to-process*))
-     (run-tests-now! (get @*tests* ns)))))
+  ([]       (let [ns-nme (ns-name *ns*)]
+              (cond *currently-loading*
+                    ;; Force execution of tests not yet processed
+                    (binding [*config* (config {:on-load {:run true}})]
+                      (process-tests-on-load-now! ns-nme *tests-to-process*))
 
+                    (contains? @*tests* ns-nme)
+                    (test! ns-nme)
+
+                    :else (test! :all))))
+  ([& args] (let [[conf sels]  (->> (partition-all 2 args)
+                                    (split-with (->| first config-kw?)))
+                  sels         (parse-selectors (apply concat sels))
+                  nss          (-> (find-test-namespaces)
+                                   (filter (apply some-fn sels))
+                                   (doto (->> (run! require))))
+                  ns->tests    (select-keys @*tests* nss)]
+              (binding [*config* (config conf)]
+                (run-and-report! ns->tests)))))
+
+
+;; TODO: move to test
 ;; (binding [... does not work since "tests" is a macro.
 (alter-var-root #'clojure.test/*load-tests* (constantly false))
 (try (tests :should-not-load => :should-not-load)
   (finally (alter-var-root #'clojure.test/*load-tests* (constantly true))))
 
 (comment
-  ;; These are Koacha's runner CLI options, just as a source of inspiration
-  (def ^:private cli-options
-    [["-c" "--config-file FILE"   "Config file to read."
-      :default "tests.edn"]
-     [nil  "--print-config"       "Print out the fully merged and normalized config, then exit."]
-     [nil  "--print-test-plan"    "Load tests, build up a test plan, then print out the test plan and exit."]
-     [nil  "--print-result"       "Print the test result map as returned by the Kaocha API."]
-     [nil  "--fail-fast"          "Stop testing after the first failure."]
-     [nil  "--[no-]color"         "Enable/disable ANSI color codes in output. Defaults to true."]
-     [nil  "--[no-]watch"         "Watch filesystem for changes and re-run tests."]
-     [nil  "--reporter SYMBOL"    "Change the test reporter, can be specified multiple times."
-      :parse-fn (fn [s]
-                  (let [sym (symbol s)]
-                    (if (qualified-symbol? sym)
-                      sym
-                      (symbol "kaocha.report" s))))
-      :assoc-fn accumulate]
-     [nil "--plugin KEYWORD"      "Load the given plugin."
-      :parse-fn (fn [s]
-                  (let [kw (parse-kw s)]
-                    (if (qualified-keyword? kw)
-                      kw
-                      (keyword "kaocha.plugin" s))))
-      :assoc-fn accumulate]
-     [nil "--profile KEYWORD"     "Configuration profile. Defaults to :default or :ci."
-      :parse-fn parse-kw]
-     [nil "--version"             "Print version information and quit."]
-
-     ;; Clojure CLI tools intercepts --help, so we add --test-help, but in other
-     ;; circumstances it should still work.
-     [nil "--help"                "Display this help message."]
-     ["-H" "--test-help"          "Display this help message."]])
-  )
+  (defn test
+    [options]
+    (let [dir (or (:dir options) "test")
+          dirs (if (coll? dir) dir [dir])
+          nses (->> (set dirs)
+                    (map io/file)
+                    (mapcat find/find-namespaces-in-dir))
+          nses (filter (ns-filter options) nses)]
+      (println (format "\nRunning tests in %s" dirs))
+      (dorun (map require nses))
+      (try
+        (filter-vars! nses (var-filter options))
+        (apply test/run-tests nses)
+        (finally
+          (restore-vars! nses))))))
 
 ;; TODO:
 ;; - [√] tests should not run twice (when loaded, then when they are run)
 ;; - [ ] display usage
-;; - [ ] options are passed in a bash style (e.g. --option "value")
-;; - [ ] or options are passed clojure style (e.g. :option "value")
-(defn -main [& _args]
-  (doseq [ns (keys @*tests*)]
-    (test! ns)))
+;; - [x] options are passed in a bash style (e.g. --option "value")
+;; - [√] or options are passed clojure style (e.g. :option "value")
+(def ^:private quote?            #(and (seq? %) (-> % first (= 'quote))))
+(def ^:private unquote           second)
+(def ^:private interpret-string  (->| edn/read-string
+                                      #(if (symbol? %) resolve %)
+                                      #(if (quote?  %) unquote %)))
+
+(defn -main [& args]
+  (apply test! (map interpret-string args)))
 
 ;; TODO:
 ;; - [ ] a nice README.

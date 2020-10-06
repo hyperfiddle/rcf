@@ -1,5 +1,6 @@
 {:deps
- {robert/hooke {:mvn/version "1.3.0"}}
+ {robert/hooke                {:mvn/version "1.3.0"}
+  org.clojure/tools.namespace {:mvn/version "1.0.0"}}
 
  :aliases
  {:test {:extra-paths ["test"]}}}

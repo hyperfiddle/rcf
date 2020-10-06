@@ -1,5 +1,4 @@
-(require '[clojure.string :as str]
-         '[robert.hooke   :refer [add-hook]])
+(require '[robert.hooke :refer [add-hook]])
 
 (def ^:no-doc ^:dynamic *currently-loading* false)
 (def ^:no-doc ^:dynamic *tests-to-process*  nil)
@@ -7,7 +6,7 @@
 (defn- clear-tests [ns-name]
   (swap! *tests* dissoc ns-name))
 
-(declare process-tests-now!)
+(declare process-tests-on-load-now!)
 (defn- hook-around-load [orig-load & paths]
   (binding [*currently-loading* true
             *tests-to-process* (atom nil)]
@@ -20,7 +19,7 @@
           conf   (config)]
       (when (or (-> conf :on-load :store)
                 (-> conf :on-load :run))
-        (run! #(apply process-tests-now! %) @*tests-to-process*))
+        (run! #(apply process-tests-on-load-now! %) @*tests-to-process*))
       result)))
 
 (when (load-tests?)

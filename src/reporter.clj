@@ -1,7 +1,7 @@
 (require '[clojure.repl   :refer [pst]]
          '[clojure.pprint :refer [pprint]])
 
-(defprotocol MinitestReportP
+(defprotocol ReporterP
   (before-all  [this ns->tests])
   (before-ns   [this ns-name tests])
   (before-each [this ns-name test])
@@ -35,11 +35,11 @@
 (defn pluralize-on [x n]
   (str x (if (> n 1) "s" "")))
 
-(defrecord SimpleReporter [opts store]
-  MinitestReportP
+(defrecord TermReporter [opts store]
+  ReporterP
   (before-all
     [this ns->tests]
-    (reset! store {})
+    ; (reset! store {}) TODO: remove
     (newline)
     (let [ns-cnt (count ns->tests)
           ts-cnt (->> ns->tests vals (apply concat) count)]
@@ -58,21 +58,25 @@
   (after-each
     [this ns-name report]
     (case (:status report)
-      :exception (do (print-result report (-> opts :exception :logo)
-                                   [:result :form] [:expected :val])
-                     (pst (:exception report) (:exception-depth opts))
-                     (swap! store update-in [:counts :error] (fnil inc 0)))
-      :failure   (do (print-result report (-> opts :failure :logo)
-                                   [:result :form] [:expected :val])
-                     (let [v (get-in report [:result :val])
-                           s (with-out-str (println "Actual:" v))]
-                       (if (> (count s) (* 2 term-width))
-                         (do (println "Actual:" v)
-                             (print (tabulate (with-out-str (pprint v)))))
-                         (print s)))
-                     (swap! store update-in [:counts :failure] (fnil inc 0)))
-      :success   (if (:dots opts)
-                   (print \.)
+      :error     (if (get-in opts [:error :dots] (:dots opts))
+                   (print (-> opts :error :logo))
+                   (do (print-result report (-> opts :error :logo)
+                                         [:result :form] [:expected :val])
+                           (pst (:error report) (:error-depth opts))
+                           (swap! store update-in [:counts :error] (fnil inc 0))))
+      :failure   (if (get-in opts [:failure :dots] (:dots opts))
+                   (print (-> opts :failure :logo))
+                   (do (print-result report (-> opts :failure :logo)
+                                     [:result :form] [:expected :val])
+                       (let [v (get-in report [:result :val])
+                             s (with-out-str (println "Actual:" v))]
+                         (if (> (count s) (* 2 term-width))
+                           (do (println "Actual:" v)
+                               (print (tabulate (with-out-str (pprint v)))))
+                           (print s)))
+                       (swap! store update-in [:counts :failure] (fnil inc 0))))
+      :success   (if (get-in opts [:success :dots] (:dots opts))
+                   (print (-> opts :success :logo))
                    (print-result report (-> opts :success :logo)
                                  [:result :form] [:expected :val]))))
   (after-ns [this ns-name reports])

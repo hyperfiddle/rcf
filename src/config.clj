@@ -1,5 +1,3 @@
-(require '[clojure.java.io :as io]
-         '[clojure.edn     :as edn])
 
 (declare config)
 (def ^:dynamic *config*)
@@ -9,17 +7,24 @@
   configuration map.
 
   See `(source default-config)`."
-  {:fail-early       false
-   :silent-success   false
-   :break-on-failure false ; TODO
-   :formatter        :simple
-   :load-tests       true
-   :on-load {:store  true
-             :run    false}
-   :on-eval {:store  false
-             :run    true}
+  {:fail-early         false
+   :silent-success     false
+   :load-tests         true
+   :dir                "test"
+   :on-load {:store    true
+             :run      false}
+   :on-eval {:store    false
+             :run      true}
+   :runner   {:class   minitest.Runner}
+   :reporter {:class   minitest.TermReporter
+              :success {:logo '✅} ;; :dots false
+              :failure {:logo '❌} ;; :dots false
+              :error   {:logo '🔥} ;; :dots false
+              :dots    false}
    :profiles {:production  {:load-tests       false}
-              :development {:break-on-failure true}}})
+              :development {:break-on-failure true}
+              :cli         {:reporter {:dots  true}}
+              :ci          [:cli]}})
 
 (defn- read-config []
   (let [f (io/file "./minitest.edn")]
@@ -37,20 +42,20 @@
                         (last args)))
          maps))
 
-(defn- profile-config [profile]
-  (let [profiles (:profiles *config*)
-        raw-profile (get profiles profile)]
-    (->> (if (sequential? raw-profile)
-           raw-profile
-           [raw-profile])
-         (map #(cond (map? %)        %
-                     (sequential? %) (profile-config %)
-                     :else           (get profiles %)))
-         (apply deep-merge))))
+(defn- profile-config [x]
+  (condp call x
+    map?        x
+    sequential? (->> x
+                     (map profile-config)
+                     (apply deep-merge))
+    (-> *config* :profiles (get x))))
 
 (defn config
   ([] (config *profile*))
   ([profile]
-   (deep-merge default-config
-               (dissoc *config* :profiles)
-               (profile-config profile))))
+   (-> (deep-merge default-config
+                   (dissoc *config* :profiles)
+                   (profile-config profile))
+       (as-> m (deep-merge
+                 m (dissoc (get m (if *currently-loading* :on-load :on-eval))
+                           :store :run))))))

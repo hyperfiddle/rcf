@@ -4,6 +4,12 @@
             [minitest       :refer [tests test! *tests* *currently-loading*
                                     *config*]]))
 
+; (defmacro with-out-str [& args]
+;   `(let [out# (clojure.core/with-out-str ~@args)]
+;      (println "*** Printed:")
+;      (print out#)
+;      out#))
+
 (deftest test-on-load
   (reset! *tests* {})
   (let [printed (with-out-str (require 'minitest-test-namespace :reload))]
@@ -22,7 +28,7 @@
   (let [printed (with-out-str
                   (binding [*currently-loading* false]
                     (-> (second-form-in-file "test/minitest_test_namespace.clj")
-                                        eval)))]
+                        eval)))]
     (testing "tests are not registered"
       (is (= 0 (count (get @*tests* (ns-name *ns*))))))
     (testing "tests are run once"
