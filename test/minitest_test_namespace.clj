@@ -1,7 +1,8 @@
 (ns minitest-test-namespace
-  (:require [minitest :refer [tests]]))
+  (:require [minitest]))
 
-(tests ;; Keep this form the second in the file
+;; Keep this form the second in the file
+(minitest/tests
   Bla bla bla
   (inc 1) => 2
   (inc 3) => 4

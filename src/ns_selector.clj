@@ -5,14 +5,14 @@
                      [true  (subs s 1)]
                      [false s])]
     ((if neg? complement identity)
-     #{nme})))
+     (->| name #{nme}))))
 
 
 (defn- regex? [x]
   (instance? java.util.regex.Pattern x))
 
 (defn- regex-ns-selector [reg]
-  (partial re-matches reg))
+  #(->> % name (re-matches reg)))
 
 
 ;; Taken from: https://github.com/jkk/clj-glob/blob/master/src/org/satta/glob.clj
@@ -47,14 +47,13 @@
     regex?   (regex-ns-selector  x)
     string?  (glob-ns-selector   x)
     #{:all}  (constantly true)
-    ifn?     x))
+    ifn?     (-> name x)))
 
-(defn- parse-selectors [selectors]
-  (let [[sels & more] (split-with #{:exclude} selectors)
-        [excl more]   (if (-> more first #{:exclude})
-                        [(second more) (drop 2 more)]
-                        [nil           more])
-        sels          (map ns-selector sels)]
-    (concat sels
-            (map (->| ns-selector complement) excl)
-            (parse-selectors more))))
+(defn- parse-selectors [[x & more]]
+  (when x
+    (let [[sel even-more]
+          (case x
+            :exclude  [(complement (ns-selector (first more))) (rest more)]
+            :all      [(ns-selector x)                         more]
+            (do       [(ns-selector x)                         more]))]
+      (cons sel (parse-selectors even-more)))))

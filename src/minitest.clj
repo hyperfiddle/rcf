@@ -1,6 +1,7 @@
 (ns minitest
   (:gen-class)
   (:refer-clojure :exclude [test unquote])
+  (:use clojure.pprint)
   (:require [clojure.test]
             [clojure.java.io              :as io]
             [clojure.edn                  :as edn]
@@ -9,23 +10,52 @@
             [clojure.walk                 :refer [postwalk]]))
 
 (declare tests test!)
-(def ^:dynamic *tests* (atom {}))
-(def ^:dynamic *profile* nil)
+
+(def ^:dynamic *tests*    (atom {}))
+(def ^:dynamic *config*)
+(def ^:dynamic *contexts* {:exec-mode :eval, :env :development})
+
+(def ^:no-doc ^:dynamic *currently-loading* false)
+(def ^:no-doc ^:dynamic *tests-to-process*  nil)
 
 (declare config)
-(defn- load-tests? []
-  (and clojure.test/*load-tests*
-       (-> (config) :load-tests)))
+(defn- load-tests? [] (and clojure.test/*load-tests* (-> (config) :load-tests)))
+(def ^:private ->|    #(apply comp (reverse %&)))
+(def ^:private call   #(apply %1 %&))
 
-(def ^:private ->|  #(apply comp (reverse %&)))
-(def ^:private call #(apply %1 %&))
-
-(load "reporter")
-(load "ns_selector")
-(load "runner")
 (load "config")
+(load "reporter")
+(load "runner")
+(load "run_and_report")
+(load "ns_selector")
 (load "monkeypatch_load")
 
+(def default-config
+  "Any config you may provide to minitest will merge into this base
+  configuration map.
+
+  See `(source default-config)`."
+  {:dir          "test"
+   :load-tests   true
+   :pretty-limit 160 ;; standard term-width * 2
+   :runner       {:class            minitest.Runner
+                  :fail-early       false
+                  :break-on-failure false}
+   :reporter     {:class       minitest.TermReporter
+                  :error-depth 56
+                  :compact     true
+                  :silent      false
+                  :contexts {:status {:success {:logo '✅}
+                                      :failure {:logo '❌}
+                                      :error   {:logo '🔥}}}}
+   :contexts     {:exec-mode {:load          {:store true,  :run false}
+                              :eval          {:store false, :run true}}
+                  :env       {:production    {:load-tests                  false}
+                              :development   {:runner   {:break-on-failure true}}
+                              :cli           {:reporter {:dots             true}}
+                              :ci            [:cli]}}})
+
+(when (load-tests?)  (apply-patch-to-load))
 
 ;; ## When and how to run tests
 ;; - [√] tests are run once
@@ -77,68 +107,10 @@
 ;;       lot of tests).
 ;; - [ ] std out is enough (not great with lot of tests)
 
-(defn- construct-record [conf k assert-proto]
-  (let [c (get-in conf [k :class])]
-    (-> (.getCanonicalName c)
-        ;; replace the last occurence of "." with "/map->" to find
-        ;; the fully-qualified name of the constructor fn
-        (str/replace #"\.(?=[^.]+$)" "/map->") ;; (?=...) is a regex lookahead
-        (str/replace \_ \-) ;; TODO: other chars to replace ?
-        symbol resolve deref
-        (call {:opts  (get conf k)
-               :store (atom {})}))))
-
-(def ^:private runner   #(construct-record % :runner   RunnerP))
-(def ^:private reporter #(construct-record % :reporter ReporterP))
-(def ^:dynamic *runner*)
-(def ^:dynamic *reporter*)
-
-(defn- run-and-report! [x]
-  (condp call x
-    map?    (let [conf (config)]
-              (binding [*runner*   (runner conf)
-                        *reporter* (reporter conf)]
-                (before-all    *reporter* x)
-                (run-nss-tests *runner*   x)
-                (after-all     *reporter* x)))
-    vector? (let [[ns-name y] x]
-              (condp call y
-                  sequential? (do (before-ns    *reporter* ns-name y)
-                                  (run-ns-tests *runner*   ns-name y)
-                                  (after-ns     *reporter* ns-name y))
-                  map?        (do (before-each  *reporter* ns-name y)
-                                  (->> (run-one-test *runner*   ns-name y)
-                                       (after-each   *reporter* ns-name)))))))
-
-
-(defmacro ^:private ensuring-runner&reporter [& body]
-  `(let [c# (config)]
-     (binding [*runner*   (if-not (bound? #'*runner*)   (runner   c#) *runner*)
-               *reporter* (if-not (bound? #'*reporter*) (reporter c#) *reporter*)]
-       ~@body)))
-
-(defn run-tests-now!             [ns cases] (ensuring-runner&reporter
-                                              (run!
-                                                #(run-and-report! [ns %])
-                                                cases)))
-(defn store-tests!               [ns cases] (swap! *tests* update ns
-                                                   concat cases))
-(defn process-tests-after-load!  [ns cases] (swap! *tests-to-process*
-                                                   update ns concat cases))
-(defn process-tests-on-load-now! [ns cases] (let [conf (config)]
-                                              (when (-> conf :on-load :store)
-                                                (run! #(apply store-tests! %)
-                                                      @*tests-to-process*))
-                                              (when (-> conf :on-load :run)
-                                                (run! #(apply run-tests-now! %)
-                                                      @*tests-to-process*))
-                                              (reset! *tests-to-process* nil)))
-
-(defn- juxtmap [m]
+(defn- juxtmap [& {:as m}]
   (fn [& args]
     (->> m
-         (map (fn [[k v]]
-                [k (apply v args)]))
+         (map #(as-> % [k v]  [k (apply v args)]))
          (into (empty m)))))
 
 (def ^:private as-thunk #(do `(fn [] ~%)))
@@ -149,21 +121,23 @@
     (let [parsed (->> (partition 3 1 body)
                       (filter (->| second #{'=>}))
                       (map (juxt first last)))] ;; [test, expectation]
-      `(let [cases# ~(mapv
-                       (juxtmap
-                         {:test        (juxtmap {:form  (->| first as-quote)
-                                                 :thunk (->| first as-thunk)})
-                          :expectation (juxtmap {:form  (->| second as-quote)
-                                                 :thunk (->| second as-thunk)})})
-                       parsed)
-             conf#  (config)
-             ns#    (ns-name *ns*)]
+      `(let [c#     (config)
+             ns#    (ns-name *ns*)
+             cases# ~(vector
+                       (mapv
+                         (juxtmap
+                           :test        (juxtmap :form  (->| first as-quote)
+                                                 :thunk (->| first as-thunk))
+                           :expectation (juxtmap :form  (->| second as-quote)
+                                                 :thunk (->| second as-thunk)))
+                         parsed))
+             case#  (first cases#)]
          (if *currently-loading*
-           (when (or (-> conf# :on-load :store)
-                     (-> conf# :on-load :run))
-             (process-tests-after-load! ns# cases#))
-           (do (when (-> conf# :on-eval :store) (store-tests!   ns# cases#))
-               (when (-> conf# :on-eval :run)   (run-tests-now! ns# cases#))))))))
+           (when (or (:store c#) (:run c#)) (process-after-load!    ns# cases#))
+           (do (when (:store c#)            (store-tests!           ns# cases#))
+               (when (:run c#)              (run-and-report! :block ns# case#))
+               ))
+         nil))))
 
 (defn- find-test-namespaces []
   (let [dir  (-> (config) :dir)
@@ -177,49 +151,31 @@
        (not (#{:exclude :all} x)))) ;; kws used for namespace selection
 
 (defn test!
-  ([]       (let [ns-nme (ns-name *ns*)]
-              (cond *currently-loading*
-                    ;; Force execution of tests not yet processed
-                    (binding [*config* (config {:on-load {:run true}})]
-                      (process-tests-on-load-now! ns-nme *tests-to-process*))
-
-                    (contains? @*tests* ns-nme)
-                    (test! ns-nme)
-
-                    :else (test! :all))))
-  ([& args] (let [[conf sels]  (->> (partition-all 2 args)
-                                    (split-with (->| first config-kw?)))
-                  sels         (parse-selectors (apply concat sels))
-                  nss          (-> (find-test-namespaces)
-                                   (filter (apply some-fn sels))
-                                   (doto (->> (run! require))))
-                  ns->tests    (select-keys @*tests* nss)]
-              (binding [*config* (config conf)]
-                (run-and-report! ns->tests)))))
+  ([]       (let [ns (ns-name *ns*)]
+              (cond
+                *currently-loading* (with-config {:run true :store false}
+                                      (process-tests-on-load-now!))
+                (get @*tests* ns)   (test! ns)
+                :else               (test! :all))))
+  ([& args] (let [[conf sels] (->> (partition-all 2 args)
+                                   (split-with (->| first config-kw?)))
+                  sels        (parse-selectors (apply concat sels))
+                  nss         (-> (filter (apply some-fn sels)
+                                          (find-test-namespaces))
+                                  (doto (->> (run! require))))
+                  ns->tests   (select-keys @*tests* nss)]
+              (if (empty? ns->tests)
+                :no-test
+                (with-config conf
+                  (run-and-report! :suite ns->tests)
+                  nil)))))
 
 
 ;; TODO: move to test
 ;; (binding [... does not work since "tests" is a macro.
-(alter-var-root #'clojure.test/*load-tests* (constantly false))
-(try (tests :should-not-load => :should-not-load)
-  (finally (alter-var-root #'clojure.test/*load-tests* (constantly true))))
-
-(comment
-  (defn test
-    [options]
-    (let [dir (or (:dir options) "test")
-          dirs (if (coll? dir) dir [dir])
-          nses (->> (set dirs)
-                    (map io/file)
-                    (mapcat find/find-namespaces-in-dir))
-          nses (filter (ns-filter options) nses)]
-      (println (format "\nRunning tests in %s" dirs))
-      (dorun (map require nses))
-      (try
-        (filter-vars! nses (var-filter options))
-        (apply test/run-tests nses)
-        (finally
-          (restore-vars! nses))))))
+; (alter-var-root #'clojure.test/*load-tests* (constantly false))
+; (try (tests :should-not-load => :should-not-load)
+;   (finally (alter-var-root #'clojure.test/*load-tests* (constantly true))))
 
 ;; TODO:
 ;; - [√] tests should not run twice (when loaded, then when they are run)

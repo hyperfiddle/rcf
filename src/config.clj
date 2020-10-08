@@ -1,31 +1,5 @@
 
-(declare config)
-(def ^:dynamic *config*)
-(def ^:dynamic *currently-loading*)
-
-(def default-config
-  "Any config you may provide to minitest will merge into this base
-  configuration map.
-
-  See `(source default-config)`."
-  {:fail-early         false
-   :silent-success     false
-   :load-tests         true
-   :dir                "test"
-   :on-load {:store    true
-             :run      false}
-   :on-eval {:store    false
-             :run      true}
-   :runner   {:class   minitest.Runner}
-   :reporter {:class   minitest.TermReporter
-              :success {:logo '✅} ;; :dots false
-              :failure {:logo '❌} ;; :dots false
-              :error   {:logo '🔥} ;; :dots false
-              :dots    false}
-   :profiles {:production  {:load-tests       false}
-              :development {:break-on-failure true}
-              :cli         {:reporter {:dots  true}}
-              :ci          [:cli]}})
+(declare default-config)
 
 (defn- read-config []
   (let [f (io/file "./minitest.edn")]
@@ -36,27 +10,48 @@
 (def ^:dynamic *config* (read-config))
 
 ;; Taken from https://gist.github.com/danielpcox/c70a8aa2c36766200a95
-(defn- deep-merge [& maps]
+;; TODO: acknowledge.
+(defn ^:no-doc deep-merge [& maps]
   (apply merge-with (fn [& args]
                       (if (every? #(or (map? %) (nil? %)) args)
                         (apply deep-merge args)
                         (last args)))
          maps))
 
-(defn- profile-config [x]
+(defn- parse-profile [m x]
   (condp call x
     map?        x
-    sequential? (->> x
-                     (map profile-config)
+    sequential? (->> (map (partial parse-profile m) x)
                      (apply deep-merge))
-    (-> *config* :profiles (get x))))
+    (do         (some-> m :contexts (get x) (->> (parse-profile m))))))
+
+(defn context-map? [x]
+  (and (map? x) (contains? x :contexts)))
+
+(defn contextualize [ctxs m]
+  (->> m (clojure.walk/postwalk
+           (fn [form]
+             (if-not (context-map? form)
+               form
+               (let [c           (:contexts form)
+                     active-ctxs (select-keys ctxs (keys c))
+                     c-ms        (map #(parse-profile form (get-in c %))
+                                      active-ctxs)]
+                 (-> (apply deep-merge form c-ms)
+                     ;; prevent merging contexts from contexts
+                     (assoc :contexts (:contexts form)))))))))
 
 (defn config
-  ([] (config *profile*))
-  ([profile]
-   (-> (deep-merge default-config
-                   (dissoc *config* :profiles)
-                   (profile-config profile))
-       (as-> m (deep-merge
-                 m (dissoc (get m (if *currently-loading* :on-load :on-eval))
-                           :store :run))))))
+  [& [profile]]
+  (->> [default-config *config* profile]
+       (map (partial contextualize *contexts*))
+       (apply deep-merge)))
+
+(defmacro with-config [m & body]
+  `(binding [*config* (deep-merge *config* ~m)]
+     ~@body))
+
+(defmacro with-contexts [m & body]
+  `(binding [*contexts* (merge *contexts* ~m)]
+     ~@body))
+

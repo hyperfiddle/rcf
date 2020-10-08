@@ -1,91 +1,118 @@
 (require '[clojure.repl   :refer [pst]]
          '[clojure.pprint :refer [pprint]])
 
-(declare config)
-
 (defprotocol ReporterP
-  (before-all  [this ns->tests])
-  (before-ns   [this ns-name tests])
-  (before-each [this ns-name test])
-  (after-each  [this ns-name report])
-  (after-ns    [this ns-name reports])
-  (after-all   [this ns->reports]))
+  (before-suite     [this ns->tests])
+  (before-namespace [this ns-name tests])
+  (before-block     [this ns-name tests])
+  (before-case      [this ns-name case])
+  (after-case       [this ns-name case])
+  (after-block      [this ns-name report])
+  (after-namespace  [this ns-name reports])
+  (after-suite      [this ns->reports]))
 
-(defn- lines [s]
-  (str/split s #"\r?\n"))
+(defn- lines     [s]         (str/split s #"\r?\n"))
+(defn- tabulate ([s]         (tabulate s "  "))
+                ([s pad]     (->> (lines s)
+                                  (map #(str pad %))
+                                  (str/join "\n"))))
+(defn- printab   [incipit s] (let [ls (lines s)]
+                               (print incipit (first ls))
+                               (print (tabulate
+                                        (apply str (rest ls))
+                                        (->> (repeat (count incipit) \space)
+                                             (apply str))))))
 
-(defn- tabulate [s pad]
-  (->> (lines s)
-       (map #(str pad %))
-       (str/join "\n")))
-
-(def ^:private term-width 80)
+(defmacro ^:private print-maybe-pretty [s & body]
+  `(let [s# ~s]
+     (if (> (count s#) (-> (config) :pretty-limit))
+       (do ~@body)
+       (print s#))))
 
 (defn- print-result [report logo left-ks right-ks]
   (let [left  (get-in report left-ks)
         right (get-in report right-ks)
         s     (format "%s %s => %s\n" logo left right)]
-    (if (> (count s) (* 2 term-width))
+    (print-maybe-pretty
+      (format "%s %s => %s\n" logo left right)
       (let [left-pp  (with-out-str (pprint left))
             right-pp (with-out-str (pprint right))]
-        (printf "%s %s\n" logo (first (lines left-pp)))
-        (print (tabulate (apply str (rest (lines left-pp))) "  "))
+        (printab logo left-pp)
         (println "=>")
-        (print (tabulate right-pp)))
-      (print s))))
+        (printab (apply  str  (repeat (count (str logo)) \space))  right-pp)))))
+
+(defmacro ^:private once [a pth expr]
+  `(let [a# ~a  pth# ~pth]
+     (when-not (get-in @a# pth#)
+       (let [result# ~expr]
+         (swap! a# assoc-in pth# true)
+         result#))))
+
+(defmacro ^:private if-once [a pth expr & [else]]
+  `(if-let [cached# (once ~a ~pth ~expr)]
+     cached#
+     ~else))
 
 (defn pluralize-on [x n]
   (str x (if (> n 1) "s" "")))
 
 (defrecord TermReporter [opts store]
   ReporterP
-  (before-all
+  (before-suite
     [this ns->tests]
-    ; (reset! store {}) TODO: remove
     (newline)
     (let [ns-cnt (count ns->tests)
-          ts-cnt (->> ns->tests vals (apply concat) count)]
-      (printf "-- Running Minitest on %d %s (%d %s)\n"
-                ns-cnt
-                (-> "namespace"  (pluralize-on ns-cnt))
-                ts-cnt
-                (-> "test"       (pluralize-on ts-cnt)))))
-  (before-ns
+          ts-cnt (->> ns->tests vals (apply concat) (apply concat) count)]
+      (once store [:announced-suite]
+            (printf "-- Running minitest on %d %s (%d %s)\n"
+                    ns-cnt (-> "namespace" (pluralize-on ns-cnt))
+                    ts-cnt (-> "test"      (pluralize-on ts-cnt))))))
+  (before-namespace
     [this ns-name tests]
-    (newline)
-    (let [ts-cnt (count tests)]
-      (printf "---- Testing %s (%d %s)\n"
+    (let [ts-cnt (->> tests (apply concat) count)]
+      (printf (if-once store [:announced-nss ns-name]
+                "---- Testing %s (%d %s)\n"
+                "---- Testing %s (%d more %s)\n")
               ns-name ts-cnt (-> "test" (pluralize-on ts-cnt)))))
-  (before-each [this ns-name test])
-  (after-each
+  (before-block [this ns-name tests] nil)
+  (before-case  [this ns-name test]  nil)
+  (after-case
     [this ns-name report]
-    (case (:status report)
-      :error     (if (get-in opts [:error :dots] (:dots opts))
-                   (print (-> opts :error :logo))
-                   (do (print-result report (-> opts :error :logo)
-                                         [:result :form] [:expected :val])
-                           (pst (:error report) (:error-depth opts))
-                           (swap! store update-in [:counts :error] (fnil inc 0))))
-      :failure   (if (get-in opts [:failure :dots] (:dots opts))
-                   (print (-> opts :failure :logo))
-                   (do (print-result report (-> opts :failure :logo)
-                                     [:result :form] [:expected :val])
-                       (let [v (get-in report [:result :val])
-                             s (with-out-str (println "Actual:" v))]
-                         (if (> (count s) (* 2 term-width))
-                           (do (println "Actual:" v)
-                               (print (tabulate (with-out-str (pprint v)))))
-                           (print s)))
-                       (swap! store update-in [:counts :failure] (fnil inc 0))))
-      :success   (if (get-in opts [:success :dots] (:dots opts))
-                   (print (-> opts :success :logo))
-                   (print-result report (-> opts :success :logo)
-                                 [:result :form] [:expected :val]))))
-  (after-ns [this ns-name reports])
-  (after-all
+    (let [status (:status report)
+          conf   (with-contexts {:status status} (config))
+          logo   (-> conf :reporter :logo)]
+      (with-contexts {:status status}
+        (if (-> conf :reporter :dots)
+          (print logo)
+          (do (swap! store update-in [:counts status] (fnil inc 0))
+              (print-result report logo [:result :form] [:expected :val])
+              (case status
+                :error   (pst (:error report) (:error-depth opts))
+                :failure (let [v   (-> report :result :val)
+                               act "  Actual:"
+                               s   (with-out-str (println act v))]
+                           (print-maybe-pretty
+                             (print-str act v "\n")
+                             (printab act (with-out-str (pprint v)) "\n")))
+                nil)))))
+    report)
+  (after-block
+    [this ns-name reports]
+    reports)
+  (after-namespace
+    [this ns-name reports]
+    (newline)
+    ;; If the last report was printed in `:dots` mode, it needs a newline
+    (when (with-contexts {:status (-> reports last :status)}
+            (-> (config) :reporter :dots))
+      (newline))
+    reports)
+  (after-suite
     [this ns->reports]
     (let [counts (:counts @store)]
       (when-not (-> (config) :fail-early)
         (newline)
-        (printf "%d failures, %d errors.\n" (:failure counts) (:error counts))
-        (newline)))))
+        (printf "%d failures, %d errors.\n"
+                (:failure counts 0) (:error counts 0))
+        (newline)))
+    ns->reports))

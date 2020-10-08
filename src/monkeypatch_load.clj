@@ -1,26 +1,33 @@
 (require '[robert.hooke :refer [add-hook]])
 
-(def ^:no-doc ^:dynamic *currently-loading* false)
-(def ^:no-doc ^:dynamic *tests-to-process*  nil)
+(defn clear-tests!        [a & nss]    (swap! a #(apply dissoc % nss)))
+(defn add-tests!          [a ns blocs] (swap! a update ns concat blocs))
+(defn store-tests!        [ns blocs]   (add-tests! *tests*            ns blocs))
+(defn process-after-load! [ns blocs]   (add-tests! *tests-to-process* ns blocs))
 
-(defn- clear-tests [ns-name]
-  (swap! *tests* dissoc ns-name))
+(defn process-tests-on-load-now! []
+  (assert *currently-loading*)
+  (try
+    (let [conf (config)]
+      (when (:store conf) (run! #(apply store-tests! %) @*tests-to-process*))
+      (when (:run conf)   (run-and-report! :suite @*tests-to-process*)))
+    (finally
+      (reset! *tests-to-process* nil))))
 
-(declare process-tests-on-load-now!)
-(defn- hook-around-load [orig-load & paths]
-  (binding [*currently-loading* true
-            *tests-to-process* (atom nil)]
-    (let [nss    (->> paths (map #(-> %
-                                      (str/replace #"^/" "")
-                                      (str/replace "/" ".")
-                                      symbol)))
-          result (do (run! clear-tests nss)
-                     (apply orig-load paths))
-          conf   (config)]
-      (when (or (-> conf :on-load :store)
-                (-> conf :on-load :run))
-        (run! #(apply process-tests-on-load-now! %) @*tests-to-process*))
-      result)))
+(defn- around-load-hook [orig-load & paths]
+  (with-contexts {:exec-mode :load}
+    (binding [*currently-loading* true
+              *tests-to-process* (atom nil)]
+      (let [conf        (config)
+            nss         (map #(-> (str/replace #"^/" "" %)
+                                  (str/replace "/" ".")
+                                  symbol)
+                             paths)
+            load-result (do (apply clear-tests! *tests* nss)
+                            (ensuring-runner&reporter (apply orig-load paths)))]
+        (when (or (:store conf) (:run conf))
+          (process-tests-on-load-now!))
+        load-result))))
 
-(when (load-tests?)
-  (add-hook #'clojure.core/load #'hook-around-load))
+(defn- apply-patch-to-load []
+  (add-hook #'clojure.core/load #'around-load-hook))

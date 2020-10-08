@@ -2,23 +2,26 @@
 (declare run-and-report!)
 
 (defprotocol RunnerP
-  (run-nss-tests [this ns->tests])
-  (run-ns-tests  [this ns tests])
-  (run-one-test  [this ns test]))
+  (run-suite [this ns->tests])
+  (run-namespace  [this ns tests])
+  (run-block      [this ns cases])
+  (run-case       [this ns case]))
 
 (defn-    managed-ex?  [x]      (and (vector? x) (-> x first (= ::caught))))
 (defn-    ex           [x]      (second x))
 (defmacro managing-exs [& body] `(try ~@body
                                    (catch Throwable t# [::caught t#])))
 
-(defn- ^:no-doc run-test-and-yield-report! [ns {:keys [test expectation]}]
+(defn- ^:no-doc run-test-and-yield-report! [ns {:keys [test expectation] :as m}]
   (let [result   (managing-exs
                    (doto (call (:thunk test))
                          (as-> res (set! *3 *2) (set! *2 *1) (set! *1 res))))
         expected (managing-exs (call (:thunk expectation)))]
     (merge {:ns       ns
-            :result   {:form (:form test)        :val result}
-            :expected {:form (:form expectation) :val expected}}
+            :result   {:form (:form test)
+                       :val  (when-not (managed-ex? result)   result)}
+            :expected {:form (:form expectation)
+                       :val  (when-not (managed-ex? expected) expected)}}
            (cond (managed-ex? expected) {:status :error  :error (ex expected)}
                  (managed-ex? result)   {:status :error  :error (ex result)}
                  (= result expected)    {:status :success}
@@ -26,13 +29,13 @@
 
 (defrecord Runner [opts store]
   RunnerP
-  (run-nss-tests [this ns->tests] (->>
-                                    ns->tests
-                                    (mapv #(vector (key %) (run-and-report! %)))
-                                    (into {})
-                                    doall))
-  (run-ns-tests  [this ns tests]  (->>
-                                    tests
-                                    (map #(run-and-report! [ns %]))
-                                    doall))
-  (run-one-test  [this ns test]   (run-test-and-yield-report! ns test)))
+  (run-suite     [this ns->tests] (->> ns->tests
+                                       (mapv (fn [[ns tsts]]
+                                               [ns (run-and-report!
+                                                     :namespace ns tsts)]))
+                                       (into {})))
+  (run-namespace [this ns tests]  (doall (map #(run-and-report! :block ns %)
+                                              tests)))
+  (run-block     [this ns cases]  (doall (map #(run-and-report! :case ns %)
+                                              cases)))
+  (run-case      [this ns case]   (run-test-and-yield-report! ns case)))
