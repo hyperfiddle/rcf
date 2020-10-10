@@ -3,7 +3,8 @@
   (:require [clojure.test   :refer [deftest testing is]]
             [clojure.string :as str]
             [minitest       :refer [tests test! *tests* *currently-loading*
-                                    *config* with-contexts]]))
+                                    *config* with-contexts]]
+            [minitest-test-namespace]))
 
 ;; To debug
 ; (defmacro with-out-str [& args]
@@ -11,8 +12,6 @@
 ;      (println "*** Printed:")
 ;      (print out#)
 ;      out#))
-
-(require 'minitest-test-namespace)
 
 (deftest test-on-load
   (reset! *tests* {})
@@ -61,10 +60,10 @@
 (tests (inc-it 1) => 2)
 (tests (inc-it 2) => 3)
 
-; (defn inc-it* [x]
-;   (inc x))
-; ;; Raises: Attempting to call unbound fn: #'minitest/inc-it*.
-; ;; Solution: run the tests after clojure.core/load is done defining the vars.
+(defn inc-it* [x]
+  (inc x))
+;; Raises: Attempting to call unbound fn: #'minitest/inc-it*.
+;; Solution: run the tests after clojure.core/load is done defining the vars.
 
 
 ; ;; - [√] Tests can refer to the lexical environment

@@ -11,32 +11,32 @@
   (after-namespace  [this ns-name reports])
   (after-suite      [this ns->reports]))
 
-(defn- lines     [s]         (str/split s #"\r?\n"))
-(defn- tabulate ([s]         (tabulate s "  "))
-                ([s pad]     (->> (lines s)
-                                  (map #(str pad %))
-                                  (str/join "\n"))))
-(defn- printab   [incipit s] (let [ls (lines s)]
-                               (print incipit (first ls))
-                               (print (tabulate
-                                        (apply str (rest ls))
-                                        (->> (repeat (count incipit) \space)
-                                             (apply str))))))
+(defn- lines   [s]         (str/split s #"\r?\n"))
+(defn- tabl   ([s]         (tabl s "  "))
+              ([s pad]     (->> (lines s)
+                    (map #(str pad %))
+                    (str/join "\n"))))
+(defn- printab [tab s] (let [ls (lines s)]
+                               (print tab (first ls))
+                               (print (tabl (apply str (rest ls))
+                                            (->> (repeat (count tab) \space)
+                                                 (apply str))))))
 
-(defmacro ^:private print-maybe-pretty [s & body]
-  `(let [s# ~s]
-     (if (> (count s#) (-> (config) :pretty-limit))
-       (do ~@body)
-       (print s#))))
+(defn- ugly?
+  ([s]            (ugly? s 1))
+  ([s term-ratio] (> (count s)
+                     (->> (config) :reporter :term-width (* term-ratio)))))
 
 (defn- print-result [report logo left-ks right-ks]
   (let [left  (get-in report left-ks)
         right (get-in report right-ks)
-        s     (format "%s %s => %s\n" logo left right)]
-    (print-maybe-pretty
-      (format "%s %s => %s\n" logo left right)
-      (let [left-pp  (with-out-str (pprint left))
-            right-pp (with-out-str (pprint right))]
+        left-pp  (with-out-str (pprint left))
+                    right-pp (with-out-str (pprint right))
+        s     (print-str logo left "=>" right \newline)]
+    ;; TODO
+    (if-not (ugly? s)
+      (print s)
+      (do
         (printab logo left-pp)
         (println "=>")
         (printab (apply  str  (repeat (count (str logo)) \space))  right-pp)))))
@@ -79,21 +79,30 @@
   (after-case
     [this ns-name report]
     (let [status (:status report)
-          conf   (with-contexts {:status status} (config))
-          logo   (-> conf :reporter :logo)]
+          conf     (with-contexts {:status status} (config))
+          logo     (-> conf :reporter :logo)
+          left-ks  [:result :form]
+          right-ks [:expected :val]
+          left     (get-in report left-ks)]
       (with-contexts {:status status}
         (if (-> conf :reporter :dots)
           (print logo)
           (do (swap! store update-in [:counts status] (fnil inc 0))
-              (print-result report logo [:result :form] [:expected :val])
+              (print-result report logo left-ks right-ks)
               (case status
                 :error   (pst (:error report) (:error-depth opts))
-                :failure (let [v   (-> report :result :val)
-                               act "  Actual:"
-                               s   (with-out-str (println act v))]
-                           (print-maybe-pretty
-                             (print-str act v "\n")
-                             (printab act (with-out-str (pprint v)) "\n")))
+                :failure (let [v      (-> report :result :val)
+                               left-n (count (print-str logo left))
+                               act    (tabl "Actual:" "   ")  ; 💪
+                               act-n  (count act)             ; ✌️
+                               pad    (-> (max (- left-n (- act-n 4)) 0)
+                                          (repeat \space)
+                                          (->> (apply str)))
+                               prompt (str act pad)
+                               s      (print-str prompt v "\n")]
+                           (if-not (ugly? s)
+                             (print s)
+                             (printab prompt (with-out-str (pprint v)) "\n")))
                 nil)))))
     report)
   (after-block

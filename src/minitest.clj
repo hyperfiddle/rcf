@@ -35,16 +35,16 @@
   configuration map.
 
   See `(source default-config)`."
-  {:dir          "test"
+  {:dirs         ["test"]
    :load-tests   true
-   :pretty-limit 160 ;; standard term-width * 2
    :runner       {:class            minitest.Runner
                   :fail-early       false
                   :break-on-failure false}
    :reporter     {:class       minitest.TermReporter
-                  :error-depth 56
-                  :compact     true
-                  :silent      false
+                  :term-width   80
+                  :error-depth  20
+                  :compact      true
+                  :silent       false
                   :contexts {:status {:success {:logo '✅}
                                       :failure {:logo '❌}
                                       :error   {:logo '🔥}}}}
@@ -140,8 +140,7 @@
          nil))))
 
 (defn- find-test-namespaces []
-  (let [dir  (-> (config) :dir)
-        dirs (set (if (coll? dir) dir [dir]))]
+  (let [dirs (-> (config) :dirs set)]
     ;; TODO: won't look for cljs files
     (mapcat (->| io/file find-namespaces-in-dir)
             dirs)))

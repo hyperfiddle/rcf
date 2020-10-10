@@ -42,8 +42,8 @@
                      (assoc :contexts (:contexts form)))))))))
 
 (defn config
-  [& [profile]]
-  (->> [default-config *config* profile]
+  [& [conf]]
+  (->> [default-config *config* conf]
        (map (partial contextualize *contexts*))
        (apply deep-merge)))
 
