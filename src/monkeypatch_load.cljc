@@ -29,5 +29,5 @@
           (process-tests-on-load-now!))
         load-result))))
 
-(defn- apply-patch-to-load []
-  (add-hook #'clojure.core/load #'around-load-hook))
+#?(:clj (defn- apply-patch-to-load []
+          (add-hook #'clojure.core/load #'around-load-hook)))

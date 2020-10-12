@@ -1,5 +1,6 @@
 (require '[clojure.repl   :refer [pst]]
-         '[clojure.pprint :refer [pprint]])
+#?(:clj  '[clojure.pprint :refer [pprint]]
+   :cljs '[cljs.pprint :refer [pprint]]))
 
 (defprotocol ReporterP
   (before-suite     [this ns->tests])

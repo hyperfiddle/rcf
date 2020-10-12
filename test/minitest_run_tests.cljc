@@ -1,12 +1,8 @@
 (ns minitest-run-tests
-  (:gen-class)
+  #?(:clj (:gen-class))
   (:require [clojure.test :refer [run-tests]]
             ;; Apply the monkey-patch to clojure.load
             [minitest]))
-
-
-
-
 
 (defn -main [& args]
   ;; Load the tests (in another run of load, monkey-patched)

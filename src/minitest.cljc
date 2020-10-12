@@ -1,12 +1,11 @@
 (ns minitest
-  (:gen-class)
+  #?(:clj (:gen-class))
   (:refer-clojure :exclude [test unquote])
-  (:use clojure.pprint)
   (:require [clojure.test]
-            [clojure.java.io              :as io]
-            [clojure.edn                  :as edn]
-            [clojure.string               :as str]
-            [clojure.tools.namespace.find :refer [find-namespaces-in-dir]]
+   #?(:clj  [clojure.tools.namespace.find :refer [find-namespaces-in-dir]])
+   #?(:clj  [clojure.java.io              :as    io])
+            [clojure.edn                  :as    edn]
+            [clojure.string               :as    str]
             [clojure.walk                 :refer [postwalk]]))
 
 (declare tests test!)
@@ -19,16 +18,19 @@
 (def ^:no-doc ^:dynamic *tests-to-process*  nil)
 
 (declare config)
-(defn- load-tests? [] (and clojure.test/*load-tests* (-> (config) :load-tests)))
 (def ^:private ->|    #(apply comp (reverse %&)))
 (def ^:private call   #(apply %1 %&))
 
-(load "config")
-(load "reporter")
-(load "runner")
-(load "run_and_report")
-(load "ns_selector")
-(load "monkeypatch_load")
+(defn- load-tests? []
+ #?(:clj  (and clojure.test/*load-tests* (-> (config) :load-tests))
+    :cljs true)) ;; will alway be run from a cljs REPL.
+
+(load-file "src/config.cljc")
+(load-file "src/reporter.cljc")
+(load-file "src/runner.cljc")
+(load-file "src/run_and_report.cljc")
+(load-file "src/ns_selector.cljc")
+(load-file "src/monkeypatch_load.cljc")
 
 (def default-config
   "Any config you may provide to minitest will merge into this base
@@ -55,7 +57,7 @@
                               :cli           {:reporter {:dots             true}}
                               :ci            [:cli]}}})
 
-(when (load-tests?)  (apply-patch-to-load))
+#?(:clj (when (load-tests?)  (apply-patch-to-load)))
 
 ;; ## When and how to run tests
 ;; - [√] tests are run once

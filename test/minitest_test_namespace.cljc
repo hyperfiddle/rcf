@@ -1,5 +1,5 @@
 (ns minitest-test-namespace
-  (:require [minitest]))
+  (:require [minitest :include-macros true]))
 
 ;; Keep this form the second in the file
 (minitest/tests
