@@ -3,14 +3,14 @@
    :cljs '[cljs.pprint :refer [pprint]]))
 
 (defprotocol ReporterP
-  (before-suite     [this ns->tests])
-  (before-namespace [this ns-name tests])
-  (before-block     [this ns-name tests])
-  (before-case      [this ns-name case])
-  (after-case       [this ns-name case])
-  (after-block      [this ns-name report])
-  (after-namespace  [this ns-name reports])
-  (after-suite      [this ns->reports]))
+  (before-report-suite     [this ns->tests])
+  (before-report-namespace [this ns-name tests])
+  (before-report-block     [this ns-name tests])
+  (before-report-case      [this ns-name case])
+  (report-case             [this ns-name report])
+  (after-report-block      [this ns-name reports])
+  (after-report-namespace  [this ns-name reports])
+  (after-report-suite      [this ns->reports]))
 
 (defn- lines   [s]         (str/split s #"\r?\n"))
 (defn- tabl   ([s]         (tabl s "  "))
@@ -59,7 +59,7 @@
 
 (defrecord TermReporter [opts store]
   ReporterP
-  (before-suite
+  (before-report-suite
     [this ns->tests]
     (newline)
     (let [ns-cnt (count ns->tests)
@@ -68,16 +68,16 @@
             (printf "-- Running minitest on %d %s (%d %s)\n"
                     ns-cnt (-> "namespace" (pluralize-on ns-cnt))
                     ts-cnt (-> "test"      (pluralize-on ts-cnt))))))
-  (before-namespace
+  (before-report-namespace
     [this ns-name tests]
     (let [ts-cnt (->> tests (apply concat) count)]
       (printf (if-once store [:announced-nss ns-name]
                 "---- Testing %s (%d %s)\n"
                 "---- Testing %s (%d more %s)\n")
               ns-name ts-cnt (-> "test" (pluralize-on ts-cnt)))))
-  (before-block [this ns-name tests] nil)
-  (before-case  [this ns-name test]  nil)
-  (after-case
+  (before-report-block [this ns-name tests] nil)
+  (before-report-case  [this ns-name test]  nil)
+  (report-case
     [this ns-name report]
     (let [status (:status report)
           conf     (with-contexts {:status status} (config))
@@ -106,10 +106,10 @@
                              (printab prompt (with-out-str (pprint v)) "\n")))
                 nil)))))
     report)
-  (after-block
+  (after-report-block
     [this ns-name reports]
     reports)
-  (after-namespace
+  (after-report-namespace
     [this ns-name reports]
     (newline)
     ;; If the last report was printed in `:dots` mode, it needs a newline
@@ -117,7 +117,7 @@
             (-> (config) :reporter :dots))
       (newline))
     reports)
-  (after-suite
+  (after-report-suite
     [this ns->reports]
     (let [counts (:counts @store)]
       (when-not (-> (config) :fail-early)

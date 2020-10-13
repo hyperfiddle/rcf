@@ -10,7 +10,7 @@
   (try
     (let [conf (config)]
       (when (:store conf) (run! #(apply store-tests! %) @*tests-to-process*))
-      (when (:run conf)   (run-and-report! :suite @*tests-to-process*)))
+      (when (:run conf)   (run-execute-report! :suite @*tests-to-process*)))
     (finally
       (reset! *tests-to-process* nil))))
 

@@ -1,16 +1,15 @@
 
-(declare run-and-report!)
+(declare run-execute-report!)
 
 (defprotocol RunnerP
-  (run-suite [this ns->tests])
-  (run-namespace  [this ns tests])
-  (run-block      [this ns cases])
-  (run-case       [this ns case]))
+  (run-suite     [this ns->tests])
+  (run-namespace [this ns tests])
+  (run-block     [this ns cases])
+  (run-case      [this exe ns case]))
 
 (defn-    managed-ex?  [x]      (and (vector? x) (-> x first (= ::caught))))
 (defn-    ex           [x]      (second x))
-(defmacro managing-exs [& body] `(try ~@body
-                                   (catch Throwable t# [::caught t#])))
+(defmacro managing-exs [& body] `(try ~@body (catch Throwable t# [::caught t#])))
 
 (defn- ^:no-doc run-test-and-yield-report! [ns {:keys [test expectation] :as m}]
   (let [result   (managing-exs
@@ -27,15 +26,18 @@
                  (= result expected)    {:status :success}
                  :else                  {:status :failure}))))
 
+(declare construct-record)
 (defrecord Runner [opts store]
   RunnerP
-  (run-suite     [this ns->tests] (->> ns->tests
-                                       (mapv (fn [[ns tsts]]
-                                               [ns (run-and-report!
-                                                     :namespace ns tsts)]))
-                                       (into {})))
-  (run-namespace [this ns tests]  (doall (map #(run-and-report! :block ns %)
-                                              tests)))
-  (run-block     [this ns cases]  (doall (map #(run-and-report! :case ns %)
-                                              cases)))
-  (run-case      [this ns case]   (run-test-and-yield-report! ns case)))
+  (run-suite     [this ns->tests]   (->> ns->tests
+                                         (mapv (fn [[ns tsts]]
+                                                 [ns (run-execute-report!
+                                                       :namespace ns tsts)]))
+                                         (into {})))
+  (run-namespace [this ns tests]    (doall
+                                      (map #(run-execute-report! :block ns %)
+                                           tests)))
+  (run-block     [this ns cases]    (doall
+                                      (map #(run-execute-report! :case ns %)
+                                           cases)))
+  (run-case      [this exe ns case] (.execute-case exe ns case)))

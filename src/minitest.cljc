@@ -26,9 +26,10 @@
     :cljs true)) ;; will alway be run from a cljs REPL.
 
 (load-file "src/config.cljc")
-(load-file "src/reporter.cljc")
 (load-file "src/runner.cljc")
-(load-file "src/run_and_report.cljc")
+(load-file "src/executor.cljc")
+(load-file "src/reporter.cljc")
+(load-file "src/run_execute_report.cljc")
 (load-file "src/ns_selector.cljc")
 (load-file "src/monkeypatch_load.cljc")
 
@@ -42,14 +43,17 @@
    :runner       {:class            minitest.Runner
                   :fail-early       false
                   :break-on-failure false}
-   :reporter     {:class       minitest.TermReporter
-                  :term-width   80
-                  :error-depth  20
-                  :compact      true
-                  :silent       false
+   :reporter     {:class            minitest.TermReporter
+                  :term-width       80
+                  :error-depth      20
+                  :compact          true
+                  :silent           false
                   :contexts {:status {:success {:logo '✅}
                                       :failure {:logo '❌}
                                       :error   {:logo '🔥}}}}
+   :executor     {:clj  {:class CljExecutor}
+                  :cljs {:class CljsExecutor}}
+   :executors    [:clj :cljs]
    :contexts     {:exec-mode {:load          {:store true,  :run false}
                               :eval          {:store false, :run true}}
                   :env       {:production    {:load-tests                  false}
@@ -137,7 +141,7 @@
          (if *currently-loading*
            (when (or (:store c#) (:run c#)) (process-after-load!    ns# cases#))
            (do (when (:store c#)            (store-tests!           ns# cases#))
-               (when (:run c#)              (run-and-report! :block ns# case#))
+               (when (:run c#)              (run-execute-report! :block ns# case#))
                ))
          nil))))
 
@@ -168,7 +172,7 @@
               (if (empty? ns->tests)
                 :no-test
                 (with-config conf
-                  (run-and-report! :suite ns->tests)
+                  (run-execute-report! :suite ns->tests)
                   nil)))))
 
 
