@@ -39,22 +39,6 @@
                 (testing "tests are not run"
                   (is (= "" printed))))))))
 
-;; TODO: set features for reader conditionnals
-(defn- forms-in-file ""
-  [f]
-  (let [forms (with-open [r (-> (io/reader f)
-                                (clojure.lang.LineNumberingPushbackReader.))]
-                (loop [r r  forms []]
-                  (let [start-line (.getLineNumber   r)
-                        start-col  (.getColumnNumber r)
-                        form       (read {:eof ::end} r)]
-                    (if (= form ::end)
-                      forms
-                      (recur r (conj forms (with-meta form
-                                             {:line start-line
-                                              :col  start-col})))))))]))
-
-
 (defn- nth-file-form [n f]
   (-> (str \[ (slurp f) \])
       read-string

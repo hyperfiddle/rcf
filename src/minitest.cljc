@@ -1,4 +1,5 @@
 (ns minitest
+  #?(:clj (:use clojure.pprint))
   #?(:clj (:gen-class))
   (:refer-clojure :exclude [test unquote])
   (:require [clojure.test]
@@ -18,8 +19,8 @@
 (def ^:no-doc ^:dynamic *tests-to-process*  nil)
 
 (declare config)
-(def ^:private ->|    #(apply comp (reverse %&)))
-(def ^:private call   #(apply %1 %&))
+(def ^:no-doc ->|    #(apply comp (reverse %&)))
+(def ^:no-doc call   #(apply %1 %&))
 
 (defn- load-tests? []
  #?(:clj  (and clojure.test/*load-tests* (-> (config) :load-tests))
@@ -27,6 +28,7 @@
 
 (load-file "src/config.cljc")
 (load-file "src/runner.cljc")
+(load-file "src/clojurescript.cljc")
 (load-file "src/executor.cljc")
 (load-file "src/reporter.cljc")
 (load-file "src/run_execute_report.cljc")
@@ -51,8 +53,12 @@
                   :contexts {:status {:success {:logo '✅}
                                       :failure {:logo '❌}
                                       :error   {:logo '🔥}}}}
-   :executor     {:clj  {:class CljExecutor}
-                  :cljs {:class CljsExecutor}}
+   :executor     {:clj  {:class     CljExecutor}
+                  :cljs {:class     CljsExecutor
+                         :cljsbuild {:source-paths [cljs-gen-src-path]
+                                     :compiler {:output-to     cljs-gen-out-path
+                                                :main          nil
+                                                :optimizations :none}}}}
    :executors    [:clj :cljs]
    :contexts     {:exec-mode {:load          {:store true,  :run false}
                               :eval          {:store false, :run true}}
@@ -113,36 +119,41 @@
 ;;       lot of tests).
 ;; - [ ] std out is enough (not great with lot of tests)
 
-(defn- juxtmap [& {:as m}]
+(defn ^:no-doc juxtmap [& {:as m}]
   (fn [& args]
     (->> m
          (map #(as-> % [k v]  [k (apply v args)]))
          (into (empty m)))))
 
-(def ^:private as-thunk #(do `(fn [] ~%)))
-(def ^:private as-quote #(do `'~%))
+(def ^:no-doc as-thunk #(do `(fn [] ~%)))
+(def ^:no-doc as-quote #(do `'~%))
 
 (defmacro tests [& body]
   (when (load-tests?)
-    (let [parsed (->> (partition 3 1 body)
-                      (filter (->| second #{'=>}))
-                      (map (juxt first last)))] ;; [test, expectation]
+    (let [this-file     (io/file (ClassLoader/getSystemResource *file*))
+          line-col-body (if this-file
+                          (->> (-> &form meta (select-keys [:line :column]))
+                               (read-forms-upto this-file)
+                               last
+                               rest) ;; drop initial 'tests symbol
+                          body)
+          parsed        (->> (partition 3 1 line-col-body)
+                             (filter (->| second #{'=>}))
+                             (map (juxt first last)))] ;; [test, expectation]
       `(let [c#     (config)
              ns#    (ns-name *ns*)
-             cases# ~(vector
-                       (mapv
-                         (juxtmap
-                           :test        (juxtmap :form  (->| first as-quote)
-                                                 :thunk (->| first as-thunk))
-                           :expectation (juxtmap :form  (->| second as-quote)
-                                                 :thunk (->| second as-thunk)))
-                         parsed))
-             case#  (first cases#)]
+             block# ~(mapv (juxtmap :test
+                                    (juxtmap :form  (->| first as-quote)
+                                             :thunk (->| first as-thunk))
+                                    :expectation
+                                    (juxtmap :form  (->| second as-quote)
+                                             :thunk (->| second as-thunk)))
+                           parsed)]
          (if *currently-loading*
-           (when (or (:store c#) (:run c#)) (process-after-load!    ns# cases#))
-           (do (when (:store c#)            (store-tests!           ns# cases#))
-               (when (:run c#)              (run-execute-report! :block ns# case#))
-               ))
+           (when (or (:store c#) (:run c#)) (process-after-load!    ns# [block#]))
+           (do (when (:store c#)            (store-tests!           ns# [block#]))
+               (when (:run   c#)            (run-execute-report!
+                                              :block ns# block#))))
          nil))))
 
 (defn- find-test-namespaces []

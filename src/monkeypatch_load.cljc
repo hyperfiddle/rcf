@@ -24,7 +24,7 @@
                                   symbol)
                              paths)
             load-result (do (apply clear-tests! *tests* nss)
-                            (ensuring-runner&reporter (apply orig-load paths)))]
+                            (ensuring-runner+executor+reporter (apply orig-load paths)))]
         (when (or (:store conf) (:run conf))
           (process-tests-on-load-now!))
         load-result))))

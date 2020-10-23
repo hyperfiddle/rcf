@@ -18,7 +18,7 @@
 (def ^:dynamic *executor*)
 (def ^:dynamic *reporter*)
 
-(defmacro ^:private ensuring-runner&reporter [& body]
+(defmacro ^:private ensuring-runner+executor+reporter [& body]
   `(let [c# (config)
          b?# bound?]
      (binding [*runner*   (if-not (b?# #'*runner*)   (runner   c#) *runner*)
@@ -30,7 +30,7 @@
   ([mode ns->tsts] (run-execute-report! mode nil ns->tsts))
   ([mode ns tsts]
    (let [exe (executor (config))]
-     (ensuring-runner&reporter
+     (ensuring-runner+executor+reporter
         (case mode
           :suite     (do (before-report-suite          *reporter* tsts)
                          (before-execute-suite         *executor* tsts)
