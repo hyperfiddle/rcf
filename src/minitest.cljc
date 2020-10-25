@@ -42,12 +42,13 @@
   See `(source default-config)`."
   {:dirs         ["test"]
    :load-tests   true
+   :fail-fast    false
    :runner       {:class            minitest.Runner
-                  :fail-early       false
                   :break-on-failure false}
    :reporter     {:class            minitest.TermReporter
+                  :out              *out*
                   :term-width       80
-                  :error-depth      20
+                  :error-depth      12
                   :compact          true
                   :silent           false
                   :contexts {:status {:success {:logo '✅}
@@ -98,7 +99,7 @@
 ;;           - [√] a predicate fn
 ;;         - and a blacklist logic using these same selectors but:
 ;;           - [!] prefixed with "!" (ns name & ns globs only).
-;;           - [ ] or by providing a sequence to an ":exclude" option
+;;           - [√] or by providing a sequence to an ":exclude" option
 ;; - The test! fn behaves the same but when no args are provided:
 ;;   - [√] it runs tests for the local namespace if it possesses minitest tests.
 ;;   - [√] it runs all the tests otherwise (for instance in the REPL from the
@@ -106,7 +107,7 @@
 
 ;; ## Config
 ;; - Options:
-;;   - [ ] :fail-early.
+;;   - [ ] :fail-fast.
 ;;   - [ ] :break-on-failure (like https://github.com/ConradIrwin/pry-rescue).
 ;;   - [√] :silent-success.
 ;; - [√] a default config for each environment (CLI, REPL, on-load).

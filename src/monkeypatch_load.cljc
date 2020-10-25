@@ -19,10 +19,11 @@
     (binding [*currently-loading* true
               *tests-to-process* (atom nil)]
       (let [conf        (config)
-            nss         (map #(-> (str/replace #"^/" "" %)
-                                  (str/replace "/" ".")
-                                  symbol)
-                             paths)
+            path->ns    (->> (all-ns)
+                             (mapv (juxt (->| str @#'clojure.core/root-resource)
+                                         identity))
+                             (into {}))
+            nss         (map (->|  path->ns str symbol) paths)
             load-result (do (apply clear-tests! *tests* nss)
                             (ensuring-runner+executor+reporter (apply orig-load paths)))]
         (when (or (:store conf) (:run conf))

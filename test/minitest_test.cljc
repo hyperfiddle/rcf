@@ -57,14 +57,16 @@
       (is (= 1 (count (re-seq #"\(inc 1\) => 2" printed)))))))
 
 ;; - [√] A "bug". We don't want to have to order the tests any differently
-;;       than the rest of the code
+;;       than the rest of the code; i.e. tests are run after the code has
+;;       loaded.
 (declare inc-it*)
 
 (defn inc-it [x]
   (inc-it* x))
 
 (tests (inc-it 1) => 2)
-(tests (inc-it 2) => 3)
+(tests (inc-it 2) => 3
+       (/ 1 0)    => :oops)
 
 (defn inc-it* [x]
   (inc x))

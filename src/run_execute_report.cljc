@@ -37,20 +37,33 @@
                          (let [ns->rpts (run-suite     *runner*   tsts)]
                            (after-execute-suite        *executor* ns->rpts)
                            (after-report-suite         *reporter* ns->rpts)))
-          :namespace (do (before-report-namespace      *reporter* ns tsts)
-                         (before-execute-namespace     *executor* ns tsts)
-                         (let [rpts     (run-namespace *runner*   ns tsts)]
-                           (after-execute-namespace    *executor* ns rpts)
-                           (after-report-namespace     *reporter* ns rpts)))
-          :block     (do (before-report-block          *reporter* ns tsts)
-                         (before-execute-block         *executor* ns tsts)
-                         (let [rpts     (run-block     *runner*   ns tsts)]
-                           (after-execute-block        *executor* ns rpts)
-                           (after-report-block         *reporter* ns rpts)))
+          :namespace (do (before-report-namespace      *reporter* ns  tsts)
+                         (before-execute-namespace     *executor* ns  tsts)
+                         (let [rpts     (run-namespace *runner*   ns  tsts)]
+                           (after-execute-namespace    *executor* ns  rpts)
+                           (after-report-namespace     *reporter* ns  rpts)))
+          :block     (do (before-report-block          *reporter* ns  tsts)
+                         (before-execute-block         *executor* ns  tsts)
+                         (let [rpts     (run-block     *runner*   ns  tsts)]
+                           (after-execute-block        *executor* ns  rpts)
+                           (after-report-block         *reporter* ns  rpts)))
           :case      (let [tst tsts]
-                       (before-report-case             *reporter* ns tst)
-                       (before-execute-case            *executor* ns tst)
-                       (let [exe (executor (config))
-                             rpt        (run-case      *runner*   exe ns tsts)]
-                         (after-execute-case           *executor* ns rpt)
-                         (report-case                  *reporter* ns rpt))))))))
+                       (before-report-case             *reporter* ns  tst)
+                       (before-execute-case            *executor* ns  tst)
+                       (let [conf (config)
+                             exe (executor conf)
+                             rpt        (run-case      *runner*   exe ns tsts)
+                             status     (:status rpt)]
+                         (after-execute-case           *executor* ns  rpt)
+                         (if (and (:fail-fast conf)
+                                  (-> status #{:error :failure}))
+                           (do (flush) ;; since the ex will be printed on *err*
+                               (throw (ex-info
+                                        (format
+                                          "Test %s:\n%s"
+                                          (name status)
+                                          (with-out-str
+                                            (with-config {:reporter {:out *out*}}
+                                              (report-case *reporter* ns rpt))))
+                                        (assoc rpt :type :minitest/fail-fast))))
+                           (report-case                *reporter* ns rpt)))))))))

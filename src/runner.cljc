@@ -9,7 +9,11 @@
 
 (defn-    managed-ex?  [x]      (and (vector? x) (-> x first (= ::caught))))
 (defn-    ex           [x]      (second x))
-(defmacro managing-exs [& body] `(try ~@body (catch Throwable t# [::caught t#])))
+(defmacro managing-exs [& body] `(try ~@body
+                                   (catch Throwable t#
+                                     (set! *e t#)
+                                     [::caught t#])))
+
 
 (defn- ^:no-doc run-test-and-yield-report! [ns {:keys [test expectation] :as m}]
   (let [result   (managing-exs
