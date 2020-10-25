@@ -44,8 +44,8 @@
 (defn config
   [& [conf]]
   (->> [default-config *config* conf]
-       (map (partial contextualize *contexts*))
-       (apply deep-merge)))
+       (apply deep-merge)
+       (contextualize *contexts*)))
 
 (defmacro with-config [m & body]
   `(binding [*config* (deep-merge *config* ~m)]

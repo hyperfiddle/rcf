@@ -100,19 +100,19 @@
 ;;           - [!] prefixed with "!" (ns name & ns globs only).
 ;;           - [ ] or by providing a sequence to an ":exclude" option
 ;; - The test! fn behaves the same but when no args are provided:
-;;   - [ ] it runs tests for the local namespace if it possesses minitest tests.
-;;   - [ ] it runs all the tests otherwise (for instance in the REPL from the
+;;   - [√] it runs tests for the local namespace if it possesses minitest tests.
+;;   - [√] it runs all the tests otherwise (for instance in the REPL from the
 ;;         "user" namespace).
 
 ;; ## Config
 ;; - Options:
 ;;   - [ ] :fail-early.
 ;;   - [ ] :break-on-failure (like https://github.com/ConradIrwin/pry-rescue).
-;;   - [ ] :silent-success.
-;; - [ ] a default config for each environment (CLI, REPL, on-load).
-;; - [ ] which can be overriden in a project's minitest.edn file
-;; - [ ] which can be overriden by ENV_VARS
-;; - [ ] which can be overriden by args passed to the test! fn or the CLI Runner
+;;   - [√] :silent-success.
+;; - [√] a default config for each environment (CLI, REPL, on-load).
+;; - [√] which can be overriden in a project's minitest.edn file
+;; - [x] which can be overriden by ENV_VARS
+;; - [√] which can be overriden by args passed to the test! fn or the CLI Runner
 
 ;; ## Report format
 ;; - [ ] JUnit (a bit more work for a bit more readability in CIs, especially with
@@ -193,7 +193,7 @@
                   ns->tests   (select-keys @*tests* nss)]
               (if (empty? ns->tests)
                 :no-test
-                (with-config conf
+                (with-config (into {} (map vec conf))
                   (run-execute-report! :suite ns->tests)
                   nil)))))
 
