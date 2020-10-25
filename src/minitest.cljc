@@ -79,25 +79,25 @@
 ;;       ordering problems to the already overwhelmed programmer.
 ;; - [√] `test!` can be used at load time to run the tests registered so far.
 ;; - [ ] works well with reload and var unloading (clojure.tools.namespace)
-;; - [ ] when tests are run via the clj test runner or explicitly in the repl
+;; - [√] when tests are run via the clj test runner or explicitly in the repl
 ;;       with the test! fn:
 ;;       - successes: reported.
 ;;       - failures:  reported.
-;; - [ ] when tests are *implicitly* run from the repl:
+;; - [√] when tests are *implicitly* run from the repl:
 ;;       - successes: silenced.
 ;;       - failures: reported.
 
 ;; ## Test selectors
 ;; - The CLI runner should:
-;;   - [ ] run all tests if no args are provided
-;;   - [ ] otherwise proceed with a:
+;;   - [√] run all tests if no args are provided
+;;   - [√] otherwise proceed with a:
 ;;         - whitelist logic using one or more namespace selectors (the args):
-;;           - [ ] a ns name
-;;           - [ ] a ns glob ("my.ns.*")
-;;           - [ ] a regex
-;;           - [ ] a predicate fn
+;;           - [√] a ns name
+;;           - [√] a ns glob ("my.ns.*")
+;;           - [√] a regex
+;;           - [√] a predicate fn
 ;;         - and a blacklist logic using these same selectors but:
-;;           - [ ] prefixed with "!" (ns name & ns globs only).
+;;           - [!] prefixed with "!" (ns name & ns globs only).
 ;;           - [ ] or by providing a sequence to an ":exclude" option
 ;; - The test! fn behaves the same but when no args are provided:
 ;;   - [ ] it runs tests for the local namespace if it possesses minitest tests.
@@ -166,6 +166,15 @@
   (and (keyword? x)
        (not (#{:exclude :all} x)))) ;; kws used for namespace selection
 
+(defn- excludor
+  "Works like clojure.core/or but returns false if one of the values
+  appears to be :exclude. Not a macro, no control flow."
+  [& [a & [b & more] :as all]]
+  (cond
+    (:exclude (set [a b])) false
+    (seq more)            (apply excludor (or a b) more)
+    :else                 (or a b)))
+
 (defn test!
   ([]       (let [ns (ns-name *ns*)]
               (cond
@@ -176,8 +185,10 @@
   ([& args] (let [[conf sels] (->> (partition-all 2 args)
                                    (split-with (->| first config-kw?)))
                   sels        (parse-selectors (apply concat sels))
-                  nss         (-> (filter (apply some-fn sels)
-                                          (find-test-namespaces))
+                  nss         (-> (filter
+                                    (->| (apply juxt sels)
+                                         (partial apply excludor))
+                                    (find-test-namespaces))
                                   (doto (->> (run! require))))
                   ns->tests   (select-keys @*tests* nss)]
               (if (empty? ns->tests)
@@ -198,14 +209,11 @@
 ;; - [ ] display usage
 ;; - [x] options are passed in a bash style (e.g. --option "value")
 ;; - [√] or options are passed clojure style (e.g. :option "value")
-(def ^:private quote?            #(and (seq? %) (-> % first (= 'quote))))
-(def ^:private unquote           second)
-(def ^:private interpret-string  (->| edn/read-string
-                                      #(if (symbol? %) resolve %)
-                                      #(if (quote?  %) unquote %)))
 
 (defn -main [& args]
-  (apply test! (map interpret-string args)))
+  (->> (str \[ (str/join \space args) \])
+       edn/read-string
+       (apply test!)))
 
 ;; TODO:
 ;; - [ ] a nice README.

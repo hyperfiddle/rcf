@@ -51,9 +51,9 @@
                     (binding [*currently-loading* false]
                       (-> (nth-file-form 1 "test/minitest_test_namespace.cljc")
                           eval)))]
-    #_(testing "tests are not stored"
+    (testing "tests are not stored"
       (is (= 0 (count (get @*tests* (ns-name *ns*))))))
-    #_(testing "tests are run once"
+    (testing "tests are run once"
       (is (= 1 (count (re-seq #"\(inc 1\) => 2" printed)))))))
 
 ;; - [√] A "bug". We don't want to have to order the tests any differently

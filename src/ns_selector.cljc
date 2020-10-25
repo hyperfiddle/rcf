@@ -1,19 +1,9 @@
 
-(defn- symbol-ns-selector [sym]
-  (let [s          (name sym)
-        [neg? nme] (if (-> s first (= \!))
-                     [true  (subs s 1)]
-                     [false s])]
-    ((if neg? complement identity)
-     (->| name #{nme}))))
-
-
 (defn- regex? [x]
   (instance? java.util.regex.Pattern x))
 
 (defn- regex-ns-selector [reg]
   #(->> % name (re-matches reg)))
-
 
 ;; Taken from: https://github.com/jkk/clj-glob/blob/master/src/org/satta/glob.clj
 ;; TODO: acknowledge
@@ -43,17 +33,29 @@
 
 (defn- ns-selector [x]
   (condp call x
-    symbol?  (symbol-ns-selector x)
-    regex?   (regex-ns-selector  x)
-    string?  (glob-ns-selector   x)
-    #{:all}  (constantly true)
-    ifn?     (-> name x)))
+    string?     (glob-ns-selector x)
+    symbol?     (glob-ns-selector (name x))
+    regex?      (regex-ns-selector x)
+    #{:all}     (constantly true)
+    coll?       (apply some-fn (map ns-selector x))
+    ifn?        x))
 
-(defn- parse-selectors [[x & more]]
-  (when x
-    (let [[sel even-more]
-          (case x
-            :exclude  [(complement (ns-selector (first more))) (rest more)]
-            :all      [(ns-selector x)                         more]
-            (do       [(ns-selector x)                         more]))]
-      (cons sel (parse-selectors even-more)))))
+(defn- exclude| [f]
+  (with-meta (->| f #(if % :exclude %))
+    {::exclude true}))
+
+(defn- parse-selectors [data]
+  (let [parse
+        (fn parse-them [[x & more]]
+          (when x
+            (let [[sel even-more]
+                  (case x
+                    :exclude  [(exclude| (ns-selector (first more))) (rest more)]
+                    :all      [(ns-selector x)                       more]
+                    (do       [(ns-selector x)                       more]))]
+              (cons sel (parse-them even-more)))))
+        sels (parse data)]
+    ;; if all the selectors are exclusions, all the nss will be considered.
+    (if (every? (->| meta ::exclude) sels)
+      (cons (ns-selector :all) sels)
+      sels)))
