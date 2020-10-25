@@ -86,16 +86,18 @@
           right-ks [:expected :val]
           left     (get-in report left-ks)]
       (with-contexts {:status status}
-        (if (-> conf :reporter :dots)
-          (print logo)
+        (cond
+          (-> conf :reporter :silent) nil
+          (-> conf :reporter :dots)   (print logo)
+          :else
           (do (swap! store update-in [:counts status] (fnil inc 0))
               (print-result report logo left-ks right-ks)
               (case status
                 :error   (pst (:error report) (:error-depth opts))
                 :failure (let [v      (-> report :result :val)
                                left-n (count (print-str logo left))
-                               act    (tabl "Actual:" "   ")  ; 💪
-                               act-n  (count act)             ; ✌️
+                               act    (tabl "Actual:" "   ")
+                               act-n  (count act)
                                pad    (-> (max (- left-n (- act-n 4)) 0)
                                           (repeat \space)
                                           (->> (apply str)))
