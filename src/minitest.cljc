@@ -1,10 +1,11 @@
 (ns minitest
-  #?(:clj (:use clojure.pprint))
   #?(:clj (:gen-class))
   (:refer-clojure :exclude [test unquote])
   (:require [clojure.test]
+   #?(:clj  [clojure.pprint               :refer [pprint]])
    #?(:clj  [clojure.tools.namespace.find :refer [find-namespaces-in-dir]])
    #?(:clj  [clojure.java.io              :as    io])
+   #?(:clj  [clojure.repl                 :refer [source-fn]])
             [clojure.edn                  :as    edn]
             [clojure.string               :as    str]
             [clojure.walk                 :refer [postwalk]]))
@@ -98,7 +99,7 @@
 ;;           - [√] a regex
 ;;           - [√] a predicate fn
 ;;         - and a blacklist logic using these same selectors but:
-;;           - [!] prefixed with "!" (ns name & ns globs only).
+;;           - [x] prefixed with "!" (ns name & ns globs only).
 ;;           - [√] or by providing a sequence to an ":exclude" option
 ;; - The test! fn behaves the same but when no args are provided:
 ;;   - [√] it runs tests for the local namespace if it possesses minitest tests.
@@ -107,7 +108,7 @@
 
 ;; ## Config
 ;; - Options:
-;;   - [ ] :fail-fast.
+;;   - [√] :fail-fast.
 ;;   - [ ] :break-on-failure (like https://github.com/ConradIrwin/pry-rescue).
 ;;   - [√] :silent-success.
 ;; - [√] a default config for each environment (CLI, REPL, on-load).
@@ -118,7 +119,7 @@
 ;; ## Report format
 ;; - [ ] JUnit (a bit more work for a bit more readability in CIs, especially with
 ;;       lot of tests).
-;; - [ ] std out is enough (not great with lot of tests)
+;; - [√] configurable test output
 
 (defn ^:no-doc juxtmap [& {:as m}]
   (fn [& args]
@@ -207,14 +208,58 @@
 
 ;; TODO:
 ;; - [√] tests should not run twice (when loaded, then when they are run)
-;; - [ ] display usage
+;; - [√] display usage
 ;; - [x] options are passed in a bash style (e.g. --option "value")
 ;; - [√] or options are passed clojure style (e.g. :option "value")
 
+(defn- print-usage []
+  (println "Usage:" "clj -m minitest [config options] [ns selectors]")
+  (println "with")
+  (println "")
+  (println "• config options: A flat config map of edn values that will")
+  (println "                  get deep merged into minitest's existing")
+  (println "                  config. Symbols will be resolved. Optional.")
+  (println "• ns selectors:   One or more ns selectors:")
+  (println "                    - a ns name.")
+  (println "                    - a glob pattern to match namespaces.")
+  (println "                    - the ':all' keyword.")
+  (println "                    - ':exclude' followed by a ns selector.")
+  (println "                    - a vector of ns selectors.")
+  (println "                  Optional. Runs all the tests by default.")
+  (println "                  If no selectors other than exclusive")
+  (println "                  ones are specified, all the tests will be")
+  (println "                  considered.")
+  (println "")
+  (println "Examples:")
+  (println "  clj -m minitest name.space")
+  (println "  clj -m minitest [name.space name.space.impl]")
+  (println "  clj -m minitest name.*")
+  (println "  clj -m minitest \\")
+  (println "    :reporter {:contexts {:status {:error {:logo \"🖕\"}}}} \\")
+  (println "    hardship.impl")
+  (println "")
+  (println (source-fn 'minitest/default-config))
+  (println "")
+  (let [confile (config-file)]
+    (if confile
+      (do (println "On top of this, here is your config from"
+                   (str (->> confile .toURI
+                             (.relativize (-> (java.io.File. ".") .toURI))
+                             (str "./"))
+                        ":"))
+          (println (str/trim (slurp confile))))
+      (do (println "On top of this, you have no config in either")
+          (println "./minitest.edn or ./resources/minitest.edn"))))
+  (println "")
+  (println "And the resulting config after minitest deep-merges them:")
+  (pprint (config)))
+
 (defn -main [& args]
-  (->> (str \[ (str/join \space args) \])
-       edn/read-string
-       (apply test!)))
+  (if (-> args first #{"help" ":help" "h" "-h" "--help"})
+    (print-usage)
+    (->> (str \[ (str/join \space args) \])
+         edn/read-string
+         (apply test!))))
 
 ;; TODO:
 ;; - [ ] a nice README.

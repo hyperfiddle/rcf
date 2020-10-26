@@ -1,13 +1,15 @@
 
 (declare default-config)
 
-(defn- read-config []
+(defn- config-file []
   (let [f (io/file "./minitest.edn")]
-    (-> (or (when (.exists f) f)
-            (io/resource "minitest.edn"))
-        (some-> slurp edn/read-string))))
+    (or (when  (and (.exists f) (-> f slurp edn/read-string empty? not))  f)
+        (io/resource "minitest.edn"))))
 
-(def ^:dynamic *config* (read-config))
+(defn- file-config []
+  (some-> (config-file) slurp edn/read-string))
+
+(def ^:dynamic *config* (file-config))
 
 ;; Taken from https://gist.github.com/danielpcox/c70a8aa2c36766200a95
 ;; TODO: acknowledge.

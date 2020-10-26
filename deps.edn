@@ -6,6 +6,6 @@
   robert/hooke                 {:mvn/version "1.3.0"}}
 
  :aliases
- {:test      {:extra-paths ["test"]}
-  :run-tests {:extra-paths ["test"]
-              :main-opts   ["-m" "minitest-run-tests"]}}}
+ {:test      {:extra-paths    ["test" "test_resources"]}
+  :run-tests {:extra-paths    ["test" "test_resources"]
+              :main-opts      ["-m" "minitest-run-tests"]}}}
