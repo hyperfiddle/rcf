@@ -66,7 +66,9 @@
 
 (tests (inc-it 1) => 2)
 (tests (inc-it 2) => 3
-       (/ 1 0)    => :oops)
+       !! (println "An effect was run !")
+       (/ 1 0)    => :oops
+       !! (println "Another effect was run !"))
 
 (defn inc-it* [x]
   (inc x))

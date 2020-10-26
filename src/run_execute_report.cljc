@@ -44,26 +44,28 @@
                            (after-report-namespace     *reporter* ns  rpts)))
           :block     (do (before-report-block          *reporter* ns  tsts)
                          (before-execute-block         *executor* ns  tsts)
-                         (let [rpts     (run-block     *runner*   ns  tsts)]
+                         (let [rpts(->> (run-block     *runner*   ns  tsts)
+                                        (remove #{:minitest/effect-performed}))]
                            (after-execute-block        *executor* ns  rpts)
                            (after-report-block         *reporter* ns  rpts)))
           :case      (let [tst tsts]
                        (before-report-case             *reporter* ns  tst)
                        (before-execute-case            *executor* ns  tst)
                        (let [conf (config)
-                             exe (executor conf)
+                             exe  (executor conf)
                              rpt        (run-case      *runner*   exe ns tsts)
                              status     (:status rpt)]
-                         (after-execute-case           *executor* ns  rpt)
-                         (if (and (:fail-fast conf)
-                                  (-> status #{:error :failure}))
-                           (do (flush) ;; since the ex will be printed on *err*
-                               (throw (ex-info
-                                        (format
-                                          "Test %s:\n%s"
-                                          (name status)
-                                          (with-out-str
-                                            (with-config {:reporter {:out *out*}}
-                                              (report-case *reporter* ns rpt))))
-                                        (assoc rpt :type :minitest/fail-fast))))
-                           (report-case                *reporter* ns rpt)))))))))
+                         (if (= rpt :minitest/effect-performed)
+                           (after-execute-case           *executor* ns  rpt)
+                          (if (and (:fail-fast conf)
+                                   (-> status #{:error :failure}))
+                            (do (flush) ;; since the ex will be printed on *err*
+                                (throw (ex-info
+                                         (format
+                                           "Test %s:\n%s"
+                                           (name status)
+                                           (with-out-str
+                                             (with-config {:reporter {:out *out*}}
+                                               (report-case *reporter* ns rpt))))
+                                         (assoc rpt :type :minitest/fail-fast))))
+                            (report-case                *reporter* ns rpt))))))))))

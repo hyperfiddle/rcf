@@ -15,20 +15,29 @@
                                      [::caught t#])))
 
 
-(defn- ^:no-doc run-test-and-yield-report! [ns {:keys [test expectation] :as m}]
-  (let [result   (managing-exs
-                   (doto (call (:thunk test))
-                         (as-> res (set! *3 *2) (set! *2 *1) (set! *1 res))))
-        expected (managing-exs (call (:thunk expectation)))]
-    (merge {:ns       ns
-            :result   {:form (:form test)
-                       :val  (when-not (managed-ex? result)   result)}
-            :expected {:form (:form expectation)
-                       :val  (when-not (managed-ex? expected) expected)}}
-           (cond (managed-ex? expected) {:status :error  :error (ex expected)}
-                 (managed-ex? result)   {:status :error  :error (ex result)}
-                 (= result expected)    {:status :success}
-                 :else                  {:status :failure}))))
+(defn- ^:no-doc run-test-and-yield-report! [ns {:keys [test expectation effect]
+                                                :as m}]
+  (if effect
+    (let [result (managing-exs (call (:thunk effect)))]
+      (if (managed-ex? result)
+        (ex-info (format "Error in test effect\n%s"
+                         (with-out-str (pprint (:form effect))))
+                 {:type  :minitest/effect-error
+                  :error (ex result)})
+        :minitest/effect-performed))
+    (let [result   (managing-exs
+                     (doto (call (:thunk test))
+                           (as-> res (set! *3 *2) (set! *2 *1) (set! *1 res))))
+          expected (managing-exs (call (:thunk expectation)))]
+      (merge {:ns       ns
+              :result   {:form (:form test)
+                         :val  (when-not (managed-ex? result)   result)}
+              :expected {:form (:form expectation)
+                         :val  (when-not (managed-ex? expected) expected)}}
+             (cond (managed-ex? expected) {:status :error  :error (ex expected)}
+                   (managed-ex? result)   {:status :error  :error (ex result)}
+                   (= result expected)    {:status :success}
+                   :else                  {:status :failure})))))
 
 (declare construct-record)
 (defrecord Runner [opts store]

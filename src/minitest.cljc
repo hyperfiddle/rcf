@@ -20,8 +20,8 @@
 (def ^:no-doc ^:dynamic *tests-to-process*  nil)
 
 (declare config)
-(def ^:no-doc ->|    #(apply comp (reverse %&)))
-(def ^:no-doc call   #(apply %1 %&))
+(def ^:no-doc ->|   #(apply comp (reverse %&)))
+(def ^:no-doc call  #(apply %1 %&))
 
 (defn- load-tests? []
  #?(:clj  (and clojure.test/*load-tests* (-> (config) :load-tests))
@@ -88,6 +88,8 @@
 ;; - [√] when tests are *implicitly* run from the repl:
 ;;       - successes: silenced.
 ;;       - failures: reported.
+;; - [√] effects can be run by putting '!!' before an expr, evaluating it
+;;       without testing the result.
 
 ;; ## Test selectors
 ;; - The CLI runner should:
@@ -100,6 +102,7 @@
 ;;           - [√] a predicate fn
 ;;         - and a blacklist logic using these same selectors but:
 ;;           - [x] prefixed with "!" (ns name & ns globs only).
+;;                 Clashes with bash special chars.
 ;;           - [√] or by providing a sequence to an ":exclude" option
 ;; - The test! fn behaves the same but when no args are provided:
 ;;   - [√] it runs tests for the local namespace if it possesses minitest tests.
@@ -121,12 +124,6 @@
 ;;       lot of tests).
 ;; - [√] configurable test output
 
-(defn ^:no-doc juxtmap [& {:as m}]
-  (fn [& args]
-    (->> m
-         (map #(as-> % [k v]  [k (apply v args)]))
-         (into (empty m)))))
-
 (def ^:no-doc as-thunk #(do `(fn [] ~%)))
 (def ^:no-doc as-quote #(do `'~%))
 
@@ -139,21 +136,28 @@
                                last
                                rest) ;; drop initial 'tests symbol
                           body)
-          parsed        (->> (partition 3 1 line-col-body)
-                             (filter (->| second #{'=>}))
-                             (map (juxt first last)))] ;; [test, expectation]
+          parsed        (->> (partition 3 1 [::null] line-col-body)
+                             (map #(cond
+                                     ;; [test, expectation]
+                                     (-> % second (= '=>))  [(first %) (last %)]
+                                     ;; [side-effect]
+                                     (-> % first  (= '!!))   [(second %)]
+                                     :else        nil))
+                             (filter identity))]
       `(let [c#     (config)
              ns#    (ns-name *ns*)
-             block# ~(mapv (juxtmap :test
-                                    (juxtmap :form  (->| first as-quote)
-                                             :thunk (->| first as-thunk))
-                                    :expectation
-                                    (juxtmap :form  (->| second as-quote)
-                                             :thunk (->| second as-thunk)))
+             block# ~(mapv (fn [x]
+                             (case (count x)
+                               1 {:effect      {:form  (-> x first  as-quote)
+                                                :thunk (-> x first  as-thunk)}}
+                               2 {:test        {:form  (-> x first  as-quote)
+                                                :thunk (-> x first  as-thunk)}
+                                  :expectation {:form  (-> x second as-quote)
+                                                :thunk (-> x second as-thunk)}}))
                            parsed)]
          (if *currently-loading*
-           (when (or (:store c#) (:run c#)) (process-after-load!    ns# [block#]))
-           (do (when (:store c#)            (store-tests!           ns# [block#]))
+           (when (or (:store c#) (:run c#)) (process-after-load! ns# [block#]))
+           (do (when (:store c#)            (store-tests!        ns# [block#]))
                (when (:run   c#)            (run-execute-report!
                                               :block ns# block#))))
          nil))))
@@ -251,7 +255,7 @@
       (do (println "On top of this, you have no config in either")
           (println "./minitest.edn or ./resources/minitest.edn"))))
   (println "")
-  (println "And the resulting config after minitest deep-merges them:")
+  (println "And the resulting config after minitest deep-merges them is:")
   (pprint (config)))
 
 (defn -main [& args]
