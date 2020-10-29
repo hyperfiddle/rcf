@@ -1,6 +1,6 @@
 (require '[clojure.repl   :refer [pst]]
-#?(:clj  '[clojure.pprint :refer [pprint]]
-   :cljs '[cljs.pprint :refer [pprint]]))
+#?(:clj  '[clojure.pprint :refer [pprint] :as pp]
+   :cljs '[cljs.pprint    :refer [pprint] :as pp]))
 
 (defprotocol ReporterP
   (before-report-suite     [this ns->tests])
@@ -12,38 +12,37 @@
   (after-report-namespace  [this ns-name reports])
   (after-report-suite      [this ns->reports]))
 
-(defn- lines   [s]         (str/split s #"\r?\n"))
-(defn- tabl   ([s]         (tabl s "  "))
-              ([s pad]     (->> (lines s)
-                    (map #(str pad %))
-                    (str/join "\n"))))
+(defn- lines   [s]     (str/split s #"\r?\n"))
+(defn- tabl   ([s]     (tabl "  " s))
+              ([pad s] (->> (lines s)
+                            (map #(str pad %))
+                            (str/join "\n"))))
 (defn- printab [tab s] (let [ls (lines s)]
-                               (print tab (first ls))
-                               (print (tabl (apply str (rest ls))
-                                            (->> (repeat (count (str tab))
-                                                         \space)
-                                                 (apply str))))))
+                         (print tab (first ls))
+                         (print (tabl (->> (repeat (count (str tab)) \space)
+                                           str/join)
+                                      (str/join \newline (rest ls))))))
 
 (defn- ugly?
   ([s]            (ugly? s 1))
   ([s term-ratio] (> (count s)
                      (->> (config) :reporter :term-width (* term-ratio)))))
 
+(defn pprint-str [x] (with-out-str (pprint x)))
+
 (defn- print-result [report logo left-ks right-ks]
-  (let [left  (get-in report left-ks)
-        right (get-in report right-ks)
-        left-pp  (with-out-str (pprint left))
-                    right-pp (with-out-str (pprint right))
-        s     (print-str logo left "=>" right \newline)]
+  (let [left     (get-in report left-ks)
+        right    (get-in report right-ks)
+        s        (str logo " " (pprint-str left) " => " (pprint-str  right))]
     ;; TODO
     (if-not (ugly? s)
       (print s)
       (do
-        (printab logo left-pp)
+        (printab logo (pprint-str left))
         (newline)
         (printab (str (apply  str  (repeat (+ 2 (count (str logo))) \space))
                       "=> ")
-                 right-pp)
+                 (pprint-str right))
         (newline)))))
 
 (defmacro ^:private once [a pth expr]
@@ -86,37 +85,36 @@
   (report-case
     [this ns-name report]
     (binding [*out* (-> (config) :reporter :out)]
-      (let [status (:status report)
+      (let [status   (:status report)
             conf     (with-contexts {:status status} (config))
             logo     (-> conf :reporter :logo)
             left-ks  [:result :form]
             right-ks [:expected :val]
             left     (get-in report left-ks)]
+        (swap! store update-in [:counts status] (fnil inc 0))
         (with-contexts {:status status}
+          (when (#{:error :failure} status) (newline))
           (cond
             (-> conf :reporter :silent) nil
             (-> conf :reporter :dots)   (print logo)
             :else
-            (do (swap! store update-in [:counts status] (fnil inc 0))
-                (print-result report logo left-ks right-ks)
+            (do (print-result report logo left-ks right-ks)
                 (case status
+                  :success nil
                   :error   (binding [*err* *out*]
                              (pst (:error report) (:error-depth opts)))
-                  :failure (let [v      (-> report :result :val)
-                                 left-n (count (print-str logo left))
-                                 _ (println "left is:" left)
-                                 act    (str "Actual:   ")
-                                 act-n  (count act)
-                                 pad    (-> (max (- left-n (- act-n 4)) 0)
-                                            (repeat \space)
-                                            (->> (apply str)))
-                                 prompt (str act pad)
-                                 s      (print-str prompt v "\n")]
+                  :failure (let [v      (binding [*print-level* 10000
+                                                  pp/*print-pprint-dispatch*
+                                                  pp/code-dispatch]
+                                          (-> report :result :val pprint-str))
+                                 left-n (count (str logo " " (pprint-str left)))
+                                 prompt (str "Actual: ")
+                                 s      (str prompt v)]
                              (if-not (ugly? s)
                                (print s)
-                               (do (printab prompt (with-out-str (pprint v)))
-                                   (newline))))
-                  nil)))))
+                               (do (printab prompt v)
+                                   (newline))))))))
+        (when (#{:error :failure} status) (newline)))
       report))
   (after-report-block
     [this ns-name reports]
