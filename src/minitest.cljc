@@ -27,21 +27,21 @@
  #?(:clj  (and clojure.test/*load-tests* (-> (config) :load-tests))
     :cljs true)) ;; will alway be run from a cljs REPL.
 
-(load-file "src/config.cljc")
-(load-file "src/runner.cljc")
-(load-file "src/clojurescript.cljc")
-(load-file "src/executor.cljc")
-(load-file "src/reporter.cljc")
-(load-file "src/run_execute_report.cljc")
-(load-file "src/ns_selector.cljc")
-(load-file "src/monkeypatch_load.cljc")
+(load "config")
+(load "runner")
+(load "clojurescript")
+(load "executor")
+(load "reporter")
+(load "run_execute_report")
+(load "ns_selector")
+(load "monkeypatch_load")
 
 (def default-config
   "Any config you may provide to minitest will merge into this base
   configuration map.
 
   See `(source default-config)`."
-  {:dirs         ["test"]
+  {:dirs         ["src" "test"]
    :load-tests   true
    :fail-fast    false
    :runner       {:class            minitest.Runner

@@ -20,7 +20,8 @@
 (defn- printab [tab s] (let [ls (lines s)]
                                (print tab (first ls))
                                (print (tabl (apply str (rest ls))
-                                            (->> (repeat (count tab) \space)
+                                            (->> (repeat (count (str tab))
+                                                         \space)
                                                  (apply str))))))
 
 (defn- ugly?
@@ -39,8 +40,11 @@
       (print s)
       (do
         (printab logo left-pp)
-        (println "=>")
-        (printab (apply  str  (repeat (count (str logo)) \space))  right-pp)))))
+        (newline)
+        (printab (str (apply  str  (repeat (+ 2 (count (str logo))) \space))
+                      "=> ")
+                 right-pp)
+        (newline)))))
 
 (defmacro ^:private once [a pth expr]
   `(let [a# ~a  pth# ~pth]
@@ -100,7 +104,8 @@
                              (pst (:error report) (:error-depth opts)))
                   :failure (let [v      (-> report :result :val)
                                  left-n (count (print-str logo left))
-                                 act    (tabl "Actual:" "   ")
+                                 _ (println "left is:" left)
+                                 act    (str "Actual:   ")
                                  act-n  (count act)
                                  pad    (-> (max (- left-n (- act-n 4)) 0)
                                             (repeat \space)
@@ -109,7 +114,8 @@
                                  s      (print-str prompt v "\n")]
                              (if-not (ugly? s)
                                (print s)
-                               (printab prompt (with-out-str (pprint v)) "\n")))
+                               (do (printab prompt (with-out-str (pprint v)))
+                                   (newline))))
                   nil)))))
       report))
   (after-report-block
