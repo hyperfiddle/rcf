@@ -52,6 +52,7 @@
                   :error-depth      12
                   :compact          true
                   :silent           false
+                  :dots             false
                   :contexts {:status {:success {:logo '✅}
                                       :failure {:logo '❌}
                                       :error   {:logo '🔥}}}}
@@ -261,9 +262,10 @@
 (defn -main [& args]
   (if (-> args first #{"help" ":help" "h" "-h" "--help"})
     (print-usage)
-    (->> (str \[ (str/join \space args) \])
-         edn/read-string
-         (apply test!))))
+    (with-contexts {:env :cli}
+      (->> (str \[ (str/join \space args) \])
+             edn/read-string
+             (apply test!)))))
 
 ;; TODO:
 ;; - [ ] a nice README.
