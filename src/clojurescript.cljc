@@ -1,15 +1,13 @@
-(require '[clojure.java.io      :as io]
-         '[clojure.tools.reader :as r])
 
-(import 'java.nio.file.Files)
-(import 'clojure.lang.LineNumberingPushbackReader)
+#?(:clj
+    (def cljs-gen-tmp-dir
+      (doto (io/file (System/getProperty "java.io.tmpdir") "minitest" "cljs")
+            .mkdir)))
 
-(def cljs-gen-tmp-dir
-  (doto (io/file (System/getProperty "java.io.tmpdir") "minitest" "cljs")
-        .mkdir))
-
-(def cljs-gen-src-path (.getAbsolutePath (io/file cljs-gen-tmp-dir "src")))
-(def cljs-gen-out-path (.getAbsolutePath (io/file cljs-gen-tmp-dir "out")))
+#?(:clj
+    (def cljs-gen-src-path (.getAbsolutePath (io/file cljs-gen-tmp-dir "src"))))
+#?(:clj
+    (def cljs-gen-out-path (.getAbsolutePath (io/file cljs-gen-tmp-dir "out"))))
 
 (defn- read-forms [r]
   (->> (iterate (fn [[r form]]  [r (r/read {:eof ::eof :read-cond :allow} r)])
@@ -29,15 +27,15 @@
   )
 
 (defn read-forms-upto [f {:keys [line column]}]
-  (with-open [r (clojure.lang.LineNumberingPushbackReader.
-                  (io/reader f))]
-    (->> (read-forms r)
-         (take-while (every-pred #(-> % meta :line   (<= line))
-                                 #(-> % meta :column (<= column))))
-         doall)))
+  #?(:clj (with-open [r (clojure.lang.LineNumberingPushbackReader.
+                          (io/reader f))]
+            (->> (read-forms r)
+                 (take-while (every-pred #(-> % meta :line   (<= line))
+                                         #(-> % meta :column (<= column))))
+                 doall))))
 
-
-
+(defn fresh-cljs-repl-env []
+  (-> (config) :executor :cljs :repl-env call))
 
 
 

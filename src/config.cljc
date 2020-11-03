@@ -1,15 +1,18 @@
 
 (declare default-config)
 
-(defn- config-file []
-  (let [f (io/file "./minitest.edn")]
-    (or (when  (and (.exists f) (-> f slurp edn/read-string empty? not))  f)
-        (io/resource "minitest.edn"))))
+#?(:clj (defn- config-file []
+          (let [f (io/file "./minitest.edn")]
+            (or (when  (and (.exists f) (-> f slurp edn/read-string empty? not))
+                  f)
+                (io/resource "minitest.edn")))))
 
-(defn- file-config []
-  (some-> (config-file) slurp edn/read-string))
+#?(:clj (defmacro file-config []
+          (case (current-read-cond-feature)
+            :clj  `(some-> (config-file) slurp edn/read-string)
+            :cljs `(quote ~(some-> (config-file) slurp edn/read-string)))))
 
-(def ^:dynamic *config* (file-config))
+(def ^:dynamic *config* (file-config)) ;; TODO: private
 
 ;; Taken from https://gist.github.com/danielpcox/c70a8aa2c36766200a95
 ;; TODO: acknowledge.
@@ -43,8 +46,7 @@
                      ;; prevent merging contexts from contexts
                      (assoc :contexts (:contexts form)))))))))
 
-(defn config
-  [& [conf]]
+(defn config [& [conf]]
   (->> [default-config *config* conf]
        (apply deep-merge)
        (contextualize *contexts*)))

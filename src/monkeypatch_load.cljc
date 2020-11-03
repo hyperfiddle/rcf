@@ -1,4 +1,3 @@
-(require '[robert.hooke :refer [add-hook]])
 
 (defn clear-tests!        [a & nss]    (swap! a #(apply dissoc % nss)))
 (defn add-tests!          [a ns blocs] (swap! a update ns concat blocs))
@@ -14,21 +13,30 @@
     (finally
       (reset! *tests-to-process* nil))))
 
-(defn- around-load-hook [orig-load & paths]
-  (with-contexts {:exec-mode :load}
-    (binding [*currently-loading* true
-              *tests-to-process* (atom nil)]
-      (let [conf        (config)
-            path->ns    (->> (all-ns)
-                             (mapv (juxt (->| str @#'clojure.core/root-resource)
+;; Clojure
+#?(:clj
+    (defn- around-load-hook [orig-load & paths]
+      (with-contexts {:exec-mode :load}
+        (binding [*currently-loading* true
+                  *tests-to-process* (atom nil)]
+          (let [conf        (config)
+                path->ns    (->> (all-ns)
+                                 (mapv (juxt
+                                         (->| str @#'clojure.core/root-resource)
                                          identity))
-                             (into {}))
-            nss         (map (->|  path->ns str symbol) paths)
-            load-result (do (apply clear-tests! *tests* nss)
-                            (ensuring-runner+executor+reporter (apply orig-load paths)))]
-        (when (or (:store conf) (:run conf))
-          (process-tests-on-load-now!))
-        load-result))))
+                                 (into {}))
+                nss         (map (->|  path->ns str symbol) paths)
+                load-result (do (apply clear-tests! *tests* nss)
+                                (ensuring-runner+executors+reporter
+                                  (apply orig-load paths)))]
+            (when (or (:store conf) (:run conf))
+              (process-tests-on-load-now!))
+            load-result)))))
 
-#?(:clj (defn- apply-patch-to-load []
+#?(:clj (defn- apply-patch-to-clojure-core-load []
           (add-hook #'clojure.core/load #'around-load-hook)))
+
+#?(:clj (defn- apply-patch-to-cls-compiler-emit []
+          (add-hook (:ns (methods cljs.compiler/emit*)))))
+
+;; ClojureScript

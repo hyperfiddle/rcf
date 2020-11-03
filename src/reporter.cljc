@@ -1,6 +1,3 @@
-(require '[clojure.repl   :refer [pst]]
-#?(:clj  '[clojure.pprint :refer [pprint] :as pp]
-   :cljs '[cljs.pprint    :refer [pprint] :as pp]))
 
 (defprotocol ReporterP
   (before-report-suite     [this ns->tests])
@@ -102,7 +99,9 @@
                 (case status
                   :success nil
                   :error   (binding [*err* *out*]
-                             (pst (:error report) (:error-depth opts)))
+                             ;; TODO: set error depth in cljs
+                             #?(:clj  (pst (:error report) (:error-depth opts))
+                                :cljs (pst (:error report))))
                   :failure (let [v      (binding [*print-level* 10000
                                                   pp/*print-pprint-dispatch*
                                                   pp/code-dispatch]
@@ -113,7 +112,8 @@
                              (if-not (ugly? s)
                                (print s)
                                (do (printab prompt v)
-                                   (newline))))))))
+                                   (newline))))
+                  nil)))) ;:: TODO remove
         (when (#{:error :failure} status) (newline)))
       report))
   (after-report-block
