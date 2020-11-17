@@ -14,29 +14,40 @@
       (reset! *tests-to-process* nil))))
 
 ;; Clojure
-#?(:clj
-    (defn- around-load-hook [orig-load & paths]
-      (with-contexts {:exec-mode :load}
-        (binding [*currently-loading* true
-                  *tests-to-process* (atom nil)]
-          (let [conf        (config)
-                path->ns    (->> (all-ns)
-                                 (mapv (juxt
-                                         (->| str @#'clojure.core/root-resource)
-                                         identity))
-                                 (into {}))
-                nss         (map (->|  path->ns str symbol) paths)
-                load-result (do (apply clear-tests! *tests* nss)
-                                (ensuring-runner+executors+reporter
-                                  (apply orig-load paths)))]
-            (when (or (:store conf) (:run conf))
-              (process-tests-on-load-now!))
-            load-result)))))
+(macros/case
+  :clj (defn- around-clj-load-hook [orig-load & paths]
+         (macros/case
+           :clj  (println "LOADING"     paths)
+           :cljs (println "NOT LOADING" paths))
+         #?(:clj  (println "  & IN CLJ")
+            :cljs (println "  & IN CLJS"))
+         (with-contexts {:exec-mode :load}
+           (binding [*currently-loading* true
+                     *tests-to-process* (atom nil)]
+             (let [conf        (config)
+                   path->ns    (->> (all-ns)
+                                    (mapv (juxt
+                                            (->| str @#'clojure.core/root-resource)
+                                            identity))
+                                    (into {}))
+                   nss         (map (->|  path->ns str symbol) paths)
+                   load-result (do (apply clear-tests! *tests* nss)
+                                   (ensuring-runner+executors+reporter
+                                     (apply orig-load paths)))]
+               (when (or (:store conf) (:run conf))
+                 (process-tests-on-load-now!))
+               load-result)))))
 
-#?(:clj (defn- apply-patch-to-clojure-core-load []
-          (add-hook #'clojure.core/load #'around-load-hook)))
-
-#?(:clj (defn- apply-patch-to-cls-compiler-emit []
-          (add-hook (:ns (methods cljs.compiler/emit*)))))
+(macros/case
+  :clj (defn- apply-patch-to-clojure-core-load []
+         (add-hook #'clojure.core/load
+                   #'around-clj-load-hook)))
 
 ;; ClojureScript
+; #?(:clj
+;     (defn around-cljs-emit-hook [orig-emit & args]
+;       (apply orig-emit args)))
+
+; #?(:clj (defn- apply-patch-to-cljs-compiler-emit []
+;           (add-hook #'cljs.compiler/emit
+;                     #'around-cljs-emit-hook)))

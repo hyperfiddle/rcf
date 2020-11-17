@@ -1,16 +1,22 @@
 
-#?(:clj
-    (def cljs-gen-tmp-dir
+;; TODO: handle multiple projects running minitest at the same time
+(macros/deftime
+    (def cljs-tmp-dir
       (doto (io/file (System/getProperty "java.io.tmpdir") "minitest" "cljs")
-            .mkdir)))
+            .mkdir))
 
-#?(:clj
-    (def cljs-gen-src-path (.getAbsolutePath (io/file cljs-gen-tmp-dir "src"))))
-#?(:clj
-    (def cljs-gen-out-path (.getAbsolutePath (io/file cljs-gen-tmp-dir "out"))))
+    (defmacro cljs-src-path []
+      (.getAbsolutePath (io/file cljs-tmp-dir "src")))
+
+    (defmacro cljs-out-path []
+      (.getAbsolutePath (io/file cljs-tmp-dir "out"))))
 
 (defn- read-forms [r]
-  (->> (iterate (fn [[r form]]  [r (r/read {:eof ::eof :read-cond :allow} r)])
+  (->> (iterate (fn [[r form]]  [r (->> r (r/read {:read-cond :allow
+                                                   :features #{(macros/case
+                                                                 :clj  :clj
+                                                                 :cljs :cljs)}
+                                                   :eof ::eof}))])
                 [r nil])
        rest
        (map second)

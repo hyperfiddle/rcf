@@ -42,17 +42,19 @@
                  (pprint-str right))
         (newline)))))
 
-(defmacro ^:private once [a pth expr]
-  `(let [a# ~a  pth# ~pth]
-     (when-not (get-in @a# pth#)
-       (let [result# ~expr]
-         (swap! a# assoc-in pth# true)
-         result#))))
+(macros/deftime
+  (defmacro ^:private once [store pth expr]
+    `(let [store# ~store  pth# ~pth]
+       (when-not (get-in @store# pth#)
+         (let [result# ~expr]
+           (swap! store# assoc-in pth# true)
+           result#))))
 
-(defmacro ^:private if-once [a pth expr & [else]]
-  `(if-let [cached# (once ~a ~pth ~expr)]
-     cached#
-     ~else))
+  ;; TODO: necessary ?
+  (defmacro ^:private if-once [store pth expr & [else]]
+    `(if-let [cached# (once ~store ~pth ~expr)]
+       cached#
+       ~else)))
 
 (defn pluralize-on [x n]
   (str x (if (> n 1) "s" "")))
@@ -66,17 +68,19 @@
       (let [ns-cnt (count ns->tests)
             ts-cnt (->> ns->tests vals (apply concat) (apply concat) count)]
         (once store [:announced-suite]
-              (printf "-- Running minitest on %d %s (%d %s)\n"
-                      ns-cnt (-> "namespace" (pluralize-on ns-cnt))
-                      ts-cnt (-> "test"      (pluralize-on ts-cnt)))))))
+              (println
+                "-- Running minitest on"
+                ns-cnt (-> "namespace" (pluralize-on ns-cnt))
+                (str \( ts-cnt \space (-> "test" (pluralize-on ts-cnt)) \)))))))
   (before-report-namespace
     [this ns-name tests]
     (binding [*out* (-> (config) :reporter :out)]
       (let [ts-cnt (->> tests (apply concat) count)]
-        (printf (if-once store [:announced-nss ns-name]
-                  "---- Testing %s (%d %s)\n"
-                  "---- Testing %s (%d more %s)\n")
-                ns-name ts-cnt (-> "test" (pluralize-on ts-cnt))))))
+        (println "---- Testing" ns-name
+                 (str "(" ts-cnt \space
+                      (if-once store [:announced-nss ns-name] "more ")
+                      (-> "test" (pluralize-on ts-cnt))
+                      ")")))))
   (before-report-block [this ns-name tests] nil)
   (before-report-case  [this ns-name test]  nil)
   (report-case
@@ -98,10 +102,10 @@
             (do (print-result report logo left-ks right-ks)
                 (case status
                   :success nil
-                  :error   (binding [*err* *out*]
-                             ;; TODO: set error depth in cljs
-                             #?(:clj  (pst (:error report) (:error-depth opts))
-                                :cljs (pst (:error report))))
+                  :error   #?(:clj  (binding [*err* *out*]
+                                      ;; TODO: set error depth in cljs
+                                      (pst (:error report) (:error-depth opts)))
+                              :cljs (pst (:error report)))
                   :failure (let [v      (binding [*print-level* 10000
                                                   pp/*print-pprint-dispatch*
                                                   pp/code-dispatch]
@@ -134,7 +138,6 @@
       (let [counts (:counts @store)]
           (when-not (-> (config) :fail-fast)
             (newline)
-            (printf "%d failures, %d errors.\n"
-                    (:failure counts 0) (:error counts 0))
+            (println (:failure counts 0) "failures," (:error counts 0) "errors")
             (newline)))
         ns->reports)))

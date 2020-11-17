@@ -1,12 +1,18 @@
 
 (defn- construct-record [conf ks]
   (let [c (get-in conf (conj ks :class))]
-    (-> (.getCanonicalName c)
+    (-> c
+        #?(:clj .getCanonicalName :cljs pr-str)
         ;; replace the last occurence of "." with "/map->" to find
         ;; the fully-qualified name of the constructor fn
-        (str/replace #"\.(?=[^.]+$)" "/map->") ;; (?=...) is a regex lookahead
-        (str/replace \_ \-) ;; TODO: other chars to replace ?
-        symbol resolve deref
+        (str/replace #"[.](?=[^.]+$)" ;; (?=...) is a regex lookahead
+                      #?(:clj  "/map->"
+                         :cljs ".map->"))
+        (str/replace #"_" "-") ;; TODO: other chars to replace ? \_ -> "__" ?
+        symbol
+        #?@(:clj  [resolve deref]
+            :cljs [(doto (->> (println "la!!!")))
+                   js/eval])
         (call {:opts  (get-in conf ks)
                :store (atom {})}))))
 
@@ -16,18 +22,18 @@
                                [k (construct-record conf [:executor k])])
                              (into {})))
 
-(def ^:dynamic *runner*)
-(def ^:dynamic *reporter*)
-(def ^:dynamic *executors*)
+(def ^:dynamic *runner*    nil)
+(def ^:dynamic *reporter*  nil)
+(def ^:dynamic *executors* nil)
 
-(defmacro ^:private ensuring-runner+executors+reporter [& body]
-  `(let [c# (config)
-         b?# bound?]
-     (binding
-       [*runner*    (if-not (b?# #'*runner*)    (runner    c#) *runner*)
-        *reporter*  (if-not (b?# #'*reporter*)  (reporter  c#) *reporter*)
-        *executors* (if-not (b?# #'*executors*) (executors c#) *executors*)]
-       ~@body)))
+(macros/deftime
+  (defmacro ^:private ensuring-runner+executors+reporter [& body]
+    `(let [c# (config)]
+       (binding
+         [*runner*    (if-not *runner*    (runner    c#) *runner*)
+          *reporter*  (if-not *reporter*  (reporter  c#) *reporter*)
+          *executors* (if-not *executors* (executors c#) *executors*)]
+         ~@body))))
 
 (defn- fail-fast! [ns rpt]
   ;; since the ex we are about to throw will be printed on *err*, and to avoid
@@ -35,19 +41,19 @@
   ;; actually print to the screen before throwing the ex for this one.
   (flush)
   (throw (ex-info
-           (format "Test %s:\n%s"
-                   (name (:status rpt))
-                   (with-out-str
-                     (with-config {:reporter {:out *out*}}
-                       (report-case *reporter* ns rpt))))
+           (str "Test " (name (:status rpt)) ":\n"
+                (with-out-str
+                  (with-config {:reporter {:out *out*}}
+                    (report-case *reporter* ns rpt))))
            (assoc rpt :type :minitest/fail-fast))))
 
-(defmacro ^:private doseq-each-executor [conf & body]
-  `(doseq [[~'&executor-name ~'&executor] (executors ~conf)]
-     ~@body))
-(defmacro ^:private for-each-executor [conf expr]
-  `(for   [[~'&executor-name ~'&executor] (executors ~conf)]
-     ~expr))
+(macros/deftime
+  (defmacro ^:private doseq-each-executor [conf & body]
+    `(doseq [[~'&executor-name ~'&executor] (executors ~conf)]
+       ~@body))
+  (defmacro ^:private for-each-executor [conf expr]
+    `(for   [[~'&executor-name ~'&executor] (executors ~conf)]
+       ~expr)))
 
 (defn ^:no-doc run-execute-report!
   ([test-level ns->tsts]
@@ -55,6 +61,7 @@
   ([test-level ns tsts]
    (with-contexts {:test-level test-level} ;; TODO: exploit
      (let [conf (config)]
+       (println "C'est là que tout se joue")
        (ensuring-runner+executors+reporter
          (case test-level
            :suite     (do (before-report-suite          *reporter* tsts)

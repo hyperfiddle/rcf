@@ -20,8 +20,8 @@
   (if effect
     (let [result (managing-exs (call (:thunk effect)))]
       (if (managed-ex? result)
-        (ex-info (format "Error in test effect\n%s"
-                         (with-out-str (pprint (:form effect))))
+        (ex-info (str "Error in test effect\n"
+                      (with-out-str (pprint (:form effect))))
                  {:type  :minitest/effect-error
                   :error (ex result)})
         :minitest/effect-performed))

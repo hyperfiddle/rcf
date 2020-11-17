@@ -1,16 +1,18 @@
 
 (declare default-config)
 
-#?(:clj (defn- config-file []
-          (let [f (io/file "./minitest.edn")]
-            (or (when  (and (.exists f) (-> f slurp edn/read-string empty? not))
-                  f)
-                (io/resource "minitest.edn")))))
+(macros/deftime
+  (defn- config-file []
+    (let [f (io/file "./minitest.edn")]
+      (or (when  (and (.exists f) (-> f slurp edn/read-string empty? not))
+            f)
+          (io/resource "minitest.edn"))))
 
-#?(:clj (defmacro file-config []
-          (case (current-read-cond-feature)
-            :clj  `(some-> (config-file) slurp edn/read-string)
-            :cljs `(quote ~(some-> (config-file) slurp edn/read-string)))))
+  (defmacro ^:private file-config []
+    ;; TODO: remove case and use cljs version for both
+    (macros/case
+      :clj  `(some-> (config-file) slurp edn/read-string)
+      :cljs `(quote ~(some-> (config-file) slurp edn/read-string)))))
 
 (def ^:dynamic *config* (file-config)) ;; TODO: private
 

@@ -1,26 +1,35 @@
 (ns minitest-test
   (:require [clojure.string    :as    str]
             [clojure.test      :refer [deftest testing is]]
+   #?(:clj  [clojure.pprint    :refer [pprint]]
+      :cljs [cljs.pprint       :refer [pprint]])
    #?(:cljs [cljs.reader       :refer [read-string]])
-   #?(:cljs [cljs-node-io.core :refer [slurp]])
-            [minitest          ; :refer [tests test! *tests* *currently-loading*
-                               ;         with-contexts]
-                               ; :include-macros true
-                               ]
+   #?(:clj  [minitest          :refer [test! *tests* *currently-loading*
+                                       tests with-contexts]]
+      :cljs [minitest          :refer [test! *tests* *currently-loading*]])
             ; [minitest-test-namespace]
-            ))
+            )
+  #?(:clj  (:require [net.cgrand.macrovich :as macros])
+     :cljs (:require-macros [net.cgrand.macrovich :as macros]
+                            [minitest :refer [tests with-contexts]])))
 
-;; To debug
-; (defmacro with-out-str [& args]
-;   `(let [out# (clojure.core/with-out-str ~@args)]
-;      (println "*** with-out-str:")
-;      (print out#)
-;      out#))
+
+(macros/deftime
+  (defmacro our-out-str [& args]
+    `(with-out-str ~@args))
+
+  ; Comment above and uncomment below to debug the captured output
+  ; (defmacro our-out-str [& args]
+  ;   `(let [out# (clojure.core/our-out-str ~@args)]
+  ;      (println "*** with-out-str:")
+  ;      (print out#)
+  ;      out#))
+  )
 
 ; #?(:clj (deftest test-on-load
 ;           (reset! *tests* {})
 ;           (let [printed (with-contexts {:exec-mode :load}
-;                           (with-out-str
+;                           (our-out-str
 ;                             (require 'minitest-test-namespace :reload)))]
 ;             (testing "tests are stored"
 ;               (is (= 5 (->> (get @*tests* 'minitest-test-namespace)
@@ -33,37 +42,38 @@
 ;           (testing "when clojure.test/*load-tests* is false"
 ;             (binding [clojure.test/*load-tests* false]
 ;               (reset! *tests* {})
-;               (let [printed (with-out-str
+;               (let [printed (our-out-str
 ;                               (require 'minitest-test-namespace :reload))]
 ;                 (testing "tests are not stored"
 ;                   (is (= 0 (count (get @*tests* 'minitest-test-namespace)))))
 ;                 (testing "tests are not run"
 ;                   (is (= "" printed))))))))
 
-; (defn- nth-file-form [n f]
-;   (-> (str \[ (slurp f) \])
-;       read-string
-;       (nth n)
-;       (doto clojure.pprint/pprint)))
+; #?(:clj (defn- nth-file-form [n f]
+;           (-> (str \[ (slurp f) \])
+;               read-string
+;               (nth n)
+;               (doto pprint))))
 
-; (deftest test-on-eval
-;   (reset! *tests* {})
-;   (let [printed (with-out-str
-;                     (binding [*currently-loading* false]
-;                       (-> (nth-file-form 1 "test/minitest_test_namespace.cljc")
-;                           eval)))]
-;     (testing "tests are not stored"
-;       (is (= 0 (count (get @*tests* (ns-name *ns*))))))
-;     (testing "tests are run once"
-;       (is (= 1 (count (re-seq #"\(inc 1\) => 2" printed)))))))
+; #?(:clj (deftest test-on-eval
+;           (reset! *tests* {})
+;           (let [printed (our-out-str
+;                           (binding [*currently-loading* false]
+;                             (-> (nth-file-form
+;                                   1 "test/minitest_test_namespace.cljc")
+;                                 eval)))]
+;             (testing "tests are not stored"
+;               (is (= 0 (count (get @*tests* (ns-name *ns*))))))
+;             (testing "tests are run once"
+;               (is (= 1 (count (re-seq #"\(inc 1\) => 2" printed))))))))
 
-; ;; - [√] A "bug". We don't want to have to order the tests any differently
-; ;;       than the rest of the code; i.e. tests are run after the code has
-; ;;       loaded.
-; (declare inc-it*)
+;; - [√] A "bug". We don't want to have to order the tests any differently
+;;       than the rest of the code; i.e. tests are run after the code has
+;;       loaded.
+(declare inc-it*)
 
-; (defn inc-it [x]
-;   (inc-it* x))
+(defn inc-it [x]
+  (inc-it* x))
 
 ; (tests (inc-it 1) => 2)
 ; (tests (inc-it 2) => 3
@@ -82,9 +92,9 @@
 ; ;   (tests a => 1))
 
 
-; ; (clojure.test/run-tests)
-; ; (test!)
+; (test!)
 
-; ; (tests (inc 0) => 1
-; ;        (inc 1) => 2)
-; ; (test!)
+(tests (inc 0) => 1
+;        (inc 1) => 2
+)
+; (test!)
