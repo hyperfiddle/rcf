@@ -2,6 +2,9 @@
   #?(:clj (:gen-class))
   (:refer-clojure :exclude [test unquote]) ;; TODO: remove unquote
   (:require [clojure.test]
+            [clojure.string                    :as    str]
+            [clojure.walk                      :refer [postwalk]]
+            [net.cgrand.macrovich              :as    macros]
    #?(:clj  [clojure.pprint                    :as    pp :refer [pprint]]
       :cljs [cljs.pprint                       :as    pp :refer [pprint]])
    #?(:clj  [clojure.java.classpath            :as    cp])
@@ -20,14 +23,18 @@
    #?(:clj  [cljs.build.api])
    #?(:clj  [cljs.compiler])
    #?(:clj  [clojure.edn                       :as    edn])
-            [clojure.string                    :as    str]
-            [clojure.walk                      :refer [postwalk]]
-   #?(:clj  [robert.hooke                      :refer [add-hook]])
-            [net.cgrand.macrovich              :as macros])
-
-  ;; Macros
+   #?(:clj  [robert.hooke                      :refer [add-hook]]))
   #?(:cljs
-      (:require-macros minitest))
+      (:require-macros [minitest :refer [include
+                                         file-config
+                                         once if-once
+                                         doseq-each-executor
+                                         for-each-executor
+                                         ensuring-runner+executors+reporter
+                                         cljs-src-path
+                                         cljs-out-path
+                                         current-ns-name
+                                         find-test-namespaces]]))
 
   #?(:clj
       (:import [java.io      PipedInputStream PipedOutputStream PushbackReader]
@@ -211,7 +218,7 @@
 
 (macros/deftime
   (defmacro tests [& body]
-    (when (load-tests?)
+    #_(when (load-tests?)
       (let [this-file     (io/file (current-file))
             line-col-body (if this-file
                             (->> (-> &form meta (select-keys [:line :column]))
@@ -227,7 +234,7 @@
                                (partition-all 3 1)
                                ;;  => (partition-all 3 1 [1 => 3 !! 5])
                                ;;  ((1 => 3) (=> 3 !!) (3 !! 5) (!! 5) (5))
-                               (map
+                               (map ;; TODO: use keep
                                  #(cond
                                     ;; test => expectation  [test, expectation]
                                     (-> % second (= '=>))   [(first %) (last %)]
