@@ -85,44 +85,47 @@
   (before-report-case  [this ns-name test]  nil)
   (report-case
     [this ns-name report]
-    (binding [*out* (-> (config) :reporter :out)]
-      (let [status   (:status report)
-            conf     (with-contexts {:status status} (config))
-            logo     (-> conf :reporter :logo)
-            left-ks  [:result :form]
-            right-ks [:expected :val]
-            left     (get-in report left-ks)]
-        (swap! store update-in [:counts status] (fnil inc 0))
-        (with-contexts {:status status}
-          (when (#{:error :failure} status) (newline))
-          (cond
-            (-> conf :reporter :silent) nil
-            (-> conf :reporter :dots)   (print logo)
-            :else
-            (do (print-result report logo left-ks right-ks)
-                (case status
-                  :success nil
-                  :error   #?(:clj  (binding [*err* *out*]
-                                      ;; TODO: set error depth in cljs
-                                      (pst (:error report) (:error-depth opts)))
-                              :cljs (pst (:error report)))
-                  :failure (let [v      (binding [*print-level* 10000
-                                                  pp/*print-pprint-dispatch*
-                                                  pp/code-dispatch]
-                                          (-> report :result :val pprint-str))
-                                 left-n (count (str logo " " (pprint-str left)))
-                                 prompt (str "Actual: ")
-                                 s      (str prompt v)]
-                             (if-not (ugly? s)
-                               (print s)
-                               (do (printab prompt v)
-                                   (newline))))
-                  nil)))) ;:: TODO remove
-        (when (#{:error :failure} status) (newline)))
-      report))
+    (when-not (= report :minitest/effect-performed)
+      (binding [*out* (-> (config) :reporter :out)]
+        (let [status   (:status report)
+              conf     (with-contexts {:status status} (config))
+              logo     (-> conf :reporter :logo)
+              left-ks  [:result :form]
+              right-ks [:expected :val]
+              left     (get-in report left-ks)]
+          (swap! store update-in [:counts status] (fnil inc 0))
+          (with-contexts {:status status}
+            (when (#{:error :failure} status) (newline))
+            (cond
+              (-> conf :reporter :silent) nil
+              (-> conf :reporter :dots)   (print logo)
+              :else
+              (do (print-result report logo left-ks right-ks)
+                  (case status
+                    :success nil
+                    :error   #?(:clj  (binding [*err* *out*]
+                                        ;; TODO: set error depth in cljs
+                                        (pst (:error report)
+                                             (:error-depth opts)))
+                                :cljs (pst (:error report)))
+                    :failure (let [v      (binding [*print-level* 10000
+                                                    pp/*print-pprint-dispatch*
+                                                    pp/code-dispatch]
+                                            (-> report :result :val pprint-str))
+                                   left-n (count
+                                            (str logo " " (pprint-str left)))
+                                   prompt (str "Actual: ")
+                                   s      (str prompt v)]
+                               (if-not (ugly? s)
+                                 (print s)
+                                 (do (printab prompt v)
+                                     (newline))))
+                    nil)))) ;; TODO: remove
+          (when (#{:error :failure} status) (newline)))))
+    report)
   (after-report-block
     [this ns-name reports]
-    reports)
+    (remove #{:minitest/effect-performed} reports))
   (after-report-namespace
     [this ns-name reports]
     (binding [*out* (-> (config) :reporter :out)]

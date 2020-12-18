@@ -34,7 +34,10 @@
                                          cljs-src-path
                                          cljs-out-path
                                          current-ns-name
-                                         find-test-namespaces]]))
+                                         find-test-namespaces
+                                         with-contexts
+                                         with-config
+                                         managing-exs]]))
 
   #?(:clj
       (:import [java.io      PipedInputStream PipedOutputStream PushbackReader]
@@ -103,10 +106,11 @@
                                                :clj  #{:clj}
                                                :cljs #{:cljs})}))))))))))
 
+;; fswatch src/!(minitest.cljc) | (while read; do touch src/minitest.cljc; done)
 (include "config")
 (include "clojurescript")
-(include "runner")
 (include "executor")
+(include "runner")
 (include "reporter")
 (include "run_execute_report")
 (include "ns_selector")
@@ -140,12 +144,12 @@
                                                 :main          nil
                                                 :optimizations :none}}
                          :repl-env  #?(:clj node/repl-env :cljs nil)}}
-   :contexts     {:exec-mode {:load          {:store true,  :run false}
-                              :eval          {:store false, :run true}}
-                  :env       {:production    {:load-tests                  false}
-                              :development   {:runner   {:break-on-failure true}}
-                              :cli           {:reporter {:dots             true}}
-                              :ci            [:cli]}}})
+   :contexts     {:exec-mode {:load        {:store true,  :run false}
+                              :eval        {:store false, :run true}}
+                  :env       {:production  {:load-tests                  false}
+                              :development {:runner   {:break-on-failure true}}
+                              :cli         {:reporter {:dots             true}}
+                              :ci          [:cli]}}})
 
 (macros/case
   :clj (when (load-tests?)
@@ -218,30 +222,23 @@
 
 (macros/deftime
   (defmacro tests [& body]
-    #_(when (load-tests?)
-      (let [this-file     (io/file (current-file))
-            line-col-body (if this-file
-                            (->> (-> &form meta (select-keys [:line :column]))
-                                 (read-forms-upto this-file)
-                                 last
-                                 rest) ;; drop initial 'tests symbol
-                            body)
-            parsed        (->> line-col-body
-                               ;; Parsing works with a sliding window of length 3.
-                               ;; We do this to detect patterns 3 forms long or
-                               ;; less. In order to accomodate for the appearance
-                               ;; of smaller forms at the end, we need to:
-                               (partition-all 3 1)
-                               ;;  => (partition-all 3 1 [1 => 3 !! 5])
-                               ;;  ((1 => 3) (=> 3 !!) (3 !! 5) (!! 5) (5))
-                               (map ;; TODO: use keep
-                                 #(cond
-                                    ;; test => expectation  [test, expectation]
-                                    (-> % second (= '=>))   [(first %) (last %)]
-                                    ;; !! side-effect       [side-effect]
-                                    (-> % first  (= '!!))   [(second %)]
-                                    :else                   nil))
-                               (filter identity))]
+    (when (load-tests?)
+      (let [parsed    (->> body
+                           ;; Parsing works with a sliding window of length 3.
+                           ;; We do this to detect patterns 3 forms long or
+                           ;; less. In order to accomodate for the appearance
+                           ;; of smaller forms at the end, we need to:
+                           (partition-all 3 1)
+                           ;;  => (partition-all 3 1 [1 => 3 !! 5])
+                           ;;  ((1 => 3) (=> 3 !!) (3 !! 5) (!! 5) (5))
+                           (map ;; TODO: use keep
+                                #(cond
+                                   ;; test => expectation  [test, expectation]
+                                   (-> % second (= '=>))   [(first %) (last %)]
+                                   ;; !! side-effect       [side-effect]
+                                   (-> % first  (= '!!))   [(second %)]
+                                   :else                   nil))
+                           (filter identity))]
         `(let [c#     (config)
                ns#    (current-ns-name)
                block# ~(mapv (fn [x]

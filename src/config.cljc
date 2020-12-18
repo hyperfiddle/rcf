@@ -53,11 +53,12 @@
        (apply deep-merge)
        (contextualize *contexts*)))
 
-(defmacro with-config [m & body]
-  `(binding [*config* (deep-merge *config* ~m)]
-     ~@body))
+(macros/deftime
+  (defmacro with-config [m & body]
+    `(binding [*config* (deep-merge *config* ~m)]
+       ~@body))
 
-(defmacro with-contexts [m & body]
-  `(binding [*contexts* (merge *contexts* ~m)]
-     ~@body))
+  (defmacro with-contexts [m & body]
+    `(binding [*contexts* (merge *contexts* ~m)]
+       ~@body)))
 

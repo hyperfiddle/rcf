@@ -7,16 +7,18 @@
   (run-block     [this ns cases])
   (run-case      [this exe ns case]))
 
-(defn-    managed-ex?  [x]      (and (vector? x) (-> x first (= ::caught))))
-(defn-    ex           [x]      (second x))
-(defmacro managing-exs [& body] `(try ~@body
-                                   (catch Throwable t#
-                                     (set! *e t#)
-                                     [::caught t#])))
+(defn-      managed-ex?  [x]       (and (vector? x) (-> x first (= ::caught))))
+(defn-      ex           [x]       (second x))
+(macros/deftime
+  (defmacro managing-exs [& body] `(try ~@body
+                                     (catch ~(macros/case :clj  'Throwable
+                                                          :cljs 'js/Error) t#
+                                       (set! *e t#)
+                                       [::caught t#]))))
 
 
 (defn- ^:no-doc run-test-and-yield-report! [ns {:keys [test expectation effect]
-                                                :as m}]
+                                                :as   m}]
   (if effect
     (let [result (managing-exs (call (:thunk effect)))]
       (if (managed-ex? result)
@@ -53,4 +55,4 @@
   (run-block     [this ns cases]    (doall
                                       (map #(run-execute-report! :case ns %)
                                            cases)))
-  (run-case      [this exe ns case] (.execute-case exe ns case)))
+  (run-case      [this ns case exe] (execute-case exe ns case)))

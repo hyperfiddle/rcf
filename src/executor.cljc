@@ -49,7 +49,7 @@
                  (do (repl-exec! repl# e#)
                      (repl-result repl#)))))))
 
-  (def ^:dynamic ^:private *in-cljs-repl* false)
+  (def ^:dynamic ^:private *executing-cljs* false)
 
   (defn cljs-prepl [repl-env]
     (let [in<         (PipedInputStream.)
@@ -62,7 +62,7 @@
           from-client (PushbackReader. (io/reader in<))
           repl        {:in to-repl :out from-repl}]
       (future
-        (binding [*in-cljs-repl* true]
+        (binding [*executing-cljs* true]
           (repl/repl
             repl-env
             ; :repl-requires    '[[cljs.repl :refer-macros [pst]]
@@ -81,7 +81,7 @@
                                  (println (ex-data e))
                                  (pst e)
                                  (pprint (.-stack e))))))
-      (println "REQUIRE MINITEST IN CLJS" *in-cljs-repl*)
+      (println "REQUIRE MINITEST IN CLJS" *executing-cljs*)
       (with-repl repl (require '[minitest :refer-macros [tests]]))
       repl)))
 
@@ -115,25 +115,18 @@
     [this ns->tests]
     (macros/case
       :clj  (let [req-stmt `(~'require ~@(map as-quote (keys ns->tests))
-                                       :reload)
-                  ; ns->path (ns-paths
-                  ;            (macros/case
-                  ;              :clj  clojure.tools.namespace.find/clj
-                  ;              :cljs clojure.tools.namespace.find/cljs))
-                  ]
-              ; (doseq [pth (->> ns->tests keys (map ns->path))]
-              ;   (println "pth" pth)
-              ;   (println "(class pth)" (class pth))
-              ;   (repl/load-file testing-repl-env pth))
+                                       :reload)]
               (println "REQ STMT" req-stmt)
               (let [res (with-repl (testing-repl) ~req-stmt)]
-                (println "REPL RESULT" res))
-              (Thread/sleep (* 10 1000)))
-      :cljs (throw (ex-info "Can't run minitests for cljs in cljs for now" {}))))
+                (println "REPL RESULT" res)))))
   (before-execute-namespace [this ns tests])
   (before-execute-block     [this ns tests])
   (before-execute-case      [this ns tests])
-  (execute-case             [this ns case])
+  (execute-case
+    [this ns case]
+    (macros/case
+      :cljs (run-test-and-yield-report! ns case)
+      :clj  (throw (Exception. "Can't run minitests for cljs from clj for now"))))
   (after-execute-case       [this ns report])
   (after-execute-block      [this ns reports])
   (after-execute-namespace  [this ns reports])

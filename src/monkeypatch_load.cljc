@@ -16,8 +16,10 @@
 ;; Clojure
 (macros/deftime
   (defn- around-clj-load-hook [orig-load & paths]
-    ; (println "------------>" cljs.repl/*repl-env*)
-    ; (.printStackTrace (ex-info "X" {}))
+    (println "LOADING" paths)
+    (println "with repl env" (boolean cljs.repl/*repl-env*)
+             "and depth" (count (seq (.getStackTrace (ex-info "X" {})))))
+    ; (pprint (seq (.getStackTrace (ex-info "X" {}))))
     (if cljs.repl/*repl-env*
       (apply orig-load paths)
       (with-contexts {:exec-mode :load}
@@ -31,21 +33,31 @@
                                    (into {}))
                   nss         (map (->|  path->ns str symbol) paths)
                   load-result (do (apply clear-tests! *tests* nss)
-                                  (ensuring-runner+executors+reporter
+                                  (ensuring-runner+executors+reporter ;; TODO: necessary ?
                                     (apply orig-load paths)))]
               (when (or (:store conf) (:run conf))
                 (process-tests-on-load-now!))
               load-result)))))
 
   (defn- apply-patch-to-clojure-core-load []
-           #_(add-hook #'clojure.core/load
-                     #'around-clj-load-hook)))
+    (add-hook #'clojure.core/load
+              #'around-clj-load-hook)))
 
 ;; ClojureScript
-; #?(:clj
-;     (defn around-cljs-emit-hook [orig-emit & args]
-;       (apply orig-emit args)))
+; (defn around-cljs-compiler-emit* [orig-emit & args]
+;   (println "-------------- ORIG_EMIT" (type orig-emit))
+;   (let [dispatch-val (-> args first :op)
+;         method       (get-method orig-emit dispatch-val)]
+;     (if (= dispatch-val :ns*)
+;       (do (cljs.compiler/emitln "try {")
+;           (apply method args)
+;           (cljs.compiler/emitln))
+;       (apply method args)))
 
-; #?(:clj (defn- apply-patch-to-cljs-compiler-emit []
-;           (add-hook #'cljs.compiler/emit
-;                     #'around-cljs-emit-hook)))
+;   (cljs.compiler/emitln)
+;   (apply orig-emit args)
+;   (cljs.compiler/emitln))
+
+; (defn- apply-patch-to-cljs-compiler-emit* []
+;   (add-hook #'cljs.compiler/emit*
+;             #'around-cljs-compiler-emit*))

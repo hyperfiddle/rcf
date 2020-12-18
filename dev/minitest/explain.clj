@@ -128,7 +128,7 @@
                 [:clear-*tests* :store-*tests-to-process*!]])
 
      [:run-suite! :suite]
-     [:run-block! :suite]
+     [:run-block! :block]
 
      (subgraph :cluster_run-execute-report
                [{:label :run-execute-report!}
@@ -147,6 +147,6 @@
 
 (defn -main [& _args]
   (let [d (dot code-paths)]
-    (save! d "doc/code-paths.svg" {:format :svg})
+    (save! d "doc/code-paths.pdf" {:format :pdf})
     (show! d)))
 

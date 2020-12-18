@@ -2,17 +2,16 @@
 (defn- construct-record [conf ks]
   (let [c (get-in conf (conj ks :class))]
     (-> c
-        #?(:clj .getCanonicalName :cljs pr-str)
+        #?(:clj  .getCanonicalName
+           :cljs pr-str)
         ;; replace the last occurence of "." with "/map->" to find
-        ;; the fully-qualified name of the constructor fn
-        (str/replace #"[.](?=[^.]+$)" ;; (?=...) is a regex lookahead
-                      #?(:clj  "/map->"
-                         :cljs ".map->"))
-        (str/replace #"_" "-") ;; TODO: other chars to replace ? \_ -> "__" ?
-        symbol
-        #?@(:clj  [resolve deref]
-            :cljs [(doto (->> (println "la!!!")))
-                   js/eval])
+        ;; the fully-qualified name of the constructor fn.
+        #?(:clj  (str/replace #"[.](?=[^.]+$)" "/map->") ;; (?=...): a lookahead
+           :cljs (str/replace #"[/](?=[^/]+$)" ".map->"))
+        munge
+        #?@(:clj  [symbol resolve deref]
+            :cljs [js/eval]) ;; TODO: implement some crash barrier ?
+        ;; TODO: get rid of :opts arg
         (call {:opts  (get-in conf ks)
                :store (atom {})}))))
 
@@ -51,9 +50,11 @@
   (defmacro ^:private doseq-each-executor [conf & body]
     `(doseq [[~'&executor-name ~'&executor] (executors ~conf)]
        ~@body))
-  (defmacro ^:private for-each-executor [conf expr]
-    `(for   [[~'&executor-name ~'&executor] (executors ~conf)]
-       ~expr)))
+  (defmacro ^:private for-each-executor [conf & body]
+    `(->>
+       (for [[~'&executor-name ~'&executor] (executors ~conf)]
+         [~'&executor-name (do ~@body)])
+       (into {}))))
 
 (defn ^:no-doc run-execute-report!
   ([test-level ns->tsts]
@@ -61,54 +62,46 @@
   ([test-level ns tsts]
    (with-contexts {:test-level test-level} ;; TODO: exploit
      (let [conf (config)]
-       (println "C'est là que tout se joue")
        (ensuring-runner+executors+reporter
          (case test-level
            :suite     (do (before-report-suite          *reporter* tsts)
                           (doseq-each-executor   conf
                             (before-execute-suite       &executor  tsts))
                           (let [ns->rpts (run-suite     *runner*   tsts)]
-                            (doseq-each-executor conf
-                              (after-execute-suite      &executor  ns->rpts))
-                            (after-report-suite         *reporter* ns->rpts)))
+                            (for-each-executor conf
+                              (after-execute-suite      &executor  ns->rpts)
+                              (after-report-suite       *reporter* ns->rpts))))
 
            :namespace (do (before-report-namespace      *reporter* ns  tsts)
                           (doseq-each-executor   conf
                             (before-execute-namespace   &executor  ns  tsts))
                           (let [rpts     (run-namespace *runner*   ns  tsts)]
-                            (doseq-each-executor conf
-                              (after-execute-namespace  &executor  ns  rpts))
-                            (after-report-namespace     *reporter* ns  rpts)))
+                            (for-each-executor conf
+                              (after-execute-namespace  &executor  ns  rpts)
+                              (after-report-namespace   *reporter* ns  rpts))))
 
            :block     (do (before-report-block          *reporter* ns  tsts)
                           (doseq-each-executor   conf
                             (before-execute-block       &executor  ns  tsts))
-                          (let [rpts (doseq-each-executor conf
-                                       (->>
-                                         (run-block     *runner*   ns  tsts)
-                                         (remove #{:minitest/effect-performed}))
-                                       )]
-                            (doseq-each-executor conf
-                              (after-execute-block      &executor  ns  rpts))
-                            (after-report-block         *reporter* ns  rpts)))
+                          (let [rpts     (run-block     *runner*   ns  tsts)]
+                            (for-each-executor conf
+                              (after-execute-block      &executor  ns  rpts)
+                              (after-report-block       *reporter* ns  rpts))))
 
            :case      (let [tst tsts]
                         (before-report-case             *reporter* ns  tst)
                         (doseq-each-executor     conf
                           (before-execute-case          &executor  ns  tst))
-                        (let [conf     (config)
-                              exe->rpt (->>
-                                         (for-each-executor conf
-                                           [&executor-name
-                                             (run-case  *runner*
-                                                        &executor  ns  tst)])
-                                         (into {}))
-                              status   (:status exe->rpt)]
-                          (pprint exe->rpt)
-                          (if (= exe->rpt :minitest/effect-performed)
-                            (doseq-each-executor conf
-                              (after-execute-case       &executor ns  exe->rpt))
-                            (if (and (:fail-fast conf)
-                                     (-> status #{:error :failure}))
-                              (fail-fast!                           ns  exe->rpt)
-                              (report-case              *reporter*  ns  exe->rpt)))))))))))
+                        (let [conf (config)
+                              exe->rpt
+                              (for-each-executor conf
+                                (run-case               *runner*   ns  tst
+                                                        &executor))]
+                          (for-each-executor conf
+                            (let [rpt (exe->rpt &executor-name)]
+                              (if (and (:fail-fast conf)
+                                       (-> rpt :status #{:error :failure}))
+                                (fail-fast!                        ns  rpt)
+                                (do (after-execute-case &executor  ns  rpt)
+                                    (report-case        *reporter* ns  rpt))))))
+                        )))))))
