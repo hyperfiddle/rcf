@@ -81,7 +81,7 @@
                                  (println (ex-data e))
                                  (pst e)
                                  (pprint (.-stack e))))))
-      (println "REQUIRE MINITEST IN CLJS" *executing-cljs*)
+      (dbg "REQUIRE MINITEST IN CLJS" *executing-cljs*)
       (with-repl repl (require '[minitest :refer-macros [tests]]))
       repl)))
 
@@ -116,9 +116,9 @@
     (macros/case
       :clj  (let [req-stmt `(~'require ~@(map as-quote (keys ns->tests))
                                        :reload)]
-              (println "REQ STMT" req-stmt)
+              (dbg "REQ STMT" req-stmt)
               (let [res (with-repl (testing-repl) ~req-stmt)]
-                (println "REPL RESULT" res)))))
+                (dbg "REPL RESULT" res)))))
   (before-execute-namespace [this ns tests])
   (before-execute-block     [this ns tests])
   (before-execute-case      [this ns tests])

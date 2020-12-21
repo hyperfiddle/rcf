@@ -16,7 +16,7 @@
 ;; Clojure
 (macros/deftime
   (defn- clj-core-load-around-hook [orig-load & paths]
-    (println "LOADING" paths)
+    (dbg "LOADING" paths)
     (if cljs.repl/*repl-env*
       (apply orig-load paths)
       (with-contexts {:exec-mode :load}
@@ -94,14 +94,14 @@
       (let [[mini others :as x] (separate-load-libs ['minitest] args)
             mini-deps (nth mini 3)]
         (binding [*out* (io/writer java.lang.System/out)]
-          (println "NSNAME" ns-name)
-          (println "MINI" mini)
-          (println "OTHERS" others)
-          (println ""))
+          (dbg "NSNAME" ns-name)
+          (dbg "MINI" mini)
+          (dbg "OTHERS" others)
+          (dbg ""))
         (when (seq mini-deps)       (apply orig-load-libs mini))
         (let [emitted (with-out-str (apply orig-load-libs others))]
           (when (seq emitted)
-            (require-js 'minitest)
+            (when-not (seq mini-deps) (require-js 'minitest))
             (binding-js [minitest.*currently-loading* true]
               (print emitted)))))))
 

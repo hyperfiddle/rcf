@@ -45,6 +45,16 @@
 
 (declare tests test!)
 
+;; TODO: remove
+(macros/deftime
+  (macros/case
+    :clj (defmacro dbg [& args]
+           `(binding [*out* (io/writer java.lang.System/out)]
+              (println ~@args)))))
+
+
+; (cljs/build "test" {:main 'minitest-test :output-to "compiled.js" :output-dir "out" :optimizations :simple})
+
 (def ^:dynamic *tests*    (atom {}))
 (def ^:dynamic *contexts* {:exec-mode :eval, :env :development})
 
@@ -57,7 +67,7 @@
 
 (defn- load-tests? []
  #?(:clj  (and clojure.test/*load-tests* (-> (config) :load-tests))
-    :cljs true)) ;; will alway be run from a cljs REPL.
+    :cljs true #_(when-not (js* "goog.debug"))))
 
 (def ^:no-doc as-thunk #(do `(fn [] ~%)))
 (def ^:no-doc as-quote #(do `'~%))
@@ -100,6 +110,9 @@
                                                :cljs #{:cljs})}))))))))))
 
 ;; fswatch src/!(minitest.cljc) | (while read; do touch src/minitest.cljc; done)
+
+;; (cljs/build "test" {:main 'minitest-test :output-to "compiled.js" :output-dir "out" :optimizations :simple :target :nodejs})
+
 (include "config")
 (include "clojurescript")
 (include "executor")
