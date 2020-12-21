@@ -4,7 +4,7 @@
 (defn store-tests!        [ns blocs]   (add-tests! *tests*            ns blocs))
 (defn process-after-load! [ns blocs]   (add-tests! *tests-to-process* ns blocs))
 
-(defn process-tests-on-load-now! []
+(defn process-on-load-tests-now! []
   (assert *currently-loading*)
   (try
     (let [conf (config)]
@@ -17,9 +17,6 @@
 (macros/deftime
   (defn- clj-core-load-around-hook [orig-load & paths]
     (println "LOADING" paths)
-    (println "with repl env" (boolean cljs.repl/*repl-env*)
-             "and depth" (count (seq (.getStackTrace (ex-info "X" {})))))
-    ; (pprint (seq (.getStackTrace (ex-info "X" {}))))
     (if cljs.repl/*repl-env*
       (apply orig-load paths)
       (with-contexts {:exec-mode :load}
@@ -35,8 +32,9 @@
                   load-result (do (apply clear-tests! *tests* nss)
                                   (ensuring-runner+executors+reporter ;; TODO: necessary ?
                                     (apply orig-load paths)))]
-              (when (or (:store conf) (:run conf))
-                (process-tests-on-load-now!))
+              (when (and (or (:store conf) (:run conf))
+                         (> (count @*tests-to-process*) 0))
+                (process-on-load-tests-now!))
               load-result)))))
 
   (defn- apply-patch-to-clojure-core-load []
@@ -67,7 +65,7 @@
                          cljs/munge
                          (str/replace #"[.]" "_")
                          gensym)]
-       (do #_with-js-block ;; guard from changing vars above...
+       (with-js-block ;; guard from changing vars above...
          (cljs/emitln "const " orig-var#  " = " js-var# ";")
          (cljs/emitln          js-var#    " = " js-val# ";")
          ;; ...and being changed by assignments below with try's own block scope

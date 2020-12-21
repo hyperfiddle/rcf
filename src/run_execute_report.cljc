@@ -8,9 +8,8 @@
         ;; the fully-qualified name of the constructor fn.
         #?(:clj  (str/replace #"[.](?=[^.]+$)" "/map->") ;; (?=...): a lookahead
            :cljs (str/replace #"[/](?=[^/]+$)" ".map->"))
-        munge
         #?@(:clj  [symbol resolve deref]
-            :cljs [js/eval]) ;; TODO: implement some crash barrier ?
+            :cljs [munge js/eval]) ;; TODO: implement some crash barrier ?
         ;; TODO: get rid of :opts arg
         (call {:opts  (get-in conf ks)
                :store (atom {})}))))

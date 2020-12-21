@@ -91,13 +91,6 @@
                                   (for [ext ["cljs" "cljc"]]
                                     (io/file dir (str (str/join (rest path))
                                                       \. ext))))]
-                    ; (println "MACRO-CASE:"
-                    ;          (macros/case
-                    ;            :clj  #{:clj}
-                    ;            :cljs #{:cljs}))
-                    ; (println "COND CASE:"
-                    ;          #?(:clj  #{:clj}
-                    ;             :cljs #{:cljs}))
                     `(do ~@(->> (str  \[  (-> f slurp)  \]  )
                                 (r/read-string
                                   {:read-cond :allow
@@ -135,7 +128,7 @@
                   :contexts {:status {:success {:logo '✅}
                                       :failure {:logo '❌}
                                       :error   {:logo '🔥}}}}
-   :langs        [:cljs]
+   :langs        [:clj]
    :executor     {:clj  {:class     CljExecutor}
                   :cljs {:class     CljsExecutor
                          :cljsbuild {:source-paths [(cljs-src-path)]
@@ -143,7 +136,7 @@
                                                 :main          nil
                                                 :optimizations :none}}
                          :repl-env  #?(:clj node/repl-env :cljs nil)}}
-   :contexts     {:exec-mode {:load        {:store true,  :run false}
+   :contexts     {:exec-mode {:load        {:store true,  :run true #_false};; TODO: reset
                               :eval        {:store false, :run true}}
                   :env       {:production  {:load-tests                  false}
                               :development {:runner   {:break-on-failure true}}
@@ -286,7 +279,7 @@
   ([]       (let [ns (current-ns-name)]
               (cond
                 *currently-loading* (with-config {:run true :store false}
-                                      (process-tests-on-load-now!))
+                                      (process-on-load-tests-now!))
                 (get @*tests* ns)   (test! ns)
                 :else               (test! :all))))
   ([& args] (let [[conf sels]       (->> (partition-all 2 args)
