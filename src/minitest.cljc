@@ -13,6 +13,7 @@
                                                        find-sources-in-dir]])
    #?(:clj  [clojure.tools.namespace.file      :refer [read-file-ns-decl]])
    #?(:clj  [clojure.tools.namespace.parse     :refer [name-from-ns-decl]])
+   #?(:clj  [clojure.tools.namespace.repl      :refer [disable-reload!]])
    #?(:clj  [clojure.tools.reader              :as    r]
       :cljs [cljs.tools.reader                 :as    r])
    #?(:clj  [clojure.tools.reader.reader-types :as    rt])
@@ -121,14 +122,14 @@
    :reporter     {:class            minitest.TermReporter
                   :out              *out*
                   :term-width       80
-                  :error-depth      1200
+                  :error-depth      12
                   :compact          true
                   :silent           false
                   :dots             false
                   :contexts {:status {:success {:logo '✅}
                                       :failure {:logo '❌}
                                       :error   {:logo '🔥}}}}
-   :langs        [:clj]
+   :langs        [:cljs]
    :executor     {:clj  {:class     CljExecutor}
                   :cljs {:class     CljsExecutor
                          :cljsbuild {:source-paths [(cljs-src-path)]
@@ -136,7 +137,7 @@
                                                 :main          nil
                                                 :optimizations :none}}
                          :repl-env  #?(:clj node/repl-env :cljs nil)}}
-   :contexts     {:exec-mode {:load        {:store true,  :run true #_false};; TODO: reset
+   :contexts     {:exec-mode {:load        {:store true,  :run false};; TODO: reset
                               :eval        {:store false, :run true}}
                   :env       {:production  {:load-tests                  false}
                               :development {:runner   {:break-on-failure true}}
