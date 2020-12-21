@@ -15,7 +15,7 @@
 
 ;; Clojure
 (macros/deftime
-  (defn- around-clj-load-hook [orig-load & paths]
+  (defn- clj-core-load-around-hook [orig-load & paths]
     (println "LOADING" paths)
     (println "with repl env" (boolean cljs.repl/*repl-env*)
              "and depth" (count (seq (.getStackTrace (ex-info "X" {})))))
@@ -41,23 +41,72 @@
 
   (defn- apply-patch-to-clojure-core-load []
     (add-hook #'clojure.core/load
-              #'around-clj-load-hook)))
+              #'clj-core-load-around-hook)))
 
 ;; ClojureScript
-; (defn around-cljs-compiler-emit* [orig-emit & args]
-;   (println "-------------- ORIG_EMIT" (type orig-emit))
-;   (let [dispatch-val (-> args first :op)
-;         method       (get-method orig-emit dispatch-val)]
-;     (if (= dispatch-val :ns*)
-;       (do (cljs.compiler/emitln "try {")
-;           (apply method args)
-;           (cljs.compiler/emitln))
-;       (apply method args)))
+(macros/deftime
+  ;; We deal directly with JavaScript because reusing the current cljs
+  ;; compilation settings is tricky.
+  (defn- require-js [ns]
+    (cljs/emitln "goog.require('" (cljs/munge ns) "');"))
 
-;   (cljs.compiler/emitln)
-;   (apply orig-emit args)
-;   (cljs.compiler/emitln))
+  (defmacro ^:private with-js-block [& emitting-body]
+    `(do  (cljs/emitln "{")  ~@emitting-body  (cljs/emitln "}")))
 
-; (defn- apply-patch-to-cljs-compiler-emit* []
-;   (add-hook #'cljs.compiler/emit*
-;             #'around-cljs-compiler-emit*))
+  (defmacro ^:private try-js [expr-emitter & {:keys [finally]}]
+    `(do (cljs/emitln "try {")
+         ~expr-emitter
+         (cljs/emitln "} finally {")
+         ~finally
+         (cljs/emitln "}")))
+
+  (defmacro ^:private  binding-js [[var-name expr] & emitting-body]
+    `(let [js-var#   (cljs/munge '~var-name)
+           js-val#   ~expr
+           orig-var# (-> (str "_original_" js-var#)
+                         cljs/munge
+                         (str/replace #"[.]" "_")
+                         gensym)]
+       (do #_with-js-block ;; guard from changing vars above...
+         (cljs/emitln "const " orig-var#  " = " js-var# ";")
+         (cljs/emitln          js-var#    " = " js-val# ";")
+         ;; ...and being changed by assignments below with try's own block scope
+         (try-js ~@emitting-body
+                 :finally (cljs/emitln js-var# " = " orig-var# ";"))
+         ;; See: https://stackoverflow.com/a/39798496
+         )))
+
+  (defn- separate [pred coll] [(filter pred coll) (remove pred coll)])
+  (defn- rotate   [x]         (apply map vector x))
+
+  (defn- separate-load-libs [these-deps [libs seen reloads deps ns-name]]
+    (let [tdeps          (set these-deps)
+          odeps          (apply disj (set deps) tdeps)
+          [these others] (->> (map #(separate tdeps %)
+                                   [seen reloads deps])
+                              rotate)]
+      `[[~(select-keys libs tdeps) ~@these  ~ns-name]
+        [~(select-keys libs odeps) ~@others ~ns-name]]))
+
+  (defn- cljs-compiler-load-libs-around-hook [orig-load-libs
+                                              & [libs seen reloads deps ns-name
+                                                 :as args]]
+    (if (= ns-name 'minitest)
+      (apply orig-load-libs args)
+      (let [[mini others :as x] (separate-load-libs ['minitest] args)
+            mini-deps (nth mini 3)]
+        (binding [*out* (io/writer java.lang.System/out)]
+          (println "NSNAME" ns-name)
+          (println "MINI" mini)
+          (println "OTHERS" others)
+          (println ""))
+        (when (seq mini-deps)       (apply orig-load-libs mini))
+        (let [emitted (with-out-str (apply orig-load-libs others))]
+          (when (seq emitted)
+            (require-js 'minitest)
+            (binding-js [minitest.*currently-loading* true]
+              (print emitted)))))))
+
+  (defn- apply-patch-to-cljs-compiler-load-libs []
+    (add-hook #'cljs.compiler/load-libs
+              #'cljs-compiler-load-libs-around-hook)))

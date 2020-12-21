@@ -20,8 +20,7 @@
    #?(:clj  [cljs.repl                         :as    repl])
    #?(:cljs [cljs.repl                         :refer [pst]])
    #?(:clj  [cljs.repl.node                    :as    node])
-   #?(:clj  [cljs.build.api])
-   #?(:clj  [cljs.compiler])
+   #?(:clj  [cljs.compiler                     :as    cljs])
    #?(:clj  [clojure.edn                       :as    edn])
    #?(:clj  [robert.hooke                      :refer [add-hook]]))
   #?(:cljs
@@ -151,12 +150,13 @@
                               :cli         {:reporter {:dots             true}}
                               :ci          [:cli]}}})
 
+;; TODO: wrap into macros/deftime
 (macros/case
   :clj (when (load-tests?)
          (let [langs (-> (config) :langs set)]
            (when (or (:clj  langs)
                      (:cljs langs)) (apply-patch-to-clojure-core-load))
-           #_(when (:cljs langs)      (apply-patch-to-cljs-compiler-emit)))))
+           (when (:cljs langs)      (apply-patch-to-cljs-compiler-load-libs)))))
 
 ;; ## When and how to run tests
 ;; - [√] tests are run once
