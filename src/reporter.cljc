@@ -28,9 +28,11 @@
 (defn pprint-str [x] (with-out-str (pprint x)))
 
 (defn- print-result [report logo left-ks right-ks]
-  (let [left     (get-in report left-ks)
-        right    (get-in report right-ks)
-        s        (str logo " " (pprint-str left) " => " (pprint-str  right))]
+  (let [left  (get-in report left-ks)
+        right (get-in report right-ks)
+        s     (case (:op report)
+                := (str logo " " (pr-str left) " := " (pr-str right)  "\n")
+                :? (str logo " " (pr-str left) " ?"                   "\n"))]
     ;; TODO
     (if-not (ugly? s)
       (print s)
@@ -38,8 +40,9 @@
         (printab logo (pprint-str left))
         (newline)
         (printab (str (apply  str  (repeat (+ 2 (count (str logo))) \space))
-                      "=> ")
-                 (pprint-str right))
+                      (case (:op report) := ":= " :? "?"))
+                 (when (= := (:op report))
+                   (pprint-str right)))
         (newline)))))
 
 (macros/deftime
@@ -47,11 +50,11 @@
     `(let [store# ~store  pth# ~pth]
        (when-not (get-in @store# pth#)
          (let [result# ~expr]
-           (swap! store# assoc-in pth# true)
+           (swap! store# assoc-in pth# ::run-once)
            result#))))
 
   ;; TODO: necessary ?
-  (defmacro ^:private if-once [store pth expr & [else]]
+  (defmacro ^:private once-else [store pth expr & [else]]
     `(if-let [cached# (once ~store ~pth ~expr)]
        cached#
        ~else)))
@@ -78,7 +81,7 @@
       (let [ts-cnt (->> tests (apply concat) count)]
         (println "---- Testing" ns-name
                  (str "(" ts-cnt \space
-                      (if-once store [:announced-nss ns-name] "more ")
+                      (once-else store [:announced-nss ns-name] "more ")
                       (-> "test" (pluralize-on ts-cnt))
                       ")")))))
   (before-report-block [this ns-name tests] nil)
@@ -90,7 +93,7 @@
         (let [status   (:status report)
               conf     (with-contexts {:status status} (config))
               logo     (-> conf :reporter :logo)
-              left-ks  [:result :form]
+              left-ks  [:tested :form]
               right-ks [:expected :val]
               left     (get-in report left-ks)]
           (swap! store update-in [:counts status] (fnil inc 0))
@@ -111,7 +114,7 @@
                     :failure (let [v      (binding [*print-level* 10000
                                                     pp/*print-pprint-dispatch*
                                                     pp/code-dispatch]
-                                            (-> report :result :val pprint-str))
+                                            (-> report :tested :val pprint-str))
                                    left-n (count
                                             (str logo " " (pprint-str left)))
                                    prompt (str "Actual: ")
@@ -119,8 +122,7 @@
                                (if-not (ugly? s)
                                  (print s)
                                  (do (printab prompt v)
-                                     (newline))))
-                    nil)))) ;; TODO: remove
+                                     (newline))))))))
           (when (#{:error :failure} status) (newline)))))
     report)
   (after-report-block

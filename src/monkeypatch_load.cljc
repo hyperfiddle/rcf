@@ -16,7 +16,7 @@
 ;; Clojure
 (macros/deftime
   (defn- clj-core-load-around-hook [orig-load & paths]
-    (dbg "LOADING" paths)
+    ; (dbg "LOADING" paths)
     (if cljs.repl/*repl-env*
       (apply orig-load paths)
       (with-contexts {:exec-mode :load}

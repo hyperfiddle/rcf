@@ -1,6 +1,8 @@
 (ns minitest
   #?(:clj (:gen-class))
+
   (:refer-clojure :exclude [test unquote]) ;; TODO: remove unquote
+
   (:require [clojure.test]
             [clojure.string                    :as    str]
             [clojure.walk                      :refer [postwalk]]
@@ -9,6 +11,8 @@
       :cljs [cljs.pprint                       :as    pp :refer [pprint]])
    #?(:clj  [clojure.java.classpath            :as    cp])
    #?(:clj  [clojure.java.io                   :as    io])
+   #?(:clj  [clojure.spec.alpha                :as    s])
+   #?(:clj  [clojure.tools.macro               :refer [symbol-macrolet]])
    #?(:clj  [clojure.tools.namespace.find      :refer [find-namespaces-in-dir
                                                        find-sources-in-dir]])
    #?(:clj  [clojure.tools.namespace.file      :refer [read-file-ns-decl]])
@@ -24,10 +28,11 @@
    #?(:clj  [cljs.compiler                     :as    cljs])
    #?(:clj  [clojure.edn                       :as    edn])
    #?(:clj  [robert.hooke                      :refer [add-hook]]))
+
   #?(:cljs
       (:require-macros [minitest :refer [include
                                          file-config
-                                         once if-once
+                                         once once-else
                                          doseq-each-executor
                                          for-each-executor
                                          ensuring-runner+executors+reporter
@@ -42,6 +47,8 @@
   #?(:clj
       (:import [java.io      PipedInputStream PipedOutputStream PushbackReader]
                [clojure.lang LineNumberingPushbackReader])))
+
+(disable-reload!)
 
 (declare tests test!)
 
@@ -70,7 +77,7 @@
     :cljs true #_(when-not (js* "goog.debug"))))
 
 (def ^:no-doc as-thunk #(do `(fn [] ~%)))
-(def ^:no-doc as-quote #(do `'~%))
+(def ^:no-doc as-form  #(do `'~%))
 
 (macros/deftime
   (defmacro current-file []
@@ -134,15 +141,15 @@
                   :break-on-failure false}
    :reporter     {:class            minitest.TermReporter
                   :out              *out*
-                  :term-width       80
+                  :term-width       120
                   :error-depth      12
                   :compact          true
                   :silent           false
                   :dots             false
-                  :contexts {:status {:success {:logo '✅}
-                                      :failure {:logo '❌}
-                                      :error   {:logo '🔥}}}}
-   :langs        [:cljs]
+                  :contexts {:status {:success {:logo "✅"}
+                                      :failure {:logo "❌"}
+                                      :error   {:logo "🔥"}}}}
+   :langs        [:clj]
    :executor     {:clj  {:class     CljExecutor}
                   :cljs {:class     CljsExecutor
                          :cljsbuild {:source-paths [(cljs-src-path)]
@@ -150,7 +157,7 @@
                                                 :main          nil
                                                 :optimizations :none}}
                          :repl-env  #?(:clj node/repl-env :cljs nil)}}
-   :contexts     {:exec-mode {:load        {:store true,  :run false};; TODO: reset
+   :contexts     {:exec-mode {:load        {:store true,  :run true};; TODO: reset
                               :eval        {:store false, :run true}}
                   :env       {:production  {:load-tests                  false}
                               :development {:runner   {:break-on-failure true}}
@@ -220,7 +227,7 @@
 
 
 ;; ## More
-;; - [ ] Warning on {:exec-mode {:eval {:store true}}} (stores duplicate tests)
+;; - [ ] NO. Warning on {:exec-mode {:eval {:store true}}} (stores duplicate tests)
 ;; - [ ] Check exec mode of CLI runner
 ;; - [ ] Clarify config names
 ;; - [ ] Config map init-fn
@@ -228,42 +235,73 @@
 ;; - [ ] namespaces as context
 
 (macros/deftime
-  (defmacro tests [& body]
-    (when (load-tests?)
-      (let [parsed    (->> body
-                           ;; Parsing works with a sliding window of length 3.
-                           ;; We do this to detect patterns 3 forms long or
-                           ;; less. In order to accomodate for the appearance
-                           ;; of smaller forms at the end, we need to:
-                           (partition-all 3 1)
-                           ;;  => (partition-all 3 1 [1 => 3 !! 5])
-                           ;;  ((1 => 3) (=> 3 !!) (3 !! 5) (!! 5) (5))
-                           (map ;; TODO: use keep
-                                #(cond
-                                   ;; test => expectation  [test, expectation]
-                                   (-> % second (= '=>))   [(first %) (last %)]
-                                   ;; !! side-effect       [side-effect]
-                                   (-> % first  (= '!!))   [(second %)]
-                                   :else                   nil))
-                           (filter identity))]
-        `(let [c#     (config)
-               ns#    (current-ns-name)
-               block# ~(mapv (fn [x]
-                               (case (count x)
-                                 1 {:effect      {:form  (-> x first  as-quote)
-                                                  :thunk (-> x first  as-thunk)}}
-                                 2 {:test        {:form  (-> x first  as-quote)
-                                                  :thunk (-> x first  as-thunk)}
-                                    :expectation {:form  (-> x second as-quote)
-                                                  :thunk (-> x second as-thunk)}}))
-                             parsed)]
-           (if *currently-loading*
-             (when (or (:store c#) (:run c#)) (process-after-load! ns# [block#]))
-             (do (when (:store c#)            (store-tests!        ns# [block#]))
-                 (when (:run   c#)            (run-execute-report!
-                                                :block             ns# block#))))
-           nil
-           )))))
+  ;; TODO: too much
+  (defn conform! [spec value]
+    (let [result (s/conform spec value)]
+      (when (= result ::s/invalid)
+        (throw (Exception.
+                 (binding [*print-level* 7
+                           *print-namespace-maps* false]
+                   (str \newline
+                        (with-out-str (->> (s/explain-data spec value)
+                                           (mapv (fn [[k v]]
+                                                   [(-> k name keyword) v]))
+                                           (into {})
+                                           pprint)))))))
+      result))
+
+  ; (defn conf
+  ;   ([form f]     (conf form f identity))
+  ;   ([form f unf] (s/& form (s/conformer f unf))))
+
+  ; (defmacro ^:private altm [& args]
+  ;   `(conf (s/alt ~@args)
+  ;         #(apply hash-map %)))
+
+  (defn- parse-tests [block-body]
+    (let [not-op? (complement #{:= :?})]
+      (->> block-body
+           (conform!
+             (s/*
+               (s/alt :effect  not-op?
+                      :expectation (s/alt
+                                     := (s/cat :tested   not-op?
+                                               :op       #{:=}
+                                               :expected not-op?)
+                                     :? (s/cat :op       #{:?}
+                                               :tested not-op?)))))
+           ;; Sample of what we are processing next:
+           ;; [[:effect 0]
+           ;;  [:expectation [:= {:tested 1, :op :=, :expected 1}]]]
+           (mapv (fn [[type x]]
+                   (case type
+                     :effect
+                     {:type     :effect
+                      :form     (-> x as-form)
+                      :thunk    (-> x as-thunk)}
+
+                     :expectation
+                     (let [[op m] x]
+                       (merge {:type     :expectation
+                               :op       op
+                               :tested   {:form  (-> m :tested as-form)
+                                          :thunk (-> m :tested as-thunk)}}
+                              (when (= op :=)
+                                {:expected {:form  (-> m :expected as-form)
+                                            :thunk (-> m :expected as-thunk)}}))
+                       )))))))
+
+(defmacro tests [& body]
+  (when (load-tests?)
+    `(let [c#     (config)
+           ns#    (current-ns-name)
+           block# ~(parse-tests body)]
+       (if *currently-loading*
+         (when (or (:store c#) (:run c#)) (process-after-load! ns# [block#]))
+         (do (when (:store c#)            (store-tests!        ns# [block#]))
+             (when (:run   c#)            (run-execute-report!
+                                            :block             ns# block#))))
+       nil))))
 
 (macros/deftime
   ;; TODO: rename

@@ -16,30 +16,49 @@
                                        (set! *e t#)
                                        [::caught t#]))))
 
+  (defmacro ^:private lay [[sym expr & more-bindings] & body]
+    (let [delay-sym (gensym (str "laid-" sym "-"))]
+      `(let [~delay-sym (delay ~expr)]
+         (symbol-macrolet [~sym (deref ~delay-sym)]
+           ~@(if (empty? more-bindings)
+               body
+               `[(lay ~more-bindings ~@body)])))))
 
-(defn- ^:no-doc run-test-and-yield-report! [ns {:keys [test expectation effect]
-                                                :as   m}]
-  (if effect
-    (let [result (managing-exs (call (:thunk effect)))]
-      (if (managed-ex? result)
-        (ex-info (str "Error in test effect\n"
-                      (with-out-str (pprint (:form effect))))
-                 {:type  :minitest/effect-error
-                  :error (ex result)})
-        :minitest/effect-performed))
-    (let [result   (managing-exs
-                     (doto (call (:thunk test))
-                           (as-> res (set! *3 *2) (set! *2 *1) (set! *1 res))))
-          expected (managing-exs (call (:thunk expectation)))]
-      (merge {:ns       ns
-              :result   {:form (:form test)
-                         :val  (when-not (managed-ex? result)   result)}
-              :expected {:form (:form expectation)
-                         :val  (when-not (managed-ex? expected) expected)}}
-             (cond (managed-ex? expected) {:status :error  :error (ex expected)}
-                   (managed-ex? result)   {:status :error  :error (ex result)}
-                   (= result expected)    {:status :success}
-                   :else                  {:status :failure})))))
+  (defn- ^:no-doc run-test-and-yield-report! [ns {:keys [type] :as test}]
+    (case type
+      :effect
+      (let [result (managing-exs (call (:thunk test)))]
+        (if (managed-ex? result)
+          (ex-info (str "Error in test effect\n"
+                        (with-out-str (pprint (:form test))))
+                   {:type     :minitest/effect-error
+                    :test     test
+                    :location :effect
+                    :error    (ex result)})
+          :minitest/effect-performed))
+
+      :expectation
+      (lay [testedv   (managing-exs (-> test :tested   :thunk call))
+            expectedv (managing-exs (-> test :expected :thunk call))]
+        (merge
+          {:ns     ns
+           :op     (:op test)
+           :tested (merge {:form (-> test :tested      :form)}
+                          (when-not (managed-ex? testedv)
+                            {:val testedv}))}
+          (when (= (:op test) :=)
+            {:expected (merge {:form (-> test :expectation :form)}
+                              (when-not (managed-ex? expectedv)
+                                {:val expectedv}))})
+          (lay [err-expected? (and (= (:op test) :=) (managed-ex? expectedv))
+                success?      (case (:op test)
+                                :=  (= testedv expectedv)
+                                :?  testedv)]
+            (cond
+              (managed-ex? testedv)   {:status :error  :error (ex testedv)}
+              err-expected?           {:status :error  :error (ex expectedv)}
+              success?                {:status :success}
+              :else                   {:status :failure}))))))
 
 (declare construct-record)
 (defrecord Runner [opts store]

@@ -3,9 +3,8 @@
 
 ;; Keep this form the second in the file
 (minitest/tests
-  Bla bla bla
-  (inc 1) => 2
-  (inc 3) => 4
-  (inc 3) => 5
-  nil     => nil
-  nil     => true)
+  (inc 1) := 2
+  (inc 3) := 4
+  (inc 3) := 5
+  nil     := nil
+  nil     := true)

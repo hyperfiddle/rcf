@@ -114,7 +114,7 @@
   (before-execute-suite
     [this ns->tests]
     (macros/case
-      :clj  (let [req-stmt `(~'require ~@(map as-quote (keys ns->tests))
+      :clj  (let [req-stmt `(~'require ~@(map as-form (keys ns->tests))
                                        :reload)]
               (dbg "REQ STMT" req-stmt)
               (let [res (with-repl (testing-repl) ~req-stmt)]

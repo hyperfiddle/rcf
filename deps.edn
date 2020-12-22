@@ -4,7 +4,8 @@
   org.clojure/tools.namespace  {:mvn/version "1.0.0"}
   org.clojure/tools.reader     {:mvn/version "1.3.3"}
   robert/hooke                 {:mvn/version "1.3.0"}
-  net.cgrand/macrovich         {:mvn/version "0.2.1"}}
+  net.cgrand/macrovich         {:mvn/version "0.2.1"}
+  org.clojure/tools.macro      {:mvn/version "0.1.2"}}
 
  :aliases
  {:test         {:extra-paths ["test" "test_resources"]}

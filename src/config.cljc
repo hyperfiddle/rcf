@@ -1,3 +1,4 @@
+;; Yo, the default config map is in minitest.cljc
 
 (declare default-config)
 

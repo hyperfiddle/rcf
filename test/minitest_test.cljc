@@ -65,7 +65,7 @@
 ;             (testing "tests are not stored"
 ;               (is (= 0 (count (get @*tests* (ns-name *ns*))))))
 ;             (testing "tests are run once"
-;               (is (= 1 (count (re-seq #"\(inc 1\) => 2" printed))))))))
+;               (is (= 1 (count (re-seq #"\(inc 1\) := 2" printed))))))))
 
 ;; - [√] A "bug". We don't want to have to order the tests any differently
 ;;       than the rest of the code; i.e. tests are run after the code has
@@ -75,10 +75,10 @@
 ; (defn inc-it [x]
 ;   (inc-it* x))
 
-; (tests (inc-it 1) => 2)
-; (tests (inc-it 2) => 3
+; (tests (inc-it 1) := 2)
+; (tests (inc-it 2) := 3
 ;        !! (println "An effect was run !")
-;        (/ 1 0)    => :oops
+;        (/ 1 0)    := :oops
 ;        !! (println "Another effect was run !"))
 
 ; (defn inc-it* [x]
@@ -89,13 +89,14 @@
 
 ;; - [√] Tests can refer to the lexical environment
 ; (let [a 1]
-;   (tests a => 1))
+;   (tests a := 1))
 
 
 ; (test!)
 
-; (tests (inc 0) => 1
-;        (inc 1) => 2)
-(tests :ok => :ok)
+; (tests (inc 0) := 1
+;        (inc 1) := 2)
+(tests :ok := :ok
+       :? (= 1 1))
 (require 'minitest-test-namespace)
 ; (test!)
