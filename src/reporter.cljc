@@ -88,7 +88,7 @@
   (before-report-case  [this ns-name test]  nil)
   (report-case
     [this ns-name report]
-    (when-not (= report :minitest/effect-performed)
+    (when (map? report)
       (binding [*out* (-> (config) :reporter :out)]
         (let [status   (:status report)
               conf     (with-contexts {:status status} (config))

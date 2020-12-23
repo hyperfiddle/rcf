@@ -16,7 +16,7 @@
 ;; Clojure
 (macros/deftime
   (defn- clj-core-load-around-hook [orig-load & paths]
-    ; (dbg "LOADING" paths)
+    (dbg "LOADING" paths)
     (if cljs.repl/*repl-env*
       (apply orig-load paths)
       (with-contexts {:exec-mode :load}
@@ -46,65 +46,82 @@
   ;; We deal directly with JavaScript because reusing the current cljs
   ;; compilation settings is tricky.
   (defn- require-js [ns]
-    (cljs/emitln "goog.require('" (cljs/munge ns) "');"))
+    (cljsc/emitln "goog.require('" (cljsc/munge ns) "');"))
 
   (defmacro ^:private with-js-block [& emitting-body]
-    `(do  (cljs/emitln "{")  ~@emitting-body  (cljs/emitln "}")))
+    `(do  (cljsc/emitln "{")  ~@emitting-body  (cljsc/emitln "}")))
 
   (defmacro ^:private try-js [expr-emitter & {:keys [finally]}]
-    `(do (cljs/emitln "try {")
+    `(do (cljsc/emitln "try {")
          ~expr-emitter
-         (cljs/emitln "} finally {")
+         (cljsc/emitln "} finally {")
          ~finally
-         (cljs/emitln "}")))
+         (cljsc/emitln "}")))
 
   (defmacro ^:private  binding-js [[var-name expr] & emitting-body]
-    `(let [js-var#   (cljs/munge '~var-name)
+    `(let [js-var#   '~(cljsc/munge var-name) ;; Keeps .
            js-val#   ~expr
-           orig-var# (-> (str "_original_" js-var#)
-                         cljs/munge
-                         (str/replace #"[.]" "_")
-                         gensym)]
-       (with-js-block ;; guard from changing vars above...
-         (cljs/emitln "const " orig-var#  " = " js-var# ";")
-         (cljs/emitln          js-var#    " = " js-val# ";")
+           orig-var# '~(munge (str "original_" var-name))] ;; Converts . to _
+       (with-js-block ;; guards from changing vars above...
+         (cljsc/emitln "const " orig-var#  " = " js-var# ";")
+         (cljsc/emitln          js-var#    " = " js-val# ";")
          ;; ...and being changed by assignments below with try's own block scope
          (try-js ~@emitting-body
-                 :finally (cljs/emitln js-var# " = " orig-var# ";"))
+                 :finally (cljsc/emitln js-var# " = " orig-var# ";"))
          ;; See: https://stackoverflow.com/a/39798496
          )))
-
-  (defn- separate [pred coll] [(filter pred coll) (remove pred coll)])
-  (defn- rotate   [x]         (apply map vector x))
-
-  (defn- separate-load-libs [these-deps [libs seen reloads deps ns-name]]
-    (let [tdeps          (set these-deps)
-          odeps          (apply disj (set deps) tdeps)
-          [these others] (->> (map #(separate tdeps %)
-                                   [seen reloads deps])
-                              rotate)]
-      `[[~(select-keys libs tdeps) ~@these  ~ns-name]
-        [~(select-keys libs odeps) ~@others ~ns-name]]))
 
   (defn- cljs-compiler-load-libs-around-hook [orig-load-libs
                                               & [libs seen reloads deps ns-name
                                                  :as args]]
+    ; (binding [*out* (io/writer java.lang.System/out)]
+    ;   (pprint {:ns     ns-name
+    ;            :args   (let [[libs seen reloads deps ns-name] args]
+    ;                      {:libs libs :seen seen :reloads reloads :deps deps
+    ;                       :ns-name ns-name})})
+    ;   (orig-load-libs '{minitest minitest} nil nil '[minitest] 'cljs.user)
+    ;   #_(when-not (= ns-name 'minitest)
+    ;     #_(pprint (ana/empty-env))
+    ;     #_(pprint (ana/analyze
+    ;               (assoc (ana/empty-env)
+    ;                 :ns (cljs.analyzer/get-namespace (ana/current-ns)))
+    ;               (macroexpand `(cljs.core/require '~'minitest))
+    ;               nil
+    ;               (some-> (ana/current-state) deref :options))))
+    ;   ; (pprint (seq (.getStackTrace (ex-info "" {}))))
+    ;   (dbg "")
+    ;   (orig-load-libs '{minitest minitest} nil nil '[minitest] 'cljs.user)
+    ;   (apply orig-load-libs args))
+
+    ; (orig-load-libs '{minitest minitest} nil nil '[minitest] 'cljs.user)
+    ; (apply orig-load-libs args)
+
     (if (= ns-name 'minitest)
       (apply orig-load-libs args)
-      (let [[mini others :as x] (separate-load-libs ['minitest] args)
-            mini-deps (nth mini 3)]
-        (binding [*out* (io/writer java.lang.System/out)]
-          (dbg "NSNAME" ns-name)
-          (dbg "MINI" mini)
-          (dbg "OTHERS" others)
-          (dbg ""))
-        (when (seq mini-deps)       (apply orig-load-libs mini))
-        (let [emitted (with-out-str (apply orig-load-libs others))]
-          (when (seq emitted)
-            (when-not (seq mini-deps) (require-js 'minitest))
-            (binding-js [minitest.*currently-loading* true]
-              (print emitted)))))))
+      (do (orig-load-libs '{minitest minitest} nil nil '[minitest] 'cljs.user)
+          (let [emitted (with-out-str (apply orig-load-libs args))]
+            (when (seq emitted)
+              (binding-js [minitest/*currently-loading* true]
+                (print emitted)))))))
 
   (defn- apply-patch-to-cljs-compiler-load-libs []
     (add-hook #'cljs.compiler/load-libs
-              #'cljs-compiler-load-libs-around-hook)))
+              #'cljs-compiler-load-libs-around-hook))
+
+  (defn- dequote [form]
+    (when (and  (sequential? form)  (-> form first (= 'quote)))
+      (second form)))
+
+  (defn- minitest-req? [form]
+    (or (= (dequote form) 'minitest)
+        (and (sequential? form)
+             (= (-> form first dequote) 'minitest))))
+
+  (defn cljs-core-require-around-hook [orig-require &form &env & args]
+    (if (or (-> &env :ns :name) (some minitest-req? args))
+      (apply orig-require &form &env args)
+      (apply orig-require &form &env (cons `'~'minitest args))))
+
+  (defn- apply-patch-to-cljs-core-require []
+    (add-hook #'cljs.core/require
+              #'cljs-core-require-around-hook)))

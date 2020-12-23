@@ -126,7 +126,8 @@
     [this ns case]
     (macros/case
       :cljs (run-test-and-yield-report! ns case)
-      :clj  (throw (Exception. "Can't run minitests for cljs from clj for now"))))
+      ;; TODO: reset
+      :clj  nil #_(throw (Exception. "Can't run minitest for cljs from clj for now"))))
   (after-execute-case       [this ns report])
   (after-execute-block      [this ns reports])
   (after-execute-namespace  [this ns reports])

@@ -99,7 +99,7 @@
                           (for-each-executor conf
                             (let [rpt (exe->rpt &executor-name)]
                               (if (and (:fail-fast conf)
-                                       (-> rpt :status #{:error :failure}))
+                                       (some-> rpt :status #{:error :failure}))
                                 (fail-fast!                        ns  rpt)
                                 (do (after-execute-case &executor  ns  rpt)
                                     (report-case        *reporter* ns  rpt))))))

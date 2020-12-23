@@ -25,7 +25,9 @@
    #?(:clj  [cljs.repl                         :as    repl])
    #?(:cljs [cljs.repl                         :refer [pst]])
    #?(:clj  [cljs.repl.node                    :as    node])
-   #?(:clj  [cljs.compiler                     :as    cljs])
+   #?(:clj  [cljs.compiler                     :as    cljsc])
+   #?(:clj  [cljs.core                         :as    cljs])
+   #?(:clj  [cljs.analyzer.api                 :as    ana])
    #?(:clj  [clojure.edn                       :as    edn])
    #?(:clj  [robert.hooke                      :refer [add-hook]]))
 
@@ -42,13 +44,21 @@
                                          find-test-namespaces
                                          with-contexts
                                          with-config
-                                         managing-exs]]))
+                                         managing-exs
+                                         lay]]
+                       [clojure.tools.macro :refer [symbol-macrolet]]))
 
   #?(:clj
       (:import [java.io      PipedInputStream PipedOutputStream PushbackReader]
                [clojure.lang LineNumberingPushbackReader])))
 
-(disable-reload!)
+(macros/deftime (disable-reload!))
+
+; TODO: disable warnings with cljs.analyzer.api/no-warn
+; See:  https://github.com/clojure/clojurescript/blob/5e88d3383e0f950c4de410d3d6ee11769f3714f4/src/main/clojure/cljs/analyzer/api.cljc#L140
+
+;; TODO: *load-test*
+;; See:  https://github.com/clojure/clojurescript/blob/5e88d3383e0f950c4de410d3d6ee11769f3714f4/src/main/clojure/cljs/analyzer.cljc#L61
 
 (declare tests test!)
 
@@ -58,9 +68,6 @@
     :clj (defmacro dbg [& args]
            `(binding [*out* (io/writer java.lang.System/out)]
               (println ~@args)))))
-
-
-; (cljs/build "test" {:main 'minitest-test :output-to "compiled.js" :output-dir "out" :optimizations :simple})
 
 (def ^:dynamic *tests*    (atom {}))
 (def ^:dynamic *contexts* {:exec-mode :eval, :env :development})
@@ -149,7 +156,7 @@
                   :contexts {:status {:success {:logo "✅"}
                                       :failure {:logo "❌"}
                                       :error   {:logo "🔥"}}}}
-   :langs        [:clj]
+   :langs        [:cljs]
    :executor     {:clj  {:class     CljExecutor}
                   :cljs {:class     CljsExecutor
                          :cljsbuild {:source-paths [(cljs-src-path)]
@@ -168,9 +175,11 @@
 (macros/case
   :clj (when (load-tests?)
          (let [langs (-> (config) :langs set)]
-           (when (or (:clj  langs)
-                     (:cljs langs)) (apply-patch-to-clojure-core-load))
-           (when (:cljs langs)      (apply-patch-to-cljs-compiler-load-libs)))))
+           (when (or (:clj  langs) (:cljs langs))
+             (apply-patch-to-clojure-core-load))
+           (when (:cljs langs)
+             (do (apply-patch-to-cljs-compiler-load-libs)
+                 (apply-patch-to-cljs-core-require))))))
 
 ;; ## When and how to run tests
 ;; - [√] tests are run once
@@ -238,7 +247,7 @@
   ;; TODO: too much
   (defn conform! [spec value]
     (let [result (s/conform spec value)]
-      (when (= result ::s/invalid)
+      (when (= result :s/invalid)
         (throw (Exception.
                  (binding [*print-level* 7
                            *print-namespace-maps* false]
