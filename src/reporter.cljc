@@ -124,6 +124,7 @@
                                  (do (printab prompt v)
                                      (newline))))))))
           (when (#{:error :failure} status) (newline)))))
+    (flush)
     report)
   (after-report-block
     [this ns-name reports]
