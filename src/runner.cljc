@@ -16,13 +16,14 @@
                                        (set! *e t#)
                                        [::caught t#]))))
 
-  (defmacro ^:private lay [[sym expr & more-bindings] & body]
+  (defmacro lay [[sym expr & more-bindings] & body]
     (let [delay-sym (gensym (str "laid-" sym "-"))]
       `(let [~delay-sym (delay ~expr)]
          (symbol-macrolet [~sym (deref ~delay-sym)]
            ~@(if (empty? more-bindings)
                body
                `[(lay ~more-bindings ~@body)])))))
+
 
   ; (defn- ^:no-doc run-test-and-yield-report! [ns {:keys [type] :as test}]
   ;   (case type

@@ -4,9 +4,9 @@
 ;    #?(:clj  [clojure.pprint    :refer [pprint]]
 ;       :cljs [cljs.pprint       :refer [pprint]])
 ;    #?(:cljs [cljs.reader       :refer [read-string]])
-;    #?(:clj  [minitest          :refer [test! *tests* *currently-loading*
+;    #?(:clj  [minitest          :refer [test! *tests*
 ;                                        tests with-contexts]]
-;       :cljs [minitest          :refer [test! *tests* *currently-loading*]])
+;       :cljs [minitest          :refer [test! *tests*]])
 ;             ; [minitest-test-namespace]
 ;             )
 ;   #?(:clj  (:require [net.cgrand.macrovich :as macros])
@@ -58,7 +58,7 @@
 ; ; #?(:clj (deftest test-on-eval
 ; ;           (reset! *tests* {})
 ; ;           (let [printed (our-out-str
-; ;                           (binding [*currently-loading* false]
+; ;                           (with-contexts {:exec-mod :eval}
 ; ;                             (-> (nth-file-form
 ; ;                                   1 "test/minitest_test_namespace.cljc")
 ; ;                                 eval)))]

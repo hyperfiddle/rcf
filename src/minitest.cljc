@@ -45,7 +45,10 @@
                                          with-contexts
                                          with-config
                                          managing-exs
-                                         lay]]
+                                         lay
+                                         currently-loading?
+                                         tests-to-process
+                                         handling-on-load-tests-in-js]]
                        [clojure.tools.macro :refer [symbol-macrolet]]))
 
   #?(:clj
@@ -54,26 +57,49 @@
 
 (macros/deftime (disable-reload!))
 
+;; -- Dev tools
+;; ---- Some commands
+;; fswatch src/!(minitest.cljc) | (while read; do touch src/minitest.cljc; done)
+
+;; (cljs/build "test" {:main 'minitest-test :output-to "compiled.js" :output-dir "out" :optimizations :simple :target :nodejs})
+
+;; (require 'shadow.cljs.devtools.server) (shadow.cljs.devtools.server/start!) (require '[shadow.cljs.devtools.api :as shadow]) (shadow/watch :app)
+
+;; ---- Debugging
+(macros/deftime
+  (macros/case
+    :clj (defmacro dbg [& args]
+           #_`(do ~@args)
+           `(binding [*out* (io/writer java.lang.System/out)]
+              (println ~@args)))))
+
+;; -- Explorations
 ; TODO: disable warnings with cljs.analyzer.api/no-warn
 ; See:  https://github.com/clojure/clojurescript/blob/5e88d3383e0f950c4de410d3d6ee11769f3714f4/src/main/clojure/cljs/analyzer/api.cljc#L140
 
 ;; TODO: *load-test*
 ;; See:  https://github.com/clojure/clojurescript/blob/5e88d3383e0f950c4de410d3d6ee11769f3714f4/src/main/clojure/cljs/analyzer.cljc#L61
 
+
 (declare tests test!)
 
-;; TODO: remove
+(def ^:dynamic          *tests*             (atom {}))
+(def ^:dynamic          *contexts*          {:exec-mode :eval :env :dev})
+(def ^:dynamic ^:no-doc *currently-loading* false)
+(def ^:dynamic ^:no-doc *tests-to-process*  nil)
+
 (macros/deftime
-  (macros/case
-    :clj (defmacro dbg [& args]
-           `(binding [*out* (io/writer java.lang.System/out)]
-              (println ~@args)))))
+  (defmacro tests-to-process []
+    (macros/case
+      :clj  `*tests-to-process*
+      :cljs `(when (cljs.core/exists? js/_MINITEST_TESTS_TO_PROCESS_)
+               js/_MINITEST_TESTS_TO_PROCESS_)))
 
-(def ^:dynamic *tests*    (atom {}))
-(def ^:dynamic *contexts* {:exec-mode :eval, :env :development})
-
-(def ^:no-doc ^:dynamic *currently-loading* false)
-(def ^:no-doc ^:dynamic *tests-to-process*  nil)
+  (defmacro currently-loading? []
+    (macros/case
+      :clj  `*currently-loading*
+      :cljs `(when (cljs.core/exists? js/_MINITEST_CURRENTLY_LOADING_)
+               js/_MINITEST_CURRENTLY_LOADING_))))
 
 (declare config)
 (def ^:no-doc ->|   #(apply comp (reverse %&)))
@@ -123,10 +149,6 @@
                                                :clj  #{:clj}
                                                :cljs #{:cljs})}))))))))))
 
-;; fswatch src/!(minitest.cljc) | (while read; do touch src/minitest.cljc; done)
-
-;; (cljs/build "test" {:main 'minitest-test :output-to "compiled.js" :output-dir "out" :optimizations :simple :target :nodejs})
-
 (include "config")
 (include "clojurescript")
 (include "executor")
@@ -134,7 +156,6 @@
 (include "reporter")
 (include "run_execute_report")
 (include "ns_selector")
-(include "monkeypatch_load")
 
 (def default-config
   "Any config you may provide to minitest will merge into this base
@@ -159,6 +180,7 @@
    :langs        [:cljs]
    :executor     {:clj  {:class     CljExecutor}
                   :cljs {:class     CljsExecutor
+                         ;; TODO: not in use
                          :cljsbuild {:source-paths [(cljs-src-path)]
                                      :compiler {:output-to     (cljs-out-path)
                                                 :main          nil
@@ -167,19 +189,12 @@
    :contexts     {:exec-mode {:load        {:store true,  :run true};; TODO: reset
                               :eval        {:store false, :run true}}
                   :env       {:production  {:load-tests                  false}
-                              :development {:runner   {:break-on-failure true}}
+                              :dev         {:runner   {:break-on-failure true}}
                               :cli         {:reporter {:dots             true}}
                               :ci          [:cli]}}})
 
-;; TODO: wrap into macros/deftime
-(macros/case
-  :clj (when (load-tests?)
-         (let [langs (-> (config) :langs set)]
-           (when (or (:clj  langs) (:cljs langs))
-             (apply-patch-to-clojure-core-load))
-           (when (:cljs langs)
-             (do (apply-patch-to-cljs-compiler-load-libs)
-                 (apply-patch-to-cljs-core-require))))))
+(include "monkeypatch_load")
+(macros/deftime  (when (load-tests?) (apply-patches)))
 
 ;; ## When and how to run tests
 ;; - [√] tests are run once
@@ -300,28 +315,17 @@
                                             :thunk (-> m :expected as-thunk)}}))
                        )))))))
 
-(defmacro tests [& body]
-  (when (load-tests?)
-    `(let [c#     (config)
-           ns#    (current-ns-name)
-           block# ~(parse-tests body)]
-       (if *currently-loading*
-         (when (or (:store c#) (:run c#)) (process-after-load! ns# [block#]))
-         (do (when (:store c#)            (store-tests!        ns# [block#]))
-             (when (:run   c#)            (run-execute-report!
-                                            :block             ns# block#))))
-       nil))))
-
-(macros/deftime
-  ;; TODO: rename
-  (defmacro find-test-namespaces []
-    (let [dirs (-> (config) :dirs set)]
-      `'~(vec (mapcat #(find-namespaces-in-dir
-                         (io/file %)
-                         (macros/case
-                           :clj  clojure.tools.namespace.find/clj
-                           :cljs clojure.tools.namespace.find/cljs))
-                      dirs)))))
+  (defmacro tests [& body]
+    (when (load-tests?)
+      `(with-contexts {:exec-mode (if (currently-loading?) :load :eval)}
+         (let [c#     (config)
+               ns#    (current-ns-name)
+               block# ~(parse-tests body)]
+           (if (currently-loading?)
+             (when (or (:store c#) (:run c#)) (process-after-load! ns# [block#]))
+             (when (:run   c#)                (run-execute-report!
+                                                :block             ns# block#))))
+         nil))))
 
 (defn- config-kw? [x]
   (and (keyword? x)
@@ -339,18 +343,18 @@
 (defn test!
   ([]       (let [ns (current-ns-name)]
               (cond
-                *currently-loading* (with-config {:run true :store false}
-                                      (process-on-load-tests-now!))
-                (get @*tests* ns)   (test! ns)
-                :else               (test! :all))))
-  ([& args] (let [[conf sels]       (->> (partition-all 2 args)
-                                         (split-with (->| first config-kw?)))
-                  sels              (parse-selectors (apply concat sels))
-                  nss               (filter
-                                      (->| (apply juxt sels)
-                                           (partial apply excludor))
-                                      (find-test-namespaces))
-                  ns->tests         (select-keys @*tests* nss)]
+                (currently-loading?) (with-config {:run true :store false}
+                                       (store-or-run-tests!))
+                (get @*tests* ns)    (test! ns)
+                :else                (test! :all))))
+  ([& args] (let [[conf sels]        (->> (partition-all 2 args)
+                                          (split-with (->| first config-kw?)))
+                  sels               (parse-selectors (apply concat sels))
+                  nss                (filter
+                                       (->| (apply juxt sels)
+                                            (partial apply excludor))
+                                       (find-test-namespaces))
+                  ns->tests          (select-keys @*tests* nss)]
               (macros/case :clj (doto (run! require nss)))
               (if (empty? ns->tests)
                 :no-test
@@ -371,6 +375,7 @@
 ;; - [x] options are passed in a bash style (e.g. --option "value")
 ;; - [√] or options are passed clojure style (e.g. :option "value")
 
+;; TODO: deftime ?
 (macros/case
   :clj
   (defn- print-usage []

@@ -1,3 +1,4 @@
 .cpcache/
 .nrepl-port
 .cljs_node_repl/
+.shadow-cljs/

@@ -1,6 +1,19 @@
 
+(macros/deftime
+  (defmacro find-test-namespaces []
+    (let [dirs (-> (config) :dirs set)]
+      `'~(set (mapcat #(find-namespaces-in-dir
+                         (io/file %)
+                         (macros/case
+                           :clj  clojure.tools.namespace.find/clj
+                           :cljs clojure.tools.namespace.find/cljs))
+                      dirs)))))
+
 (defn- regex? [x]
-  (instance? java.util.regex.Pattern x))
+  (instance? (macros/case
+               :clj  java.util.regex.Pattern
+               :cljs js/RegExp)
+             x))
 
 (defn- regex-ns-selector [reg]
   #(->> % name (re-matches reg)))
