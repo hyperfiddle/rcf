@@ -9,12 +9,31 @@
 
  :aliases
  {:test         {:extra-paths ["test" "test_resources"]
-                 :extra-deps  {thheller/shadow-cljs {:mvn/version "2.11.10"}}}
+                 :extra-deps  {thheller/shadow-cljs            {:mvn/version "2.11.10"}}}
   :run-tests    {:extra-paths ["test" "test_resources"]
-                 :extra-deps  {olical/cljs-test-runner {:mvn/version "3.8.0"}}
+                 :extra-deps  {olical/cljs-test-runner         {:mvn/version "3.8.0"}}
                  ; :main-opts   ["-m" "minitest-run-tests"]
-                 :main-opts ["-m" "cljs-test-runner.main"]
+                 :main-opts   ["-m" "cljs-test-runner.main"]
                  }
   :explain      {:extra-paths ["dev"]
                  :extra-deps  {dorothy {:mvn/version "0.0.7"}}
-                 :main-opts   ["-m" "minitest.explain"]}}}
+                 :main-opts   ["-m" "minitest.explain"]}
+  ;; TODO
+  ; [Figwheel] Failed to compile build figwheel in 0.29 seconds.
+  ; [Figwheel:WARNING] Could not Analyze   src/reporter.cljc   line:2  column:1
+
+  ;   Can't change/establish root binding of: *unchecked-if* with set
+
+  ;   1
+  ;   2  (defprotocol ReporterP
+  ;      ^---
+  ;   3    (before-report-suite     [this ns->tests])
+  ;   4    (before-report-namespace [this ns-name tests])
+  ;   5    (before-report-block     [this ns-name tests])
+  ;   6    (before-report-case      [this ns-name case])
+  ;   7    (report-case             [this ns-name report])
+  :figwheel     {:extra-deps  {com.bhauman/figwheel-main       {:mvn/version "0.2.12"}
+                               com.bhauman/rebel-readline-cljs {:mvn/version "0.1.4"}}
+                 :extra-paths ["target"]
+                 ; :main-opts   ["-m" "figwheel.main" "-r"]
+                 }}}

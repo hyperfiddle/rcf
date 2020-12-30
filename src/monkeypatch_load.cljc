@@ -84,11 +84,10 @@
 
 
   (defn cljs-compiler-emit-around-hook [orig-emit {:keys [op name] :as ast}]
-    ; (when (-> ast :op (= :ns*))
-    ;   (dbg "\n")
-    ;   (dbg "FUCK: cljs-compiler-emit-around-hook")
-    ;   (dbg "(ANA/CURRENT-NS)" (ana/current-ns))
-    ;   (dbg "AST NAME" (-> ast :name)))
+    (when (-> ast :op (= :ns*))
+      (dbg "\n")
+      (dbg "(ANA/CURRENT-NS)" (ana/current-ns))
+      (dbg "AST NAME" (-> ast :name)))
     (if (instrument-ast? :ns* ast)
       (do (handling-on-load-tests-in-js
             (with-out-str (orig-emit ast)))
@@ -115,6 +114,7 @@
         (println "(ANA/CURRENT-NS)" (ana/current-ns))
         (println "AST NAME" (-> ast :name))
         (println "FORM" (-> ast :form))))
+    ; (orig-shadow-emit state ast)
     (if (instrument-ast? :ns ast)
       (let [_   (dbg "OKKKKK")
             ast (assoc-in ast [:meta :skip-goog-provide] true)]
