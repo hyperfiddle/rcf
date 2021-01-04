@@ -38,7 +38,7 @@
      :port-file      true
      :port-file-name (str "." name "-prepl-port")
      :env            (:js-env *context*)
-     :accept         (let [sym (-> (config) :executor :cljs :prepl-fn)
+     :accept         (let [sym (:prepl-fn (config))
                            ns  (some-> sym namespace symbol)]
                        (require (-> sym namespace symbol))
                        (-> sym resolve .toSymbol))})

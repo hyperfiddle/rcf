@@ -23,7 +23,7 @@
 (defn- ugly?
   ([s]            (ugly? s 1))
   ([s term-ratio] (> (count s)
-                     (->> (config) :reporter :term-width (* term-ratio)))))
+                     (->> (config) :term-width (* term-ratio)))))
 
 (defn pprint-str [x] (with-out-str (pprint x)))
 
@@ -66,7 +66,7 @@
   ReporterP
   (before-report-suite
     [this ns->tests]
-    (binding [*out* (-> (config) :reporter :out)]
+    (binding [*out* (-> (config) :out)]
       (newline)
       (let [ns-cnt (count ns->tests)
             ts-cnt (->> ns->tests vals (apply concat) (apply concat) count)]
@@ -77,7 +77,7 @@
                 (str \( ts-cnt \space (-> "test" (pluralize-on ts-cnt)) \)))))))
   (before-report-namespace
     [this ns-name tests]
-    (binding [*out* (-> (config) :reporter :out)]
+    (binding [*out* (-> (config) :out)]
       (let [ts-cnt (->> tests (apply concat) count)]
         (println "---- Testing" ns-name
                  (str "(" ts-cnt \space
@@ -89,10 +89,10 @@
   (report-case
     [this ns-name report]
     (when (map? report)
-      (binding [*out* (-> (config) :reporter :out)]
+      (binding [*out* (-> (config) :out)]
         (let [status   (:status report)
               conf     (with-context {:status status} (config))
-              logo     (-> conf :reporter :logo)
+              logo     (-> conf :logo)
               left-ks  [:tested :form]
               right-ks [:expected :val]
               left     (get-in report left-ks)]
@@ -100,8 +100,8 @@
           (with-context {:status status}
             (when (#{:error :failure} status) (newline))
             (cond
-              (-> conf :reporter :silent) nil
-              (-> conf :reporter :dots)   (print logo)
+              (-> conf :silent) nil
+              (-> conf :dots)   (print logo)
               :else
               (do (print-result report logo left-ks right-ks)
                   (case status
@@ -131,16 +131,16 @@
     (remove #{:minitest/effect-performed} reports))
   (after-report-namespace
     [this ns-name reports]
-    (binding [*out* (-> (config) :reporter :out)]
+    (binding [*out* (-> (config) :out)]
       (newline)
       ;; If the last report was printed in `:dots` mode, it needs a newline
       (when (with-context {:status (-> reports last :status)}
-              (-> (config) :reporter :dots))
+              (-> (config) :dots))
         (newline))
       reports))
   (after-report-suite
     [this ns->reports]
-    (binding [*out* (-> (config) :reporter :out)]
+    (binding [*out* (-> (config) :out)]
       (let [counts (:counts @store)]
           (when-not (-> (config) :fail-fast)
             (newline)

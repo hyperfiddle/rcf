@@ -40,9 +40,6 @@
                                          #(-> % meta :column (<= column))))
                  doall))))
 
-(defn fresh-cljs-repl-env []
-  (-> (config) :executor :cljs :repl-env call))
-
 
 
 

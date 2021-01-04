@@ -1,5 +1,4 @@
-;; Yo, the default config map is in minitest.cljc
-
+;; Yo, the default config map is in minitest.cljc around line 200
 (declare default-config)
 
 (macros/deftime
@@ -15,7 +14,26 @@
       :clj  `(some-> (config-file) slurp edn/read-string)
       :cljs `(quote ~(some-> (config-file) slurp edn/read-string)))))
 
-(def ^:dynamic *config* (file-config)) ;; TODO: private
+;; TODO: private
+(def ^:dynamic *config*        (file-config))
+(def ^:dynamic *forced-config* nil)
+(def ^:dynamic *context*       nil)
+
+(defn config!
+  ([k v & {:as more}] (config! (assoc more k v)))
+  ([m]                (macros/case
+                        :clj  (alter-var-root #'*config* merge m)
+                        :cljs (throw (e-info "Not implemented for cljs")))))
+(defn force-config!
+  ([k v & {:as more}] (force-config! (assoc more k v)))
+  ([m]                (macros/case
+                        :clj  (alter-var-root #'*forced-config* merge m)
+                        :cljs (throw (e-info "Not implemented for cljs")))))
+(defn context!
+  ([k v & {:as more}] (context! (assoc more k v)))
+  ([m]                (macros/case
+                        :clj  (alter-var-root #'*context* merge m)
+                        :cljs (throw (e-info "Not implemented for cljs")))))
 
 ;; Taken from https://gist.github.com/danielpcox/c70a8aa2c36766200a95
 ;; TODO: acknowledge.
@@ -36,26 +54,27 @@
 (defn context-map? [x]
   (and (map? x) (contains? x :CONTEXT)))
 
-(defn contextualize [ctxs m]
+(defn contextualize [m ctx]
   (->> m (clojure.walk/postwalk
            (fn [form]
              (if-not (context-map? form)
                form
                (let [c           (:CONTEXT form)
-                     active-ctxs (select-keys ctxs (keys c))
+                     active-ctx  (merge (:DEFAULT-CONTEXT form)
+                                        (select-keys ctx (keys c)))
                      c-ms        (map #(parse-profile form (get-in c %))
-                                      active-ctxs)
+                                      active-ctx)
                      new-m       (apply deep-merge form c-ms)]
                  ;; Since a context can bring in new contexts, contextualize
                  ;, again until fix point is reached
                  (if (= form new-m)
                    new-m
-                   (contextualize ctxs new-m))))))))
+                   (contextualize new-m ctx))))))))
 
 (defn config [& [conf]]
-  (->> [default-config *config* conf]
-       (apply deep-merge)
-       (contextualize *context*)))
+  (-> (deep-merge default-config *config* conf)
+      (contextualize *context*)
+      (deep-merge *forced-config*)))
 
 (macros/deftime
   (defmacro with-config [m & body]

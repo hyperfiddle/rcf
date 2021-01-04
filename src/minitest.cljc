@@ -91,9 +91,6 @@
 (declare tests test!)
 
 (def ^:dynamic          *tests*             (atom {}))
-(def ^:dynamic          *context*           {:exec-mode :eval
-                                             :env       :dev
-                                             :js-env    :node})
 (def ^:dynamic ^:no-doc *currently-loading* false)
 (def ^:dynamic ^:no-doc *tests-to-process*  nil)
 
@@ -172,48 +169,56 @@
   configuration map.
 
   See `(source default-config)`."
-  {:dirs         ["src" "test"] ;; TODO: use clojure.java.classpath/classpath
-   :load-tests   true
-   :fail-fast    false
-   :runner       {:class            minitest.Runner
-                  :break-on-failure false}
-   :reporter     {:class            minitest.TermReporter
-                  :out              *out*
-                  :term-width       120
-                  :error-depth      12
-                  :compact          true
-                  :silent           false
-                  :dots             false
-                  :CONTEXT {:status {:success {:logo "✅"}
-                                     :failure {:logo "❌"}
-                                     :error   {:logo "🔥"}}}}
-   :langs        [:clj]
-   :executor     {:clj  {:class     CljExecutor}
-                  :cljs {:class     CljsExecutor
-                         ;; TODO: not in use
-                         :cljsbuild {:source-paths [(cljs-src-path)]
-                                     :compiler {:output-to     (cljs-out-path)
-                                                :main          nil
-                                                :optimizations :none}}
-                         :prepl-fn  'cljs.server.node/prepl
-                         #_(:cljs nil
-                            :clj  {:js-env :node
-                                   ; :CONTEXT
-                                   ; {:js-env
-                                   ;  {:node          'cljs.server.node/prepl
-                                   ;   :browser       'cljs.server.browser/prepl
-                                   ;   ; :figwheel      'cljs.core.server/io-prepl
-                                   ;   ; :lein-figwheel 'cljs.core.server/io-prepl
-                                   ;   :rhino         'cljs.server.rhino/prepl
-                                   ;   :graaljs       'cljs.server.graaljs/prepl
-                                   ;   :nashorn       'cljs.server.nashorn/prepl}}
-                                   })}}
-   :CONTEXT     {:exec-mode {:load        {:store true,  :run true};; TODO: reset
-                             :eval        {:store false, :run true}}
-                 :env       {:production  {:load-tests                  false}
-                             :dev         {:runner   {:break-on-failure true}}
-                             :cli         {:reporter {:dots             true}}
-                             :ci          [:cli]}}})
+  {:dirs             ["src" "test"] ;; TODO: use clojure.java.classpath/classpath
+   :load-tests       true
+   :fail-fast        false
+   :break-on-failure false ;; TODO
+   :out              *out*
+   :term-width       120
+   :error-depth      12
+   :silent           false
+   :dots             false
+   :langs            [:clj]
+   :cljsbuild        {} ;; TODO: not in use
+   :prepl-fn         'cljs.server.node/prepl
+   #_(:cljs nil
+            :clj  {:js-env :node
+                   ; :CONTEXT
+                   ; {:js-env
+                   ;  {:node          'cljs.server.node/prepl
+                   ;   :browser       'cljs.server.browser/prepl
+                   ;   ; :figwheel      'cljs.core.server/io-prepl
+                   ;   ; :lein-figwheel 'cljs.core.server/io-prepl
+                   ;   :rhino         'cljs.server.rhino/prepl
+                   ;   :graaljs       'cljs.server.graaljs/prepl
+                   ;   :nashorn       'cljs.server.nashorn/prepl}}
+                   })
+
+   :runner           {:class            Runner}
+   :reporter         {:class            TermReporter}
+   :executor         {:clj  {:class     CljExecutor}
+                      :cljs {:class     CljsExecutor}}
+   :DEFAULT-CONTEXT  {:exec-mode :eval
+                      :env       :dev
+                      :js-env    :node}
+   ;; reads as:   when          =        then
+   :CONTEXT          (let [silent-success {:status    {:success {:silent true}}}
+                           run-on-load    {:exec-mode {:load    {:run    true}}}
+                           quiet-dev      (assoc silent-success
+                                            :CONTEXT run-on-load)]
+                       {:exec-mode {:load        {:store            true
+                                                  :run              false}
+                                    :eval        {:store            false
+                                                  :run              true}}
+                        :env       {:production  {:load-tests       false}
+                                    :dev         {:break-on-failure true
+                                                  :CONTEXT          run-on-load}
+                                    :quiet-dev   [:dev, {:CONTEXT   quiet-dev}]
+                                    :cli         {:dots             true}
+                                    :ci          [:cli]}
+                        :status {:success {:logo "✅"}
+                                 :failure {:logo "❌"}
+                                 :error   {:logo "🔥"}}})})
 
 (include "monkeypatch_load")
 (macros/deftime  (when (load-tests?) (apply-patches)))
@@ -425,7 +430,7 @@
     (println "  clj -m minitest [name.space name.space.impl]")
     (println "  clj -m minitest name.*")
     (println "  clj -m minitest \\")
-    (println "    :reporter {:CONTEXT {:status {:error {:logo \"🤯\"}}}} \\")
+    (println "    {:CONTEXT {:status {:error {:logo \"🤯\"}}}} \\")
     (println "    hardship.impl")
     (newline)
     (println (source-fn 'minitest/default-config))
@@ -446,12 +451,6 @@
 
 #?(:clj
     (defn -main [& args]
-      ; (let [repl-env (fresh-cljs-repl-env)
-      ;       env      (repl/analyze-source "./src")]
-      ;   (println "env" env)
-      ;   (println "->-" (repl/eval-cljs repl-env env '(def x 1)))
-      ;   (println "->-" (repl/eval-cljs repl-env env '(inc x))))
-
       (if (-> args first #{"help" ":help" "h" "-h" "--help"})
         (print-usage)
         (with-context {:env :cli}

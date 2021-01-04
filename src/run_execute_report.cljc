@@ -41,7 +41,7 @@
   (throw (ex-info
            (str "Test " (name (:status rpt)) ":\n"
                 (with-out-str
-                  (with-config {:reporter {:out *out*}}
+                  (with-config {:out *out*}
                     (report-case *reporter* ns rpt))))
            (assoc rpt :type :minitest/fail-fast))))
 
