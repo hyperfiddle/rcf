@@ -31,35 +31,38 @@
     map?        x
     sequential? (->> (map (partial parse-profile m) x)
                      (apply deep-merge))
-    (do         (some-> m :contexts (get x) (->> (parse-profile m))))))
+    (do         (some-> m :CONTEXT (get x) (->> (parse-profile m))))))
 
 (defn context-map? [x]
-  (and (map? x) (contains? x :contexts)))
+  (and (map? x) (contains? x :CONTEXT)))
 
 (defn contextualize [ctxs m]
   (->> m (clojure.walk/postwalk
            (fn [form]
              (if-not (context-map? form)
                form
-               (let [c           (:contexts form)
+               (let [c           (:CONTEXT form)
                      active-ctxs (select-keys ctxs (keys c))
                      c-ms        (map #(parse-profile form (get-in c %))
-                                      active-ctxs)]
-                 (-> (apply deep-merge form c-ms)
-                     ;; prevent merging contexts from contexts
-                     (assoc :contexts (:contexts form)))))))))
+                                      active-ctxs)
+                     new-m       (apply deep-merge form c-ms)]
+                 ;; Since a context can bring in new contexts, contextualize
+                 ;, again until fix point is reached
+                 (if (= form new-m)
+                   new-m
+                   (contextualize ctxs new-m))))))))
 
 (defn config [& [conf]]
   (->> [default-config *config* conf]
        (apply deep-merge)
-       (contextualize *contexts*)))
+       (contextualize *context*)))
 
 (macros/deftime
   (defmacro with-config [m & body]
     `(binding [*config* (deep-merge *config* ~m)]
        ~@body))
 
-  (defmacro with-contexts [m & body]
-    `(binding [*contexts* (merge *contexts* ~m)]
+  (defmacro with-context [m & body]
+    `(binding [*context* (merge *context* ~m)]
        ~@body)))
 

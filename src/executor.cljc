@@ -24,77 +24,19 @@
   (after-execute-namespace  [this ns reports])
   (after-execute-suite      [this ns->reports]))
 
-(macros/deftime
-  (defn with-out|   [out f]     #(binding [*out* out] (apply f %&)))
-  (defn with-in|    [in  f]     #(binding [*in*  in]  (apply f %&)))
-  (defn to-repl|    [repl f]    (with-out| (:in  repl) f))
-  (defn from-repl|  [repl f]    (with-in|  (:out repl) f))
 
-  ;; TODO: use partial
-  (defn repl-exec!  [repl cmd]  ((to-repl|   repl prn)  cmd))
-  (defn repl-quit!  [repl]      ((to-repl|   repl #(.close *out*))))
-  (defn repl-result [repl]      ((from-repl| repl #(read))))
+(def testing-repl nil)
 
-  (defmacro with-repl
-    "Evaluates `body` in `repl`.
-
-    Works on top of `clojure.tools.reader/syntax-quote`: in order to
-    pass data between the host and the repl environments, forms marked
-    with unquote reader macros (`~` & `~@`) are expanded."
-    [repl & body]
-    (let [expansion (binding [r/resolve-symbol identity]
-                      (macroexpand `(r/syntax-quote ~body)))]
-      `(let [repl# ~repl]
-         (last (for [e# ~expansion]
-                 (do (repl-exec! repl# e#)
-                     (repl-result repl#)))))))
-
-  (def ^:dynamic ^:private *executing-cljs* false)
-
-  (defn cljs-prepl [repl-env]
-    (let [in<         (PipedInputStream.)
-          in>  (PipedOutputStream. in<)
-          out<        (PipedInputStream.)
-          out> (PipedOutputStream. out<)
-          to-repl     (io/writer in>)
-          to-client   (io/writer out>)
-          from-repl   (PushbackReader. (io/reader out<))
-          from-client (PushbackReader. (io/reader in<))
-          repl        {:in to-repl :out from-repl}]
-      (future
-        (binding [*executing-cljs* true]
-          (repl/repl
-            repl-env
-            ; :repl-requires    '[[cljs.repl :refer-macros [pst]]
-            ;                     #_[minitest  :refer        [test!]
-            ;                                :refer-macros [tests]]]
-            :quit-prompt       #()
-            :prompt            #()
-            :need-prompt       (constantly false)
-            :reader            #(rt/source-logging-push-back-reader
-                                  from-client 1 "<MINITEST_REPL>")
-            :flush             (with-out| to-client flush)
-            :print             (with-out| to-client println)
-            :print-no-newline  (with-out| to-client print)
-            :eval              #(apply repl/eval-cljs %&)
-            :caught            (fn [e env opts]
-                                 (println (ex-data e))
-                                 (pst e)
-                                 (pprint (.-stack e))))))
-      (dbg "REQUIRE MINITEST IN CLJS" *executing-cljs*)
-      (with-repl repl (require '[minitest :refer-macros [tests]]))
-      repl)))
-
-(def testing-repl-env
+(defn- start-testing-repl! []
+  (assert (nil? testing-repl) "Already started")
   (macros/case
-    :clj  (node/repl-env)
-    :cljs nil))
-
-(macros/deftime
-  (defmacro testing-repl []
-    `(macros/case
-       :clj  (cljs-prepl testing-repl-env)
-       :cljs nil)))
+    :clj  (alter-var-root #'testing-repl
+                          (constantly
+                            (macros/case
+                              :clj  (do (dbg "STARTING TESTING REPL") (cljs-prepl))
+                              :cljs nil)))
+    :cljs (throw (ex-info "Can't start a testing repl in cljs for now." {})))
+  (with-repl testing-repl (~'require '~'minitest)))
 
 ;; TODO: handle src-dirs
 ; (defn ns-paths [platform]
@@ -108,26 +50,43 @@
 ;                     (.getAbsolutePath f)])))
 ;        (into {})))
 
-;; TODO
 (defrecord CljsExecutor [opts store]
   ExecutorP
   (before-execute-suite
     [this ns->tests]
     (macros/case
-      :clj  (let [req-stmt `(~'require ~@(map as-form (keys ns->tests))
-                                       :reload)]
-              (dbg "REQ STMT" req-stmt)
-              (let [res (with-repl (testing-repl) ~req-stmt)]
-                (dbg "REPL RESULT" res)))))
-  (before-execute-namespace [this ns tests])
+      :clj (when-not testing-repl
+             (dbg "NOOOOOOO")
+             (start-testing-repl!)
+             (with-repl testing-repl
+               (~'require '~'minitest :reload) ;; TODO: do not reload minitest
+               (~'use '~'cljs.core)
+               (~'use '~'[cljs.repl :only (doc source error->str)]))))
+    )
+  (before-execute-namespace
+    [this ns tests]
+    (macros/case
+      :clj  (let [res (with-repl testing-repl
+                        ;; TODO: reload only if reloading in clj
+                        (~'require '~ns :reload))]
+              (dbg "REPL RESULT" res)))
+    )
   (before-execute-block     [this ns tests])
   (before-execute-case      [this ns tests])
   (execute-case
     [this ns case]
     (macros/case
       :cljs (run-test-and-yield-report! ns case)
-      ;; TODO: reset
-      :clj  nil #_(throw (Exception. "Can't run minitest for cljs from clj for now"))))
+      :clj  nil #_(with-repl testing-repl
+              (run-test-and-yield-report!
+                '~ns
+                ~(let [a assoc-in  u update-in  c case]
+                   (-> c
+                       (u [:tested   :form]    #(do `(quote ~%)))
+                       (u [:expected :form]    #(do `(quote ~%)))
+                       (a [:tested   :thunk]   (-> c :tested   :form as-thunk))
+                       (a [:expected :thunk]   (-> c :expected :form as-thunk)))
+                   )))))
   (after-execute-case       [this ns report])
   (after-execute-block      [this ns reports])
   (after-execute-namespace  [this ns reports])

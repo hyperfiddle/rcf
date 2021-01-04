@@ -59,7 +59,7 @@
   ([test-level ns->tsts]
    (run-execute-report! test-level nil ns->tsts))
   ([test-level ns tsts]
-   (with-contexts {:test-level test-level} ;; TODO: exploit
+   (with-context {:test-level test-level} ;; TODO: exploit
      (let [conf (config)]
        (ensuring-runner+executors+reporter
          (case test-level

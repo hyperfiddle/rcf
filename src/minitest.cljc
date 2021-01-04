@@ -9,6 +9,8 @@
             [net.cgrand.macrovich              :as    macros]
    #?(:clj  [clojure.pprint                    :as    pp :refer [pprint]]
       :cljs [cljs.pprint                       :as    pp :refer [pprint]])
+   #?(:clj  [clojure.core.async                :as    async])
+   #?(:clj  [clojure.core.server])
    #?(:clj  [clojure.java.classpath            :as    cp])
    #?(:clj  [clojure.java.io                   :as    io])
    #?(:clj  [clojure.spec.alpha                :as    s])
@@ -25,9 +27,11 @@
    #?(:clj  [cljs.repl                         :as    repl])
    #?(:cljs [cljs.repl                         :refer [pst]])
    #?(:clj  [cljs.repl.node                    :as    node])
+   #?(:clj  [cljs.repl.browser                 :as    browser])
    #?(:clj  [cljs.compiler                     :as    cljsc])
    #?(:clj  [cljs.core                         :as    cljs])
    #?(:clj  [cljs.analyzer.api                 :as    ana])
+   #?(:clj  [cljs.env                          :as    env])
    #?(:clj  [clojure.edn                       :as    edn])
    #?(:clj  [robert.hooke                      :refer [add-hook]]))
 
@@ -42,7 +46,7 @@
                                          cljs-out-path
                                          current-ns-name
                                          find-test-namespaces
-                                         with-contexts
+                                         with-context
                                          with-config
                                          managing-exs
                                          lay
@@ -52,7 +56,8 @@
                        [clojure.tools.macro :refer [symbol-macrolet]]))
 
   #?(:clj
-      (:import [java.io      PipedInputStream PipedOutputStream PushbackReader]
+      (:import [java.io      PipedReader PipedWriter PushbackReader]
+               [java.net     Socket]
                [clojure.lang LineNumberingPushbackReader])))
 
 (macros/deftime (disable-reload!))
@@ -67,11 +72,13 @@
 
 ;; ---- Debugging
 (macros/deftime
+  (def ^:private ^:dynamic *debug* false)
+
   (macros/case
     :clj (defmacro dbg [& args]
-           #_`(do ~@args)
-           `(binding [*out* (io/writer java.lang.System/out)]
-              (println ~@args)))))
+           (when *debug*
+             `(binding [*out* (io/writer java.lang.System/out)]
+                (println ~@args))))))
 
 ;; -- Explorations
 ; TODO: disable warnings with cljs.analyzer.api/no-warn
@@ -84,7 +91,9 @@
 (declare tests test!)
 
 (def ^:dynamic          *tests*             (atom {}))
-(def ^:dynamic          *contexts*          {:exec-mode :eval :env :dev})
+(def ^:dynamic          *context*           {:exec-mode :eval
+                                             :env       :dev
+                                             :js-env    :node})
 (def ^:dynamic ^:no-doc *currently-loading* false)
 (def ^:dynamic ^:no-doc *tests-to-process*  nil)
 
@@ -109,8 +118,8 @@
  #?(:clj  (and clojure.test/*load-tests* (-> (config) :load-tests))
     :cljs true #_(when-not (js* "goog.debug"))))
 
-(def ^:no-doc as-thunk #(do `(fn [] ~%)))
-(def ^:no-doc as-form  #(do `'~%))
+(def ^:no-doc as-thunk       #(do `(fn [] ~%)))
+(def ^:no-doc as-form        #(do `'~%))
 
 (macros/deftime
   (defmacro current-file []
@@ -151,6 +160,7 @@
 
 (include "config")
 (include "clojurescript")
+(include "prepl")
 (include "executor")
 (include "runner")
 (include "reporter")
@@ -174,10 +184,10 @@
                   :compact          true
                   :silent           false
                   :dots             false
-                  :contexts {:status {:success {:logo "✅"}
-                                      :failure {:logo "❌"}
-                                      :error   {:logo "🔥"}}}}
-   :langs        [:cljs]
+                  :CONTEXT {:status {:success {:logo "✅"}
+                                     :failure {:logo "❌"}
+                                     :error   {:logo "🔥"}}}}
+   :langs        [:clj]
    :executor     {:clj  {:class     CljExecutor}
                   :cljs {:class     CljsExecutor
                          ;; TODO: not in use
@@ -185,16 +195,30 @@
                                      :compiler {:output-to     (cljs-out-path)
                                                 :main          nil
                                                 :optimizations :none}}
-                         :repl-env  #?(:clj node/repl-env :cljs nil)}}
-   :contexts     {:exec-mode {:load        {:store true,  :run true};; TODO: reset
-                              :eval        {:store false, :run true}}
-                  :env       {:production  {:load-tests                  false}
-                              :dev         {:runner   {:break-on-failure true}}
-                              :cli         {:reporter {:dots             true}}
-                              :ci          [:cli]}}})
+                         :prepl-fn  'cljs.server.node/prepl
+                         #_(:cljs nil
+                            :clj  {:js-env :node
+                                   ; :CONTEXT
+                                   ; {:js-env
+                                   ;  {:node          'cljs.server.node/prepl
+                                   ;   :browser       'cljs.server.browser/prepl
+                                   ;   ; :figwheel      'cljs.core.server/io-prepl
+                                   ;   ; :lein-figwheel 'cljs.core.server/io-prepl
+                                   ;   :rhino         'cljs.server.rhino/prepl
+                                   ;   :graaljs       'cljs.server.graaljs/prepl
+                                   ;   :nashorn       'cljs.server.nashorn/prepl}}
+                                   })}}
+   :CONTEXT     {:exec-mode {:load        {:store true,  :run true};; TODO: reset
+                             :eval        {:store false, :run true}}
+                 :env       {:production  {:load-tests                  false}
+                             :dev         {:runner   {:break-on-failure true}}
+                             :cli         {:reporter {:dots             true}}
+                             :ci          [:cli]}}})
 
 (include "monkeypatch_load")
 (macros/deftime  (when (load-tests?) (apply-patches)))
+
+; (start-testing-repl!) ;; TODO: maybe start at another time ?
 
 ;; ## When and how to run tests
 ;; - [√] tests are run once
@@ -317,7 +341,7 @@
 
   (defmacro tests [& body]
     (when (load-tests?)
-      `(with-contexts {:exec-mode (if (currently-loading?) :load :eval)}
+      `(with-context {:exec-mode (if (currently-loading?) :load :eval)}
          (let [c#     (config)
                ns#    (current-ns-name)
                block# ~(parse-tests body)]
@@ -401,7 +425,7 @@
     (println "  clj -m minitest [name.space name.space.impl]")
     (println "  clj -m minitest name.*")
     (println "  clj -m minitest \\")
-    (println "    :reporter {:contexts {:status {:error {:logo \"🤯\"}}}} \\")
+    (println "    :reporter {:CONTEXT {:status {:error {:logo \"🤯\"}}}} \\")
     (println "    hardship.impl")
     (newline)
     (println (source-fn 'minitest/default-config))
@@ -430,7 +454,7 @@
 
       (if (-> args first #{"help" ":help" "h" "-h" "--help"})
         (print-usage)
-        (with-contexts {:env :cli}
+        (with-context {:env :cli}
           (->> (str \[ (str/join \space args) \])
                edn/read-string
                (apply test!))))))

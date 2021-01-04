@@ -91,13 +91,13 @@
     (when (map? report)
       (binding [*out* (-> (config) :reporter :out)]
         (let [status   (:status report)
-              conf     (with-contexts {:status status} (config))
+              conf     (with-context {:status status} (config))
               logo     (-> conf :reporter :logo)
               left-ks  [:tested :form]
               right-ks [:expected :val]
               left     (get-in report left-ks)]
           (swap! store update-in [:counts status] (fnil inc 0))
-          (with-contexts {:status status}
+          (with-context {:status status}
             (when (#{:error :failure} status) (newline))
             (cond
               (-> conf :reporter :silent) nil
@@ -134,7 +134,7 @@
     (binding [*out* (-> (config) :reporter :out)]
       (newline)
       ;; If the last report was printed in `:dots` mode, it needs a newline
-      (when (with-contexts {:status (-> reports last :status)}
+      (when (with-context {:status (-> reports last :status)}
               (-> (config) :reporter :dots))
         (newline))
       reports))

@@ -5,13 +5,13 @@
 ;       :cljs [cljs.pprint       :refer [pprint]])
 ;    #?(:cljs [cljs.reader       :refer [read-string]])
 ;    #?(:clj  [minitest          :refer [test! *tests*
-;                                        tests with-contexts]]
+;                                        tests with-context]]
 ;       :cljs [minitest          :refer [test! *tests*]])
 ;             ; [minitest-test-namespace]
 ;             )
 ;   #?(:clj  (:require [net.cgrand.macrovich :as macros])
 ;      :cljs (:require-macros [net.cgrand.macrovich :as macros]
-;                             [minitest :refer [tests with-contexts]])))
+;                             [minitest :refer [tests with-context]])))
 
 
 ; ; (macros/deftime
@@ -28,7 +28,7 @@
 
 ; ; #?(:clj (deftest test-on-load
 ; ;           (reset! *tests* {})
-; ;           (let [printed (with-contexts {:exec-mode :load}
+; ;           (let [printed (with-context {:exec-mode :load}
 ; ;                           (our-out-str
 ; ;                             (require 'minitest-test-namespace :reload)))]
 ; ;             (testing "tests are stored"
@@ -58,7 +58,7 @@
 ; ; #?(:clj (deftest test-on-eval
 ; ;           (reset! *tests* {})
 ; ;           (let [printed (our-out-str
-; ;                           (with-contexts {:exec-mod :eval}
+; ;                           (with-context {:exec-mod :eval}
 ; ;                             (-> (nth-file-form
 ; ;                                   1 "test/minitest_test_namespace.cljc")
 ; ;                                 eval)))]
