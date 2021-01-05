@@ -97,10 +97,9 @@
                                                   base-config *early-config*
                                                   conf        *late-config*)
                                                 (contextualize *context*)))
-(defn         context        [& [ctx]]      *context*
-  #_(-> (deep-merge
+(defn         context        [& [ctx]]      (-> (deep-merge
                                                   (:DEFAULT-CTX (config))
+                                                  ctx
                                                   *context*)
-                                                (as-> ctx
-                                                  (contextualize ctx ctx))))
+                                                (as-> $ (contextualize $ $))))
 
