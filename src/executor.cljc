@@ -55,7 +55,6 @@
     [this ns->tests]
     (macros/case
       :clj (when-not testing-repl
-             (dbg "NOOOOOOO")
              (start-testing-repl!)
              (with-repl testing-repl
                (~'require '~'minitest :reload) ;; TODO: do not reload minitest
