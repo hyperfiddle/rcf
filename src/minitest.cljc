@@ -179,7 +179,7 @@
    :error-depth      12
    :silent           false
    :dots             false
-   :langs            [:clj]
+   :langs            [:cljs]
    :cljsbuild        {} ;; TODO: not in use
    :prepl-fn         'cljs.server.node/prepl
    #_(:cljs nil
