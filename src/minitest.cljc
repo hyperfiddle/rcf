@@ -52,7 +52,8 @@
                                          lay
                                          currently-loading?
                                          tests-to-process
-                                         handling-on-load-tests-in-js]]
+                                         handling-on-load-tests-in-js
+                                         def-config-variable]]
                        [clojure.tools.macro :refer [symbol-macrolet]]))
 
   #?(:clj
@@ -164,11 +165,11 @@
 (include "run_execute_report")
 (include "ns_selector")
 
-(def default-config
+(def base-config
   "Any config you may provide to minitest will merge into this base
   configuration map.
 
-  See `(source default-config)`."
+  See `(source base-config)`."
   {:dirs             ["src" "test"] ;; TODO: use clojure.java.classpath/classpath
    :load-tests       true
    :fail-fast        false
@@ -433,7 +434,7 @@
     (println "    {:CONTEXT {:status {:error {:logo \"🤯\"}}}} \\")
     (println "    hardship.impl")
     (newline)
-    (println (source-fn 'minitest/default-config))
+    (println (source-fn 'minitest/base-config))
     (newline)
     (let [confile (config-file)]
       (if confile

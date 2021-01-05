@@ -1,5 +1,5 @@
 ;; Yo, the default config map is in minitest.cljc around line 200
-(declare default-config)
+(declare base-config)
 
 (macros/deftime
   (defn- config-file []
@@ -15,25 +15,35 @@
       :cljs `(quote ~(some-> (config-file) slurp edn/read-string)))))
 
 ;; TODO: private
-(def ^:dynamic *config*        (file-config))
-(def ^:dynamic *forced-config* nil)
+(def ^:dynamic *early-config*  (file-config))
+(def ^:dynamic *late-config*   nil)
 (def ^:dynamic *context*       nil)
 
-(defn config!
-  ([k v & {:as more}] (config! (assoc more k v)))
-  ([m]                (macros/case
-                        :clj  (alter-var-root #'*config* merge m)
-                        :cljs (throw (ex-info "Not implemented for cljs" {})))))
-(defn force-config!
-  ([k v & {:as more}] (force-config! (assoc more k v)))
-  ([m]                (macros/case
-                        :clj  (alter-var-root #'*forced-config* merge m)
-                        :cljs (throw (ex-info "Not implemented for cljs" {})))))
-(defn context!
-  ([k v & {:as more}] (context! (assoc more k v)))
-  ([m]                (macros/case
-                        :clj  (alter-var-root #'*context* merge m)
-                        :cljs (throw (ex-info "Not implemented for cljs" {})))))
+(macros/deftime
+  (defmacro ^:private def-config-variable [name var-sym]
+    (let [getter-sym  name
+          setter-sym  (symbol (str name "!"))
+          clearer-sym (symbol (str "clear-" name "!"))]
+      `(do (defn ~getter-sym  []    ~var-sym)
+           (defn ~setter-sym
+             ([k# v# & {:as more#}] (~setter-sym (assoc more# k# v#)))
+             ([m#]                  (macros/case
+                                      :clj  (alter-var-root #'~var-sym merge m#)
+                                      :cljs (throw (ex-info
+                                                     "Not implemented for cljs" {}
+                                                     )))
+              nil))
+           (defn ~clearer-sym []    (macros/case
+                                      :clj  (alter-var-root #'~var-sym
+                                                            (constantly nil))
+                                      :cljs (throw (ex-info
+                                                     "Not implemented for cljs" {}
+                                                     )))
+             nil)))))
+
+; (def-config-variable default-config *early-config*)
+; (def-config-variable config         *late-config*) ;; the getter is redef below
+; (def-config-variable context        *context*) ;; ditto
 
 ;; Taken from https://gist.github.com/danielpcox/c70a8aa2c36766200a95
 ;; TODO: acknowledge.
@@ -72,13 +82,15 @@
                    (contextualize new-m ctx))))))))
 
 (defn config [& [conf]]
-  (-> (deep-merge default-config *config* conf)
-      (contextualize *context*)
-      (deep-merge *forced-config*)))
+  ; (->> [base-config *early-config* conf *late-config*]
+  ;      (reduce (fn [m1 m2]
+  ;                (deep-merge m1))))
+  (-> (deep-merge base-config *early-config* conf *late-config*)
+      (contextualize *context*)))
 
 (macros/deftime
   (defmacro with-config [m & body]
-    `(binding [*config* (deep-merge *config* ~m)]
+    `(binding [*early-config* (deep-merge *early-config* ~m)]
        ~@body))
 
   (defmacro with-context [m & body]
