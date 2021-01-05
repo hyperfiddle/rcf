@@ -27,16 +27,15 @@
 
 (def testing-repl nil)
 
-(defn- start-testing-repl! []
-  (assert (nil? testing-repl) "Already started")
-  (macros/case
-    :clj  (alter-var-root #'testing-repl
-                          (constantly
-                            (macros/case
-                              :clj  (do (dbg "STARTING TESTING REPL") (cljs-prepl))
-                              :cljs nil)))
-    :cljs (throw (ex-info "Can't start a testing repl in cljs for now." {})))
-  (with-repl testing-repl (~'require '~'minitest)))
+(macros/deftime
+  (defn- start-testing-repl! []
+    (assert (nil? testing-repl) "Already started")
+    (alter-var-root #'testing-repl
+                    (constantly
+                      (macros/case
+                        :clj  (do (dbg "STARTING TESTING REPL") (cljs-prepl))
+                        :cljs nil)))
+    (with-repl testing-repl (~'require '~'minitest))))
 
 ;; TODO: handle src-dirs
 ; (defn ns-paths [platform]

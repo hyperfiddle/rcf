@@ -61,10 +61,14 @@
   ;             success?                {:status :success}
   ;             :else                   {:status :failure}))))))
 
+  (defn- !1-2-3 [x]
+    (set! *3 *2) (set! *2 *1) (set! *1 x)
+    x)
+
   (defn- ^:no-doc run-test-and-yield-report! [ns {:keys [type] :as test}]
       (case type
         :effect
-        (let [result (managing-exs (call (:thunk test)))]
+        (let [result (managing-exs (!1-2-3 (call (:thunk test))))]
           (if (managed-ex? result)
             (ex-info (str "Error in test effect\n"
                           (with-out-str (pprint (:form test))))
@@ -74,8 +78,10 @@
                       :error    (ex result)})
             :minitest/effect-performed))
         :expectation
-        (let [testedv   (delay (managing-exs (-> test :tested   :thunk call)))
-              expectedv (delay (managing-exs (-> test :expected :thunk call)))]
+        (let [testedv
+              (delay (managing-exs (!1-2-3 (-> test :tested   :thunk call))))
+              expectedv
+              (delay (managing-exs         (-> test :expected :thunk call)))]
           (merge
             {:ns     ns
              :op     (:op test)

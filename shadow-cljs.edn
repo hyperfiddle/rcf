@@ -2,7 +2,7 @@
  :nrepl    {:port 9001}
  :dev-http {8000 "out"}
  :builds
- {:browser-test
+ {:browser-support
   {:target           :browser
    :devtools         {:hud                   #{:progress :errors}}
    :modules          {:main                  {:entries [minitest
@@ -12,7 +12,8 @@
                       ;; assign names to anon functions
                       :anon-fn-naming-policy :unmapped}
    :output-dir       "out"}
-  :node-test
+
+  :node-support
   {:target    :node-script
    :output-to "nodejs-target/main.js"
    :main      minitest.poney/entry-point}}}

@@ -23,17 +23,17 @@
   ([k v & {:as more}] (config! (assoc more k v)))
   ([m]                (macros/case
                         :clj  (alter-var-root #'*config* merge m)
-                        :cljs (throw (e-info "Not implemented for cljs")))))
+                        :cljs (throw (ex-info "Not implemented for cljs" {})))))
 (defn force-config!
   ([k v & {:as more}] (force-config! (assoc more k v)))
   ([m]                (macros/case
                         :clj  (alter-var-root #'*forced-config* merge m)
-                        :cljs (throw (e-info "Not implemented for cljs")))))
+                        :cljs (throw (ex-info "Not implemented for cljs" {})))))
 (defn context!
   ([k v & {:as more}] (context! (assoc more k v)))
   ([m]                (macros/case
                         :clj  (alter-var-root #'*context* merge m)
-                        :cljs (throw (e-info "Not implemented for cljs")))))
+                        :cljs (throw (ex-info "Not implemented for cljs" {})))))
 
 ;; Taken from https://gist.github.com/danielpcox/c70a8aa2c36766200a95
 ;; TODO: acknowledge.
