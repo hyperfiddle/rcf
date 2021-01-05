@@ -28,7 +28,7 @@
 
 #?(:clj (deftest test-on-load
           (reset! *tests* {})
-          (let [printed (with-context {:exec-mode :load}
+          (let [printed (with-context {:exec-mode :on-load}
                           (our-out-str
                             (require 'minitest-test-namespace :reload)))]
             (testing "tests are stored"
@@ -58,7 +58,7 @@
 #?(:clj (deftest test-on-eval
           (reset! *tests* {})
           (let [printed (our-out-str
-                          (with-context {:exec-mod :eval}
+                          (with-context {:exec-mod :on-eval}
                             (-> (nth-file-form
                                   1 "test/minitest_test_namespace.cljc")
                                 eval)))]

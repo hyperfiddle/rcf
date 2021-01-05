@@ -7,15 +7,16 @@
 (defn store-or-run-tests! []
   (assert (currently-loading?)) ;; TODO: remove ?
   (try
-    (let [conf (config)]
-      (when (:store conf) (run! #(apply store-tests! %) @(tests-to-process)))
-      (when (:run conf)   (run-execute-report! :suite   @(tests-to-process))))
+    (let [conf  (config)
+          tests @(tests-to-process)]
+      (when (:store-tests conf) (run! #(apply store-tests! %) tests))
+      (when (:run-tests   conf) (run-execute-report! :suite   tests)))
     (finally
       (reset! (tests-to-process) nil))))
 
 (defn ^:export store-or-run-tests-after-load! []
   (let [conf (config)]
-    (when (and (or (:store conf) (:run conf))
+    (when (and (or (:store-tests conf) (:run-tests conf))
                (if (currently-loading?)
                  (> (count @(tests-to-process)) 0)
                  true))
@@ -28,7 +29,7 @@
     (dbg "LOADING" paths)
     (if (or cljs.repl/*repl-env* *executing-cljs*)
       (apply orig-load paths)
-      (with-context {:exec-mode :load}
+      (with-context {:exec-mode :on-load}
           (binding [*currently-loading* true
                     *tests-to-process*  (atom nil)]
             (let [conf        (config)
@@ -131,8 +132,7 @@
       (dbg "AST NAME" (-> ast :name))
       (dbg "FORM" (-> ast :form)))
     (if (instrument-ast? :ns ast)
-      (let [_   (dbg "OKKKKK")
-            ast (assoc-in ast [:meta :skip-goog-provide] true)]
+      (let [ast (assoc-in ast [:meta :skip-goog-provide] true)]
         (cljsc/emitln "goog.provide('" (cljsc/munge name) "');")
         (handling-on-load-tests-in-js
           (with-out-str (orig-shadow-emit state ast))))

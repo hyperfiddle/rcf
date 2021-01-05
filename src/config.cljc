@@ -1,3 +1,5 @@
+;; TODO: assert config keys.
+
 ;; Yo, the default config map is in minitest.cljc around line 200
 (declare base-config)
 
@@ -14,37 +16,6 @@
       :clj  `(some-> (config-file) slurp edn/read-string)
       :cljs `(quote ~(some-> (config-file) slurp edn/read-string)))))
 
-;; TODO: private
-(def ^:dynamic *early-config*  (file-config))
-(def ^:dynamic *late-config*   nil)
-(def ^:dynamic *context*       nil)
-
-(macros/deftime
-  (defmacro ^:private def-config-variable [name var-sym]
-    (let [getter-sym  name
-          setter-sym  (symbol (str name "!"))
-          clearer-sym (symbol (str "clear-" name "!"))]
-      `(do (defn ~getter-sym  []    ~var-sym)
-           (defn ~setter-sym
-             ([k# v# & {:as more#}] (~setter-sym (assoc more# k# v#)))
-             ([m#]                  (macros/case
-                                      :clj  (alter-var-root #'~var-sym merge m#)
-                                      :cljs (throw (ex-info
-                                                     "Not implemented for cljs" {}
-                                                     )))
-              nil))
-           (defn ~clearer-sym []    (macros/case
-                                      :clj  (alter-var-root #'~var-sym
-                                                            (constantly nil))
-                                      :cljs (throw (ex-info
-                                                     "Not implemented for cljs" {}
-                                                     )))
-             nil)))))
-
-; (def-config-variable default-config *early-config*)
-; (def-config-variable config         *late-config*) ;; the getter is redef below
-; (def-config-variable context        *context*) ;; ditto
-
 ;; Taken from https://gist.github.com/danielpcox/c70a8aa2c36766200a95
 ;; TODO: acknowledge.
 (defn ^:no-doc deep-merge [& maps]
@@ -59,18 +30,18 @@
     map?        x
     sequential? (->> (map (partial parse-profile m) x)
                      (apply deep-merge))
-    (do         (some-> m :CONTEXT (get x) (->> (parse-profile m))))))
+    (do         (some-> m :WHEN (get x) (->> (parse-profile m))))))
 
 (defn context-map? [x]
-  (and (map? x) (contains? x :CONTEXT)))
+  (and (map? x) (contains? x :WHEN)))
 
 (defn contextualize [m ctx]
   (->> m (clojure.walk/postwalk
            (fn [form]
              (if-not (context-map? form)
                form
-               (let [c           (:CONTEXT form)
-                     active-ctx  (merge (:DEFAULT-CONTEXT form)
+               (let [c           (:WHEN form)
+                     active-ctx  (merge (:DEFAULT-CTX form)
                                         (select-keys ctx (keys c)))
                      c-ms        (map #(parse-profile form (get-in c %))
                                       active-ctx)
@@ -81,19 +52,55 @@
                    new-m
                    (contextualize new-m ctx))))))))
 
-(defn config [& [conf]]
-  ; (->> [base-config *early-config* conf *late-config*]
-  ;      (reduce (fn [m1 m2]
-  ;                (deep-merge m1))))
-  (-> (deep-merge base-config *early-config* conf *late-config*)
-      (contextualize *context*)))
+(def ^:dynamic *early-config*  (file-config))
+(def ^:dynamic *late-config*   nil)
+(def ^:dynamic *context*       nil)
 
 (macros/deftime
-  (defmacro with-config [m & body]
-    `(binding [*early-config* (deep-merge *early-config* ~m)]
-       ~@body))
+  (defmacro ^:private defaccessors
+    [name var-name & {:keys [getter setter clearer binder binder-f]
+                      :or   {getter   true setter true clearer true binder true
+                             binder-f '(fn [old new] new)}}]
+    (let [getter-name  name
+          setter-name  (symbol (str          name "!"))
+          clearer-name (symbol (str "clear-" name "!"))
+          binder-name  (symbol (str "with-"  name))]
+      `(do ~(when getter  `(defn ~getter-name [] ~var-name))
+           ~(when setter  `(defn ~setter-name
+                             ([k# v# & {:as more#}]
+                              (~setter-name (assoc more# k# v#)))
+                             ([m#]
+                              (macros/case
+                                :clj  (alter-var-root #'~var-name merge m#)
+                                :cljs (set! ~var-name (merge ~var-name m#)))
+                              nil)))
+           ~(when clearer `(defn ~clearer-name []
+                             (macros/case
+                               :clj  (alter-var-root #'~var-name
+                                                     (constantly nil))
+                               :cljs (set! ~var-name nil))
+                             nil))
+           ~(when binder  `(macros/deftime
+                             (defmacro ~binder-name [~'m# & ~'body#]
+                               (r/syntax-quote
+                                 (binding
+                                   [~var-name (~binder-f
+                                                ~var-name
+                                                (~'clojure.core/unquote ~'m#))]
+                                   (~'clojure.core/unquote-splicing
+                                     ~'body#))))))))))
 
-  (defmacro with-context [m & body]
-    `(binding [*context* (merge *context* ~m)]
-       ~@body)))
+(defaccessors default-config *early-config*)
+(defaccessors config         *late-config*  :getter false  :binder-f deep-merge)
+(defaccessors context        *context*      :getter false  :binder-f deep-merge)
+(defn         config         [& [conf]]     (-> (deep-merge
+                                                  base-config *early-config*
+                                                  conf        *late-config*)
+                                                (contextualize *context*)))
+(defn         context        [& [ctx]]      *context*
+  #_(-> (deep-merge
+                                                  (:DEFAULT-CTX (config))
+                                                  *context*)
+                                                (as-> ctx
+                                                  (contextualize ctx ctx))))
 

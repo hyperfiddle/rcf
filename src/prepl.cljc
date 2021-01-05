@@ -37,7 +37,7 @@
      :port           0 ;; picked at random
      :port-file      true
      :port-file-name (str "." name "-prepl-port")
-     :env            (:js-env *context*)
+     :env            (:js-env (context))
      :accept         (let [sym (:prepl-fn (config))
                            ns  (some-> sym namespace symbol)]
                        (require (-> sym namespace symbol))
@@ -62,7 +62,10 @@
   (defn log [& msg]
     (apply println "[Minitest]" msg))
 
-  (def error-lock (new Object))
+  (def error-lock
+    (macros/case
+      :clj  (new Object)
+      :cljs (js-obj)))
 
   (defn error [err & msg]
     (locking error-lock
@@ -80,7 +83,7 @@
       (clojure.core.server/stop-server name)))
 
   (defn cljs-prepl
-    "The used js-env is dictated by (:js-env *context*)."
+    "The used js-env is dictated by (:js-env (minitest/context))."
     []
     (let [writer (new PipedWriter)
           reader (new PipedReader writer)
@@ -89,7 +92,7 @@
           out-fn #(async/>!! out> %)
           opts   (prepl-opts)
           server (start-prepl! opts)
-          env    (-> *context* :js-env name)]
+          env    (-> (context) :js-env name)]
       (thread (str "remote js prepl connection (" env ")")
         (with-open [reader reader]
           (clojure.core.server/remote-prepl
