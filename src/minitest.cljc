@@ -112,9 +112,6 @@
 (def ^:no-doc ->|   #(apply comp (reverse %&)))
 (def ^:no-doc call  #(apply %1 %&))
 
-(defn- load-tests? []
-  #?(:clj  (and clojure.test/*load-tests* (-> (config) :load-tests))
-
 (def ^:no-doc as-thunk       #(do `(fn [] ~%)))
 (def ^:no-doc as-form        #(do `'~%))
 
@@ -170,14 +167,20 @@
 
   See `(source base-config)`."
   {:dirs        ["src" "test"] ;; TODO: use clojure.java.classpath/classpath
-   :load-tests  true
+   :elide-tests false
    :fail-fast   false
    :out         *out*
    :term-width  120
    :error-depth 12
    :silent      false
    :dots        false
-   :langs       [:cljs]
+   :langs       [:clj]
+
+   :runner      {:class            Runner}
+   :reporter    {:class            TermReporter}
+   :executor    {:clj  {:class     CljExecutor}
+                 :cljs {:class     CljsExecutor}}
+
    :cljsbuild   {} ;; TODO: not in use
    :prepl-fn    'cljs.server.node/prepl
    #_(:cljs nil
@@ -193,10 +196,6 @@
                    ;   :nashorn       'cljs.server.nashorn/prepl}}
                    })
 
-   :runner      {:class            Runner}
-   :reporter    {:class            TermReporter}
-   :executor    {:clj  {:class     CljExecutor}
-                 :cljs {:class     CljsExecutor}}
    :DEFAULT-CTX {:exec-mode :on-eval
                  :env       :dev
                  :js-env    :node}
@@ -205,27 +204,27 @@
                       run-on-load
                       {:WHEN {:exec-mode {:on-load {:run-tests true}}}}]
                   ;; reads as:
-                  ;; when        =          then
+                  ;; when        is          then
                   {:exec-mode {:on-load     {:store-tests true
                                              :run-tests   false}
                                :on-eval     {:store-tests false
                                              :run-tests   true}}
-                   :env       {:production  {:load-tests  false}
+                   :env       {:production  {:elide-tests true}
                                :cli         {:dots        true}
                                :ci          [:cli]
-                               :dev         (merge run-on-load
-                                                   {:break-on-failure true})
+                               :dev         run-on-load
                                :quiet-dev   [:dev, silent-success]}
-                   :status    {:success {:logo "✅"}
-                               :failure {:logo "❌"}
-                               :error   {:logo "🔥"}}})
+                   :status    {:success     {:logo "✅"}
+                               :failure     {:logo "❌"}
+                               :error       {:logo "🔥"}}})
 
    :break-on-failure false ;; TODO
    })
 
    (include "monkeypatch_load")
-   (macros/deftime  (when (load-tests?) (apply-patches)))
+   (macros/deftime  (when-not (-> (config) :elide-tests) (apply-patches)))
 
+   ;; DONE
    ;; ## When and how to run tests
    ;; - [√] tests are run once
    ;; - [√] tests have absolutely no impact (i.e. the macro expands
@@ -284,9 +283,9 @@
    ;; - [x] NO. Warning on {:exec-mode {:on-eval {:store-tests true}}}
    ;;       (stores duplicate tests)
    ;; - [ ] Check exec mode of CLI runner
-   ;; - [ ] Clarify config names
+   ;; - [√] Clarify config names
    ;; - [ ] Config map init-fn
-   ;; - [ ] set-context!
+   ;; - [√] set-context!
    ;; - [ ] namespaces as context
 
    (macros/deftime
@@ -339,7 +338,7 @@
                           )))))))
 
      (defmacro tests [& body]
-       (when (load-tests?)
+       (when-not (-> (config) :elide-tests)
          `(with-context {:exec-mode (if (currently-loading?) :on-load :on-eval)}
             (let [c#     (config)
                   ns#    (current-ns-name)
@@ -387,14 +386,7 @@
                      (run-execute-report! :suite ns->tests)
                      nil)))))
 
-
-   ;; TODO: move to test
-   ;; (binding [... does not work since "tests" is a macro.
-   ; (alter-var-root #'clojure.test/*load-tests* (constantly false))
-   ; (try (tests :should-not-load => :should-not-load)
-   ;   (finally (alter-var-root #'clojure.test/*load-tests* (constantly true))))
-
-   ;; TODO:
+   ;; DONE:
    ;; - [√] tests should not run twice (when loaded, then when they are run)
    ;; - [√] display usage
    ;; - [x] options are passed in a bash style (e.g. --option "value")
@@ -443,4 +435,18 @@
                (println "./minitest.edn or ./resources/minitest.edn"))))
        (newline)
        (println "And the resulting config after minitest deep-merges them is:")
+       (pprint (config))))
 
+   (macros/case
+     :clj
+     (defn -main [& args]
+       (if (-> args first #{"help" ":help" "h" "-h" "--help"})
+         (print-usage)
+         (with-context {:env :cli}
+           (->> (str \[ (str/join \space args) \])
+                edn/read-string
+                (apply test!))))))
+
+   ;; TODO:
+   ;; - [ ] a nice README.
+   ;; - [ ] more private vars

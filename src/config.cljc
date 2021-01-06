@@ -32,21 +32,24 @@
                      (apply deep-merge))
     (do         (some-> m :WHEN (get x) (->> (parse-profile m))))))
 
-(defn context-map? [x]
+(defn- when-map? [x]
   (and (map? x) (contains? x :WHEN)))
 
-(defn contextualize [m ctx]
+(defn contextualize [m ctx & [default-ctx]]
   (->> m (clojure.walk/postwalk
            (fn [form]
-             (if-not (context-map? form)
+             (if-not (when-map? form)
                form
-               (let [c           (:WHEN form)
-                     active-ctx  (merge (:DEFAULT-CTX form)
-                                        (select-keys ctx (keys c)))
-                     c-ms        (map #(parse-profile form (get-in c %))
-                                      active-ctx)
-                     new-m       (apply deep-merge form c-ms)]
-                 ;; Since a context can bring in new contexts, contextualize
+               (let [when-form  (:WHEN form)
+                     active-ctx (deep-merge default-ctx
+                                            (:DEFAULT-CTX form)
+                                            (select-keys ctx (keys when-form)))
+                     ms         (map #(parse-profile form (get-in when-form %))
+                                     active-ctx)
+                     new-m      (apply deep-merge
+                                       form ;(dissoc form :WHEN)
+                                       ms)]
+                 ;; Since a when-map can bring in new another one, contextualize
                  ;, again until fix point is reached
                  (if (= form new-m)
                    new-m
@@ -93,13 +96,17 @@
 (defaccessors default-config *early-config*)
 (defaccessors config         *late-config*  :getter false  :binder-f deep-merge)
 (defaccessors context        *context*      :getter false  :binder-f deep-merge)
-(defn         config         [& [conf]]     (-> (deep-merge
-                                                  base-config *early-config*
-                                                  conf        *late-config*)
-                                                (contextualize *context*)))
-(defn         context        [& [ctx]]      (-> (deep-merge
-                                                  (:DEFAULT-CTX (config))
-                                                  ctx
-                                                  *context*)
-                                                (as-> $ (contextualize $ $))))
+
+(defn- ns-config [& [ns]] (-> (or ns *ns*) meta :minitest/config))
+
+(defn context    [& [ctx default-ctx]]
+  (deep-merge (or default-ctx (:DEFAULT-CTX (config)))
+              *context*
+              ctx))
+
+(defn  config    [& [conf]]
+  (-> (deep-merge base-config *early-config* (ns-config) conf *late-config*)
+      (as-> $ (contextualize $ (context nil (as-> (:DEFAULT-CTX $) €
+                                              (contextualize € € €)
+                                              (or $ {})))))))
 

@@ -89,15 +89,15 @@
   (report-case
     [this ns-name report]
     (when (map? report)
-      (binding [*out* (-> (config) :out)]
-        (let [status   (:status report)
-              conf     (with-context {:status status} (config))
-              logo     (-> conf :logo)
-              left-ks  [:tested :form]
-              right-ks [:expected :val]
-              left     (get-in report left-ks)]
-          (swap! store update-in [:counts status] (fnil inc 0))
-          (with-context {:status status}
+      (let [status   (:status report)
+            conf     (with-context {:status status} (config))
+            logo     (-> conf :logo)
+            left-ks  [:tested :form]
+            right-ks [:expected :val]
+            left     (get-in report left-ks)]
+        (swap! store update-in [:counts status] (fnil inc 0))
+        (with-context {:status status}
+          (binding [*out* (-> conf :out)]
             (when (#{:error :failure} status) (newline))
             (cond
               (-> conf :silent) nil
@@ -109,8 +109,8 @@
                     :error   #?(:clj  (binding [*err* *out*]
                                         ;; TODO: set error depth in cljs
                                         (pst (:error report)
-                                             (:error-depth opts)))
-                                :cljs (pst (:error report)))
+                                             (-> conf :error-depth)))
+                                     :cljs (pst (:error report)))
                     :failure (let [v      (binding [*print-level* 10000
                                                     pp/*print-pprint-dispatch*
                                                     pp/code-dispatch]
@@ -144,6 +144,9 @@
       (let [counts (:counts @store)]
           (when-not (-> (config) :fail-fast)
             (newline)
-            (println (:failure counts 0) "failures," (:error counts 0) "errors")
+            (println (as-> (:failure counts 0) $
+                       (str $ " " (pluralize-on "failure" $) ","))
+                     (as-> (:error counts 0)   $
+                       (str $ " " (pluralize-on "error"   $) ".")))
             (newline)))
         ns->reports)))
