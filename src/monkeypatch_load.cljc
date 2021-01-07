@@ -28,19 +28,19 @@
 
   (defn- clj-core-load-around-hook [orig-load & paths]
     (dbg "AROUND LOAD" paths (str "(for " (if *executing-cljs* :cljS :clj) ")"))
+    (let [path->ns (->> (all-ns)
+                        (mapv (juxt
+                                (->| str @#'clojure.core/root-resource)
+                                identity))
+                        (into {}));; TODO: if the namespace isn't created ...
+          ;; Assumption: load is always passed only one path.
+          pth      (first paths)
+          ns       (-> pth path->ns str symbol)]
+      (when-not (= pth "/cljs/compiler")         (apply-cljs-patches))
+      (when-not (= pth "/shadow/build/compiler") (apply-shadow-patches))
 
-    (apply-cljs-patches)
-    (apply-shadow-patches)
-
-    (if (or cljs.repl/*repl-env* *executing-cljs*)
-      (apply orig-load paths)
-      (let [path->ns (->> (all-ns)
-                          (mapv (juxt
-                                  (->| str @#'clojure.core/root-resource)
-                                  identity))
-                          (into {}));; TODO: if the namespace isn't created ...
-            ;; Assumption: load is always passed only one path.
-            ns       (-> paths first path->ns str symbol)]
+      (if (or cljs.repl/*repl-env* *executing-cljs*)
+        (apply orig-load paths)
         (binding [*currently-loading* true
                   *tested-ns*         ns
                   *tests-to-process*  (atom nil)]
@@ -141,7 +141,6 @@
       (orig-shadow-emit state ast)))
 
   (defn apply-patch-to-shadow-build-compiler-shadow-emit []
-    (require 'shadow.build.compiler)
     (add-hook (resolve 'shadow.build.compiler/shadow-emit)
               #'shadow-build-compiler-shadow-emit-around-hook))
 
