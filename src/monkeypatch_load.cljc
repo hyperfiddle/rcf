@@ -29,21 +29,21 @@
     (dbg "LOADING" paths)
     (if (or cljs.repl/*repl-env* *executing-cljs*)
       (apply orig-load paths)
-      (with-context {:exec-mode :on-load}
-          (binding [*currently-loading* true
-                    *tests-to-process*  (atom nil)]
-            (let [conf        (config)
-                  path->ns    (->> (all-ns)
-                                   (mapv (juxt
-                                           (->| str @#'clojure.core/root-resource)
-                                           identity))
-                                   (into {}))
-                  nss         (map (->|  path->ns str symbol) paths)
-                  load-result (do (apply clear-tests! *tests* nss)
-                                  (ensuring-runner+executors+reporter ;; TODO: necessary ?
-                                    (apply orig-load paths)))]
+      (let [path->ns (->> (all-ns)
+                          (mapv (juxt
+                                  (->| str @#'clojure.core/root-resource)
+                                  identity))
+                          (into {}))
+            ;; Assumption: load is always passed only one path.
+            ns       (-> paths first path->ns str symbol)]
+        (binding [*currently-loading* true
+                  *tested-ns*         ns
+                  *tests-to-process*  (atom nil)]
+          (with-context {:exec-mode :on-load  :ns ns}
+            (let [load-result (do (clear-tests! *tests* ns)
+                                  (apply orig-load paths))]
               (store-or-run-tests-after-load!)
-              load-result)))))
+              load-result))))))
 
   (defn- apply-patch-to-clojure-core-load []
     (add-hook #'clojure.core/load

@@ -93,20 +93,28 @@
 
 (def ^:dynamic          *tests*             (atom {}))
 (def ^:dynamic ^:no-doc *currently-loading* false)
+(def ^:dynamic ^:no-doc *tested-ns*         nil)
 (def ^:dynamic ^:no-doc *tests-to-process*  nil)
 
 (macros/deftime
-  (defmacro tests-to-process []
-    (macros/case
-      :clj  `*tests-to-process*
-      :cljs `(when (cljs.core/exists? js/_MINITEST_TESTS_TO_PROCESS_)
-               js/_MINITEST_TESTS_TO_PROCESS_)))
-
   (defmacro currently-loading? []
     (macros/case
       :clj  `*currently-loading*
       :cljs `(when (cljs.core/exists? js/_MINITEST_CURRENTLY_LOADING_)
-               js/_MINITEST_CURRENTLY_LOADING_))))
+               js/_MINITEST_CURRENTLY_LOADING_)))
+
+  ;; TODO: implement _MINITEST_TESTED_NS_ (shadow-cljs)
+  (defmacro tested-ns []
+    (macros/case
+      :clj  `*tested-ns*
+      :cljs `(when (cljs.core/exists? js/_MINITEST_TESTED_NS_)
+               js/_MINITEST_TESTED_NS_)))
+
+  (defmacro tests-to-process []
+    (macros/case
+      :clj  `*tests-to-process*
+      :cljs `(when (cljs.core/exists? js/_MINITEST_TESTS_TO_PROCESS_)
+               js/_MINITEST_TESTS_TO_PROCESS_))))
 
 (declare config)
 (def ^:no-doc ->|   #(apply comp (reverse %&)))
@@ -174,7 +182,7 @@
    :error-depth 12
    :silent      false
    :dots        false
-   :langs       [:clj]
+   :langs       [:cljs]
 
    :runner      {:class            Runner}
    :reporter    {:class            TermReporter}
@@ -339,7 +347,9 @@
 
      (defmacro tests [& body]
        (when-not (-> (config) :elide-tests)
-         `(with-context {:exec-mode (if (currently-loading?) :on-load :on-eval)}
+         `(with-context {:exec-mode (if (currently-loading?) :on-load :on-eval)
+                         ; :ns        (tested-ns) ;; TODO
+                         }
             (let [c#     (config)
                   ns#    (current-ns-name)
                   block# ~(parse-tests body)]
