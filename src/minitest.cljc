@@ -230,7 +230,9 @@
    })
 
    (include "monkeypatch_load")
-   (macros/deftime  (when-not (-> (config) :elide-tests) (apply-patches)))
+   (macros/deftime
+     (when-not (-> (config) :elide-tests)
+       (apply-clj-patches)))
 
    ;; DONE
    ;; ## When and how to run tests

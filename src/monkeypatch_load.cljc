@@ -24,16 +24,21 @@
 
 ;; Clojure
 (macros/deftime
+  (declare apply-cljs-patches apply-shadow-patches)
+
   (defn- clj-core-load-around-hook [orig-load & paths]
-    (dbg "*executing-cljs*" *executing-cljs*)
-    (dbg "LOADING" paths)
+    (dbg "AROUND LOAD" paths (str "(for " (if *executing-cljs* :cljS :clj) ")"))
+
+    (apply-cljs-patches)
+    (apply-shadow-patches)
+
     (if (or cljs.repl/*repl-env* *executing-cljs*)
       (apply orig-load paths)
       (let [path->ns (->> (all-ns)
                           (mapv (juxt
                                   (->| str @#'clojure.core/root-resource)
                                   identity))
-                          (into {}))
+                          (into {}));; TODO: if the namespace isn't created ...
             ;; Assumption: load is always passed only one path.
             ns       (-> paths first path->ns str symbol)]
         (binding [*currently-loading* true
@@ -120,9 +125,6 @@
     (add-hook #'cljs.compiler/emit
               #'cljs-compiler-emit-around-hook))
 
-
-  (defn- shadow-present? [] (find-ns 'shadow.build.cljs-hacks))
-
   (defn shadow-build-compiler-shadow-emit-around-hook [orig-shadow-emit
                                                        state {:keys [op name]
                                                               :as ast}]
@@ -155,14 +157,22 @@
               #'cljs-repl-node-node-eval-around-hook))
 
 
-  (defn apply-patches []
+  (defn apply-clj-patches []
     (let [langs (-> (config) :langs set)]
       (when (or (:clj  langs) (:cljs langs))
-        (apply-patch-to-clojure-core-load))
+        (apply-patch-to-clojure-core-load))))
+
+  (defn apply-cljs-patches []
+    (let [langs (-> (config) :langs set)]
       (when (:cljs langs)
-        (do (apply-patch-to-clojure-core-load)
-            (apply-patch-to-cljs-core-require)
-            (apply-patch-to-cljs-compiler-emit)
-            (apply-patch-to-cljs-repl-node-node-eval)
-            (when (shadow-present?)
-              (apply-patch-to-shadow-build-compiler-shadow-emit)))))))
+        (when (find-ns 'cljs.core)      (apply-patch-to-cljs-core-require))
+        (when (find-ns 'cljs.compiler)  (apply-patch-to-cljs-compiler-emit))
+
+        ;; TODO: remove
+        (when (find-ns 'cljs.repl.node) (apply-patch-to-cljs-repl-node-node-eval)))))
+
+  (defn apply-shadow-patches []
+    (let [langs (-> (config) :langs set)]
+      (when (:cljs langs)
+        (when (find-ns 'shadow.build.compiler)
+          (apply-patch-to-shadow-build-compiler-shadow-emit))))))
