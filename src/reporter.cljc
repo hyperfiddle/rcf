@@ -122,9 +122,9 @@
                                (if-not (ugly? s)
                                  (print s)
                                  (do (printab prompt v)
-                                     (newline))))))))
-          (when (#{:error :failure} status) (newline)))
-        (flush)))
+                                     (newline)))))))
+            (flush))
+          (when (#{:error :failure} status) (newline)))))
     report)
   (after-report-block
     [this ns-name reports]
