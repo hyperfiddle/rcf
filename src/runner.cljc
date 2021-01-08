@@ -5,13 +5,21 @@
   (run-block     [this ns cases])
   (run-case      [this exe ns case]))
 
+; TODO?
+; [2021-01-07 20:54:54.775 - WARNING] :shadow.cljs.devtools.server.reload-classpath/macro-reload-ex - {:ns-sym hyperfiddle.hfql20}
+; IllegalStateException Can't set!: *e from non-binding thread
+(defmacro maybe-set-*e [exception]
+  (macros/case
+    :clj  `(set! *e ~exception)
+    :cljs nil))
+
 (defn-      managed-ex?  [x]       (and (vector? x) (-> x first (= ::caught))))
 (defn-      ex           [x]       (second x))
 (macros/deftime
   (defmacro managing-exs [& body] `(try ~@body
                                      (catch ~(macros/case :clj  'Throwable
                                                           :cljs 'js/Error) t#
-                                       (set! *e t#)
+                                       (maybe-set-*e t#)
                                        [::caught t#]))))
 
   ;; TODO
