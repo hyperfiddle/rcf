@@ -1,106 +1,120 @@
 
-(defn- construct-record [conf ks]
-  (let [c (get-in conf (conj ks :class))]
-    (-> c
-        #?(:clj  .getCanonicalName
-           :cljs pr-str)
-        ;; replace the last occurence of "." with "/map->" to find
-        ;; the fully-qualified name of the constructor fn.
-        #?(:clj  (str/replace #"[.](?=[^.]+$)" "/map->") ;; (?=...): a lookahead
-           :cljs (str/replace #"[/](?=[^/]+$)" ".map->"))
-        #?@(:clj  [symbol resolve deref]
-            :cljs [munge js/eval]) ;; TODO: implement some crash barrier ?
-        ;; TODO: get rid of :opts arg
-        (call {:opts  (get-in conf ks)
-               :store (atom {})}))))
-
-(defn- runner    [conf] (construct-record conf [:runner]))
-(defn- reporter  [conf] (construct-record conf [:reporter]))
-(defn- executors [conf] (->> (for [k (:langs conf)]
-                               [k (construct-record conf [:executor k])])
-                             (into {})))
-
-(def ^:dynamic *runner*    nil)
-(def ^:dynamic *reporter*  nil)
-(def ^:dynamic *executors* nil)
+(def ^:private ^:dynamic *testing-state* nil)
 
 (macros/deftime
-  (defmacro ^:private ensuring-runner+executors+reporter [& body]
-    `(let [c# (config)]
-       (binding
-         [*runner*    (if-not *runner*    (runner    c#) *runner*)
-          *reporter*  (if-not *reporter*  (reporter  c#) *reporter*)
-          *executors* (if-not *executors* (executors c#) *executors*)]
-         ~@body))))
+  (defmacro ^:private ensuring-testing-state [& body]
+    `(binding [*testing-state* (or *testing-state* (atom {}))]
+       ~@body)))
 
-(defn- fail-fast! [ns rpt]
+(defn- fail-fast! [state ns rpt]
   ;; since the ex we are about to throw will be printed on *err*, and to avoid
-  ;; a printing race condition with *out*, we need to force the past tests to
-  ;; actually print to the screen before throwing the ex for this one.
+  ;; a printing race condition with *out* when it's bound to it, we need to
+  ;; force the past tests to actually print to the screen before throwing the ex
+  ;; for this one.
   (flush)
   (throw (ex-info
            (str "Test " (name (:status rpt)) ":\n"
-                (with-out-str
-                  (with-config {:out *out*}
-                    (report-case *reporter* ns rpt))))
+                (with-config {:out *out*}
+                  (let [report-fn (-> (config) :report-fn)]
+                    (with-out-str
+                      (report-fn state :after :case ns rpt)))))
            (assoc rpt :type :minitest/fail-fast))))
 
 (macros/deftime
-  (defmacro ^:private doseq-each-executor [conf & body]
-    `(doseq [[~'&executor-name ~'&executor] (executors ~conf)]
+  (defmacro ^:private let-testing-fns [conf & body]
+    `(let [{~'&run :run-fn ~'&execute :execute-fn ~'&report :report-fn} ~conf]
        ~@body))
-  (defmacro ^:private for-each-executor [conf & body]
-    `(->>
-       (for [[~'&executor-name ~'&executor] (executors ~conf)]
-         [~'&executor-name (do ~@body)])
-       (into {}))))
+
+  (defmacro ^:private doseq-each-lang [conf & body]
+    `(let [conf# ~conf]
+       (doseq [l# (:langs conf#)]
+         (let-testing-fns conf#
+           ~@body))))
+
+  (defmacro ^:private for-each-lang [conf & body]
+    `(->> (let [conf# ~conf]
+            (for [l# (:langs conf#)]
+              (let-testing-fns conf#
+                [l# (do ~@body)])))
+          (into {}))))
+
+(defn orchestrate-level [state level ns data
+                         & {:keys [handle-before handle-after]}]
+  (let-testing-fns (config)
+    (let [handle-before (or handle-before (fn [& args]
+                                            (apply &report  args)
+                                            (apply &execute args)))
+          handle-after  (or handle-after  (fn [rpts & args]
+                                            (apply &execute args)
+                                            (apply &report  args)))]
+      (handle-before       state :before level ns data)
+      (let [rpts (&run     state         level ns data &execute)]
+        (handle-after rpts state :after  level ns data)))))
+
+(defn orchestrate [state level ns data]
+  (let [conf (config)]
+    (with-context {:test-level level
+                   :lang       (macros/case  :clj :clj  :cljs :cljs)}
+      (case level
+        (:suite :block) (orchestrate-level state level ns data)
+        :ns             (with-context {:ns ns}
+                          (orchestrate-level state level ns data))
+        :case           (orchestrate-level
+                          state level ns data
+                          :handle-after
+                          (fn [rpt & args]
+                            (let-testing-fns conf
+                              (if (and
+                                    (:fail-fast conf)
+                                    (some-> rpt :status #{:error :failure}))
+                                (fail-fast! state ns  rpt)
+                                (do (&execute state :after  :case  ns  rpt)
+                                    (&report  state :after  :case  ns  rpt)
+                                    )))))))))
 
 (defn ^:no-doc run-execute-report!
-  ([test-level ns->tsts]
-   (run-execute-report! test-level nil ns->tsts))
-  ([test-level ns tsts]
-   (with-context {:test-level test-level} ;; TODO: exploit
-     (let [conf (config)]
-       (ensuring-runner+executors+reporter
-         (case test-level
-           :suite     (do (before-report-suite          *reporter* tsts)
-                          (doseq-each-executor   conf
-                            (before-execute-suite       &executor  tsts))
-                          (let [ns->rpts (run-suite     *runner*   tsts)]
-                            (for-each-executor conf
-                              (after-execute-suite      &executor  ns->rpts)
-                              (after-report-suite       *reporter* ns->rpts))))
+  ([level ns->tsts]
+   (run-execute-report! level nil ns->tsts))
+  ([level ns data]
+   (let [orchestrate-fn (-> (config) :orchestrate-fn)]
+     (ensuring-testing-state
+       (orchestrate-fn *testing-state* level ns data)))))
 
-           :namespace (do (before-report-namespace      *reporter* ns  tsts)
-                          (doseq-each-executor   conf
-                            (before-execute-namespace   &executor  ns  tsts))
-                          (let [rpts     (run-namespace *runner*   ns  tsts)]
-                            (for-each-executor conf
-                              (after-execute-namespace  &executor  ns  rpts)
-                              (after-report-namespace   *reporter* ns  rpts))))
+; (defn ^:no-doc run-execute-report!
+;   ([level ns->tsts]
+;    (run-execute-report! level nil ns->tsts))
+;   ([level ns data]
+;    (with-context {:test-level level} ;; TODO: exploit
+;      (ensuring-testing-state
+;        (let-testing-fns
+;          (let [s        *testing-state*
+;                conf     (config)]
+;            (case level
+;              :suite  (do (&report             s :before :suite nil data)
+;                          (&execute            s :before :suite nil data)
+;                          (let [ns->rpts (&run s         :suite nil data)]
+;                            (&execute          s :after  :suite nil ns->rpts)
+;                            (&report           s :after  :suite nil ns->rpts)))
 
-           :block     (do (before-report-block          *reporter* ns  tsts)
-                          (doseq-each-executor   conf
-                            (before-execute-block       &executor  ns  tsts))
-                          (let [rpts     (run-block     *runner*   ns  tsts)]
-                            (for-each-executor conf
-                              (after-execute-block      &executor  ns  rpts)
-                              (after-report-block       *reporter* ns  rpts))))
+;              :ns       (with-context {:ns ns}
+;                          (&report             s :before :ns    ns  data)
+;                          (&execute            s :before :ns    ns  data)
+;                          (let [rpts     (&run s         :ns    ns  data)]
+;                            (&execute          s :after  :ns    ns  rpts)
+;                            (&report           s :after  :ns    ns  rpts)))
 
-           :case      (let [tst tsts]
-                        (before-report-case             *reporter* ns  tst)
-                        (doseq-each-executor     conf
-                          (before-execute-case          &executor  ns  tst))
-                        (let [conf (config)
-                              exe->rpt
-                              (for-each-executor conf
-                                (run-case               *runner*   ns  tst
-                                                        &executor))]
-                          (for-each-executor conf
-                            (let [rpt (exe->rpt &executor-name)]
-                              (if (and (:fail-fast conf)
-                                       (some-> rpt :status #{:error :failure}))
-                                (fail-fast!                        ns  rpt)
-                                (do (after-execute-case &executor  ns  rpt)
-                                    (report-case        *reporter* ns  rpt))))))
-                        )))))))
+;              :block  (do (&report             s :before :block ns  data)
+;                          (&execute            s :before :block ns  data)
+;                          (let [rpts     (&run s         :block ns  data)]
+;                            (&execute          s :after  :block ns  rpts)
+;                            (&report           s :after  :block ns  rpts)))
+
+;              :case   (do (&report             s :before :case  ns  data)
+;                          (&execute            s :before :case  ns  data)
+;                          (let [rpt (&run      s         :case  ns  data)]
+;                            (if (and (:fail-fast conf)
+;                                     (some-> rpt :status #{:error :failure}))
+;                              (fail-fast! ns  rpt)
+;                              (do (&execute    s :after  :case  ns  rpt)
+;                                  (&report     s :after  :case  ns  rpt)))))
+;              )))))))

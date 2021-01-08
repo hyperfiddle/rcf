@@ -1,28 +1,16 @@
 (declare run-test-and-yield-report!)
 
-(defprotocol ExecutorP
-  (before-execute-suite     [this ns->tests])
-  (before-execute-namespace [this ns tests])
-  (before-execute-block     [this ns tests])
-  (before-execute-case      [this ns case])
-  (execute-case             [this ns case])
-  (after-execute-case       [this ns report])
-  (after-execute-block      [this ns reports])
-  (after-execute-namespace  [this ns reports])
-  (after-execute-suite      [this ns->reports]))
-
-
-(defrecord CljExecutor [opts store]
-  ExecutorP
-  (before-execute-suite     [this ns->tests])
-  (before-execute-namespace [this ns tests])
-  (before-execute-block     [this ns tests])
-  (before-execute-case      [this ns tests])
-  (execute-case             [this ns case] (run-test-and-yield-report! ns case))
-  (after-execute-case       [this ns report])
-  (after-execute-block      [this ns reports])
-  (after-execute-namespace  [this ns reports])
-  (after-execute-suite      [this ns->reports]))
+(defn execute-clj [state position level ns-name data]
+  (case [position level]
+    [:before :suite]  nil
+    [:before :ns]     nil
+    [:before :block]  nil
+    [:before :case]   nil
+    [:do     :case]   (run-test-and-yield-report! ns-name data)
+    [:after  :case]   nil
+    [:after  :block]  nil
+    [:after  :ns]     nil
+    [:after  :suite]  nil))
 
 
 (def testing-repl nil)
@@ -49,43 +37,42 @@
 ;                     (.getAbsolutePath f)])))
 ;        (into {})))
 
-(defrecord CljsExecutor [opts store]
-  ExecutorP
-  (before-execute-suite
-    [this ns->tests]
+(defn execute-cljs [state position level ns-name data]
+  (case [position level]
+    [:before :suite]
     (macros/case
       :clj (when-not testing-repl
              (start-testing-repl!)
              (with-repl testing-repl
                (~'require '~'minitest :reload) ;; TODO: do not reload minitest
-               (~'use '~'cljs.core)
-               (~'use '~'[cljs.repl :only (doc source error->str)]))))
-    )
-  (before-execute-namespace
-    [this ns tests]
+               (~'use '~'cljs.core) ;; TODO: required ? Else move elsewhere
+               (~'use '~'[cljs.repl :only [doc source error->str]]))))
+
+    [:before :ns]
     (macros/case
       :clj  (let [res (with-repl testing-repl
                         ;; TODO: reload only if reloading in clj
-                        (~'require '~ns :reload))]
+                        (~'require '~ns-name :reload))]
               (dbg "REPL RESULT" res)))
-    )
-  (before-execute-block     [this ns tests])
-  (before-execute-case      [this ns tests])
-  (execute-case
-    [this ns case]
+
+    [:before :block]  nil
+    [:before :case]   nil
+
+    [:do  :case]
     (macros/case
-      :cljs (run-test-and-yield-report! ns case)
-      :clj  nil #_(with-repl testing-repl
+      :cljs (run-test-and-yield-report! ns-name data)
+      :clj  (with-repl testing-repl
               (run-test-and-yield-report!
-                '~ns
-                ~(let [a assoc-in  u update-in  c case]
-                   (-> c
+                '~ns-name
+                ~(let [a assoc-in  u update-in  d data]
+                   (-> d
                        (u [:tested   :form]    #(do `(quote ~%)))
                        (u [:expected :form]    #(do `(quote ~%)))
-                       (a [:tested   :thunk]   (-> c :tested   :form as-thunk))
-                       (a [:expected :thunk]   (-> c :expected :form as-thunk)))
-                   )))))
-  (after-execute-case       [this ns report])
-  (after-execute-block      [this ns reports])
-  (after-execute-namespace  [this ns reports])
-  (after-execute-suite      [this ns->reports]))
+                       (a [:tested   :thunk]   (-> d :tested   :form as-thunk))
+                       (a [:expected :thunk]   (-> d :expected :form as-thunk)))
+                   ))))
+
+    [:after  :case]   nil
+    [:after  :block]  nil
+    [:after  :ns]     nil
+    [:after  :suite]  nil))

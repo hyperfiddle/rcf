@@ -1,14 +1,4 @@
 
-(defprotocol ReporterP
-  (before-report-suite     [this ns->tests])
-  (before-report-namespace [this ns-name tests])
-  (before-report-block     [this ns-name tests])
-  (before-report-case      [this ns-name case])
-  (report-case             [this ns-name report])
-  (after-report-block      [this ns-name reports])
-  (after-report-namespace  [this ns-name reports])
-  (after-report-suite      [this ns->reports]))
-
 (defn- lines   [s]     (str/split s #"\r?\n"))
 (defn- tabl   ([s]     (tabl "  " s))
               ([pad s] (->> (lines s)
@@ -46,107 +36,113 @@
         (newline)))))
 
 (macros/deftime
-  (defmacro ^:private once [store pth expr]
-    `(let [store# ~store  pth# ~pth]
-       (when-not (get-in @store# pth#)
+  (defmacro ^:private once [state pth expr]
+    `(let [state# ~state  pth# ~pth]
+       (when-not (get-in @state# pth#)
          (let [result# ~expr]
-           (swap! store# assoc-in pth# ::run-once)
+           (swap! state# assoc-in pth# ::run-once)
            result#))))
 
   ;; TODO: necessary ?
-  (defmacro ^:private once-else [store pth expr & [else]]
-    `(if-let [cached# (once ~store ~pth ~expr)]
+  (defmacro ^:private once-else [state pth expr & [else]]
+    `(if-let [cached# (once ~state ~pth ~expr)]
        cached#
        ~else)))
 
-(defn pluralize-on [x n]
+(defn pluralize [x n]
   (str x (if (> n 1) "s" "")))
 
-(defrecord TermReporter [opts store]
-  ReporterP
-  (before-report-suite
-    [this ns->tests]
-    (binding [*out* (-> (config) :out)]
-      (newline)
-      (let [ns-cnt (count ns->tests)
-            ts-cnt (->> ns->tests vals (apply concat) (apply concat) count)]
-        (once store [:announced-suite]
-              (println
-                "-- Running minitest on"
-                ns-cnt (-> "namespace" (pluralize-on ns-cnt))
-                (str \( ts-cnt \space (-> "test" (pluralize-on ts-cnt)) \)))))))
-  (before-report-namespace
-    [this ns-name tests]
-    (binding [*out* (-> (config) :out)]
-      (let [ts-cnt (->> tests (apply concat) count)]
+
+(defn report-in-terminal [state position level ns-name data]
+  (binding [*out* (-> (config) :out)]
+    (case [position level]
+      [:before :suite]
+      (let [ns->tests data
+            ns-cnt    (count ns->tests)
+            ts-cnt    (->> ns->tests vals (apply concat) (apply concat) count)]
+        (newline)
+        (println "ONCE STATE" state)
+        (once
+          state [:announced-suite]
+          (println
+            "-- Running minitest on"
+            ns-cnt (-> "namespace" (pluralize ns-cnt))
+            (str \( ts-cnt \space (-> "test" (pluralize ts-cnt)) \)))))
+
+      [:before :ns]
+      (let [tests  data
+            ts-cnt (->> tests (apply concat) count)]
         (println "---- Testing" ns-name
                  (str "(" ts-cnt \space
-                      (once-else store [:announced-nss ns-name] "more ")
-                      (-> "test" (pluralize-on ts-cnt))
-                      ")")))))
-  (before-report-block [this ns-name tests] nil)
-  (before-report-case  [this ns-name test]  nil)
-  (report-case
-    [this ns-name report]
-    (when (map? report)
-      (let [status   (:status report)
-            conf     (with-context {:status status} (config))
-            logo     (-> conf :logo)
-            left-ks  [:tested :form]
-            right-ks [:expected :val]
-            left     (get-in report left-ks)]
-        (swap! store update-in [:counts status] (fnil inc 0))
-        (with-context {:status status}
-          (binding [*out* (-> conf :out)]
-            (when (#{:error :failure} status) (newline))
-            (cond
-              (-> conf :silent) nil
-              (-> conf :dots)   (print logo)
-              :else
-              (do (print-result report logo left-ks right-ks)
-                  (case status
-                    :success nil
-                    :error   #?(:clj  (binding [*err* *out*]
-                                        ;; TODO: set error depth in cljs
-                                        (pst (:error report)
-                                             (-> conf :error-depth)))
-                                     :cljs (pst (:error report)))
-                    :failure (let [v      (binding [*print-level* 10000
-                                                    pp/*print-pprint-dispatch*
-                                                    pp/code-dispatch]
-                                            (-> report :tested :val pprint-str))
-                                   left-n (count
-                                            (str logo " " (pprint-str left)))
-                                   prompt (str "Actual: ")
-                                   s      (str prompt v)]
-                               (if-not (ugly? s)
-                                 (print s)
-                                 (do (printab prompt v)
-                                     (newline)))))))
-            (flush))
-          (when (#{:error :failure} status) (newline)))))
-    report)
-  (after-report-block
-    [this ns-name reports]
-    (remove #{:minitest/effect-performed} reports))
-  (after-report-namespace
-    [this ns-name reports]
-    (binding [*out* (-> (config) :out)]
-      (newline)
-      ;; If the last report was printed in `:dots` mode, it needs a newline
-      (when (with-context {:status (-> reports last :status)}
-              (-> (config) :dots))
-        (newline))
-      reports))
-  (after-report-suite
-    [this ns->reports]
-    (binding [*out* (-> (config) :out)]
-      (let [counts (:counts @store)]
-          (when-not (-> (config) :fail-fast)
-            (newline)
-            (println (as-> (:failure counts 0) $
-                       (str $ " " (pluralize-on "failure" $) ","))
-                     (as-> (:error counts 0)   $
-                       (str $ " " (pluralize-on "error"   $) ".")))
-            (newline)))
-        ns->reports)))
+                      (once-else state [:announced-nss ns-name] "more ")
+                      (-> "test" (pluralize ts-cnt))
+                      ")")))
+
+      [:before :block]  nil
+      [:before :case]   nil
+
+      [:after  :case]
+      (when (map? data)
+        (let [report   data
+              status   (:status report)
+              conf     (with-context {:status status} (config))
+              logo     (-> conf :logo)
+              left-ks  [:tested :form]
+              right-ks [:expected :val]
+              left     (get-in report left-ks)]
+          (swap! state update-in [:counts status]
+                 (fnil inc 0))
+          (with-context {:status status}
+            (binding [*out* (-> conf :out)]
+              (when (#{:error :failure} status) (newline))
+              (cond
+                (-> conf :silent) nil
+                (-> conf :dots)   (print logo)
+                :else
+                (do (print-result report logo left-ks right-ks)
+                    (case status
+                      :success nil
+                      :error   #?(:clj  (binding [*err* *out*]
+                                          ;; TODO: set error depth in cljs
+                                          (pst (:error report)
+                                               (-> conf :error-depth)))
+                                  :cljs (pst (:error report)))
+                      :failure (let [v      (binding [*print-level* 10000
+                                                      pp/*print-pprint-dispatch*
+                                                      pp/code-dispatch]
+                                              (-> report :tested :val
+                                                  pprint-str))
+                                     left-n (count
+                                              (str logo " " (pprint-str left)))
+                                     prompt (str "Actual: ")
+                                     s      (str prompt v)]
+                                 (if-not (ugly? s)
+                                   (print s)
+                                   (do (printab prompt v)
+                                       (newline)))))))
+              (flush))
+            (when (#{:error :failure} status) (newline)))
+          (flush)))
+
+      [:after  :block]
+      (remove #{:minitest/effect-performed} data)
+
+      [:after  :ns]
+      (do
+        (newline)
+        ;; If the last report was printed in `:dots` mode, it needs a newline
+        (when (with-context {:status (-> data last :status)}
+                (-> (config) :dots))
+          (newline))
+        data)
+
+      [:after  :suite]
+      (let [counts (:counts @state)]
+        (when-not (-> (config) :fail-fast)
+          (newline)
+          (println (as-> (:failure counts 0) $
+                     (str $ " " (pluralize "failure" $) ", "))
+                   (as-> (:error   counts 0) $
+                     (str $ " " (pluralize "error"   $) ".")))
+          (newline))
+        data))))

@@ -1,4 +1,5 @@
 (ns minitest.poney
+  ; {:minitest/config {:run-tests false}}
   (:require
    #?(:clj  [clojure.pprint    :refer [pprint]]
       :cljs [cljs.pprint       :refer [pprint]])

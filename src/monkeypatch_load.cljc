@@ -38,6 +38,7 @@
           ns       (-> pth path->ns str symbol)]
       (when-not (= pth "/cljs/compiler")         (apply-cljs-patches))
       (when-not (= pth "/shadow/build/compiler") (apply-shadow-patches))
+      ;; TODO: test whether requiring minitest before shadow works.
 
       (if (or cljs.repl/*repl-env* *executing-cljs*)
         (apply orig-load paths)
