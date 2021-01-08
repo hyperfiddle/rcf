@@ -183,7 +183,7 @@
    :error-depth    12
    :silent         false
    :dots           false
-   :langs          [:cljs]
+   :langs          [:clj]
 
    :run-fn         run
    :execute-fn     nil;; Set in function of the :lang context. See below.
