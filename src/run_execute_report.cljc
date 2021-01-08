@@ -79,11 +79,11 @@
                                              (&report  s :after l n d))))))))))
 
 (def orchestrate
-  (outside-in-> (with-test-level|)
-                (with-lang|)
-                (with-ns-in-context|)
-                (handling-fail-fast|)
-                orchestrate-level))
+  (outside-in->> (with-test-level|)
+                 (with-lang|)
+                 (with-ns-in-context|)
+                 (handling-fail-fast|)
+                 orchestrate-level))
 
 (defn ^:no-doc run-execute-report!
   ([level ns->tsts]

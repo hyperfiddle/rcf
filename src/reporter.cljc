@@ -52,6 +52,26 @@
 (defn pluralize [x n]
   (str x (if (> n 1) "s" "")))
 
+; (defn on|
+;   ([position+level f]
+;    (fn [state position level ns data]
+;      (when (= [position level] position+level)
+;        (f state position level ns data))))
+;   ([position+level f continue]
+;     (fn [state position level ns data]
+;       (if (= [position level] position+level)
+;         (->> (f        state position level ns data)
+;              (continue state position level ns))
+;         (continue state position level ns data)))))
+
+(defn on| [position+level f & [continue]]
+  (fn [state position level ns data]
+    (if (= [position level] position+level)
+      (let [new-data (f state position level ns data)]
+        (if continue
+          (continue state position level ns new-data)
+          new-data))
+      (when continue (continue state position level ns data)))))
 
 (defn binding-test-output| [f]
   (fn [state position level ns data]
@@ -86,180 +106,76 @@
                       (-> "test" (pluralize ts-cnt))
                       ")"))))))
 
-(def report-case
-  (fn [state position level ns data]
-    (when (= [position level] [:after :case])
-      (when (map? data)
-        (let [report   data
-              status   (:status report)
-              conf     (with-context {:status status} (config))
-              logo     (-> conf :logo)
-              left-ks  [:tested :form]
-              right-ks [:expected :val]
-              left     (get-in report left-ks)]
-          (swap! state update-in [:counts status]
-                 (fnil inc 0))
-          (with-context {:status status}
-            (binding [*out* (-> conf :out)]
-              (when (#{:error :failure} status) (newline))
-              (cond
-                (-> conf :silent) nil
-                (-> conf :dots)   (print logo)
-                :else
-                (do (print-result report logo left-ks right-ks)
-                    (case status
-                      :success nil
-                      :error   #?(:clj  (binding [*err* *out*]
-                                          ;; TODO: set error depth in cljs
-                                          (pst (:error report)
-                                               (-> conf :error-depth))
-                                          (. *err* (flush)))
-                                       :cljs (pst (:error report)))
-                      :failure (let [v      (binding [*print-level* 10000
-                                                      pp/*print-pprint-dispatch*
-                                                      pp/code-dispatch]
-                                              (-> report :tested :val
-                                                  pprint-str))
-                                     left-n (count
-                                              (str logo " " (pprint-str left)))
-                                     prompt (str "Actual: ")
-                                     s      (str prompt v)]
-                                 (if-not (ugly? s)
-                                   (print s)
-                                   (do (printab prompt v)
-                                       (newline)))))))
-              (flush))
-            (when (#{:error :failure} status) (newline))))))))
+(defn report-case [state position level ns data]
+  (when (map? data)
+    (let [report   data
+          status   (:status report)
+          conf     (with-context {:status status} (config))
+          logo     (-> conf :logo)
+          left-ks  [:tested :form]
+          right-ks [:expected :val]
+          left     (get-in report left-ks)]
+      (swap! state update-in [:counts status]
+             (fnil inc 0))
+      (with-context {:status status}
+        (binding [*out* (-> conf :out)]
+          (when (#{:error :failure} status) (newline))
+          (cond
+            (-> conf :silent) nil
+            (-> conf :dots)   (print logo)
+            :else
+            (do (print-result report logo left-ks right-ks)
+                (case status
+                  :success nil
+                  :error   #?(:clj  (binding [*err* *out*]
+                                      ;; TODO: set error depth in cljs
+                                      (pst (:error report)
+                                           (-> conf :error-depth))
+                                      (. *err* (flush)))
+                                   :cljs (pst (:error report)))
+                  :failure (let [v      (binding [*print-level* 10000
+                                                  pp/*print-pprint-dispatch*
+                                                  pp/code-dispatch]
+                                          (-> report :tested :val
+                                              pprint-str))
+                                 left-n (count
+                                          (str logo " " (pprint-str left)))
+                                 prompt (str "Actual: ")
+                                 s      (str prompt v)]
+                             (if-not (ugly? s)
+                               (print s)
+                               (do (printab prompt v)
+                                   (newline)))))))
+          (flush))
+        (when (#{:error :failure} status) (newline))))))
 
-(defn remove-effect-reports| [f]
-  (fn [state position level ns data]
-    (if-not (= [position level] [:after :block])
-      (f state position level ns data)
-      (remove #{:minitest/effect-performed} data))))
+(defn remove-effect-reports [state position level ns data]
+  (remove #{:minitest/effect-performed} data))
 
-(defn separate-namespaces| [f]
-  (fn [state position level ns data]
-    (if-not (= [position level] [:after :ns])
-      (f state position level ns data)
-      (do (newline)
-          ;; If the last report was printed in `:dots` mode, it needs a newline
-          (when (with-context {:status (-> data last :status)}
-                  (-> (config) :dots))
-            (newline))
-          data))))
+(defn separate-namespaces [state position level ns data]
+  (do (newline)
+      ;; If the last report was printed in `:dots` mode, it needs a newline
+      (when (with-context {:status (-> data last :status)}
+              (-> (config) :dots))
+        (newline))
+      data))
 
-(defn display-stats| [f]
-  (fn [state position level ns data]
-    (if-not (= [position level] [:after :suite])
-      (f state position level ns data)
-      (let [counts (:counts @state)]
-        (when-not (-> (config) :fail-fast)
-          (newline)
-          (println (as-> (:failure counts 0) $
-                     (str $ " " (pluralize "failure" $) ", "))
-                   (as-> (:error   counts 0) $
-                     (str $ " " (pluralize "error"   $) ".")))
-          (newline))
-        data))))
+(defn display-stats [state position level ns data]
+  (let [counts (:counts @state)]
+    (when-not (-> (config) :fail-fast)
+      (newline)
+      (println (as-> (:failure counts 0) $
+                 (str $ " " (pluralize "failure" $) ", "))
+               (as-> (:error   counts 0) $
+                 (str $ " " (pluralize "error"   $) ".")))
+      (newline))
+    data))
 
 (def report
-  (outside-in-> binding-test-output|
-                announce-suite|
-                announce-ns|
-                remove-effect-reports|
-                separate-namespaces|
-                display-stats|
-                report-case))
-
-; (defn report [state position level ns-name data]
-;   (binding [*out* (-> (config) :out)]
-;     (case [position level]
-;       [:before :suite]
-;       (let [ns->tests data
-;             ns-cnt    (count ns->tests)
-;             ts-cnt    (->> ns->tests vals (apply concat) (apply concat) count)]
-;         (newline)
-;         (once
-;           state [:announced-suite]
-;           (println
-;             "-- Running minitest on"
-;             ns-cnt (-> "namespace" (pluralize ns-cnt))
-;             (str \( ts-cnt \space (-> "test" (pluralize ts-cnt)) \)))))
-
-;       [:before :ns]
-;       (let [tests  data
-;             ts-cnt (->> tests (apply concat) count)]
-;         (println "---- Testing" ns-name
-;                  (str "(" ts-cnt \space
-;                       (once-else state [:announced-nss ns-name] "more ")
-;                       (-> "test" (pluralize ts-cnt))
-;                       ")")))
-
-;       [:before :block]  nil
-;       [:before :case]   nil
-
-;       [:after  :case]
-;       (when (map? data)
-;         (let [report   data
-;               status   (:status report)
-;               conf     (with-context {:status status} (config))
-;               logo     (-> conf :logo)
-;               left-ks  [:tested :form]
-;               right-ks [:expected :val]
-;               left     (get-in report left-ks)]
-;           (swap! state update-in [:counts status]
-;                  (fnil inc 0))
-;           (with-context {:status status}
-;             (binding [*out* (-> conf :out)]
-;               (when (#{:error :failure} status) (newline))
-;               (cond
-;                 (-> conf :silent) nil
-;                 (-> conf :dots)   (print logo)
-;                 :else
-;                 (do (print-result report logo left-ks right-ks)
-;                     (case status
-;                       :success nil
-;                       :error   #?(:clj  (binding [*err* *out*]
-;                                           ;; TODO: set error depth in cljs
-;                                           (pst (:error report)
-;                                                (-> conf :error-depth))
-;                                           (. *err* (flush)))
-;                                   :cljs (pst (:error report)))
-;                       :failure (let [v      (binding [*print-level* 10000
-;                                                       pp/*print-pprint-dispatch*
-;                                                       pp/code-dispatch]
-;                                               (-> report :tested :val
-;                                                   pprint-str))
-;                                      left-n (count
-;                                               (str logo " " (pprint-str left)))
-;                                      prompt (str "Actual: ")
-;                                      s      (str prompt v)]
-;                                  (if-not (ugly? s)
-;                                    (print s)
-;                                    (do (printab prompt v)
-;                                        (newline)))))))
-;               (flush))
-;             (when (#{:error :failure} status) (newline)))))
-
-;       [:after  :block]
-;       (remove #{:minitest/effect-performed} data)
-
-;       [:after  :ns]
-;       (do
-;         (newline)
-;         ;; If the last report was printed in `:dots` mode, it needs a newline
-;         (when (with-context {:status (-> data last :status)}
-;                 (-> (config) :dots))
-;           (newline))
-;         data)
-
-;       [:after  :suite]
-;       (let [counts (:counts @state)]
-;         (when-not (-> (config) :fail-fast)
-;           (newline)
-;           (println (as-> (:failure counts 0) $
-;                      (str $ " " (pluralize "failure" $) ", "))
-;                    (as-> (:error   counts 0) $
-;                      (str $ " " (pluralize "error"   $) ".")))
-;           (newline))
-;         data))))
+  (outside-in->> binding-test-output|
+                 announce-suite|
+                 announce-ns|
+                 (on| [:after :case]  report-case)
+                 (on| [:after :block] remove-effect-reports)
+                 (on| [:after :ns]    separate-namespaces)
+                 (on| [:after :suite] display-stats)))

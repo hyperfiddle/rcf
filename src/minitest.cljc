@@ -55,7 +55,7 @@
                                          handling-on-load-tests-in-js
                                          defaccessors
                                          let-testing-fns
-                                         outside-in->]]
+                                         outside-in->>]]
                        [clojure.tools.macro :refer [symbol-macrolet]]))
 
   #?(:clj
@@ -126,8 +126,8 @@
 (def ^:no-doc as-form  #(do `'~%))
 
 (macros/deftime
-  (defmacro outside-in-> [& forms]
-    `(-> ~@(reverse forms)))
+  (defmacro outside-in->> [& forms]
+    `(->> ~@(reverse forms)))
 
   (defmacro current-file []
     (-> *file* ClassLoader/getSystemResource .getPath))
