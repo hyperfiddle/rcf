@@ -104,7 +104,8 @@
                       :error   #?(:clj  (binding [*err* *out*]
                                           ;; TODO: set error depth in cljs
                                           (pst (:error report)
-                                               (-> conf :error-depth)))
+                                               (-> conf :error-depth))
+                                          (. *err* (flush)))
                                   :cljs (pst (:error report)))
                       :failure (let [v      (binding [*print-level* 10000
                                                       pp/*print-pprint-dispatch*
