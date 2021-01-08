@@ -52,59 +52,32 @@
 (defn pluralize [x n]
   (str x (if (> n 1) "s" "")))
 
-; (defn on|
-;   ([position+level f]
-;    (fn [state position level ns data]
-;      (when (= [position level] position+level)
-;        (f state position level ns data))))
-;   ([position+level f continue]
-;     (fn [state position level ns data]
-;       (if (= [position level] position+level)
-;         (->> (f        state position level ns data)
-;              (continue state position level ns))
-;         (continue state position level ns data)))))
-
-(defn on| [position+level f & [continue]]
-  (fn [state position level ns data]
-    (if (= [position level] position+level)
-      (let [new-data (f state position level ns data)]
-        (if continue
-          (continue state position level ns new-data)
-          new-data))
-      (when continue (continue state position level ns data)))))
-
 (defn binding-test-output| [f]
   (fn [state position level ns data]
     (binding [*out* (-> (config) :out)]
       (f state position level ns data))))
 
-(defn announce-suite| [f]
-  (fn [state position level ns data]
-    (if-not (= [position level] [:before :suite])
-      (f state position level ns data)
-      (let [ns->tests data
-            ns-cnt    (count ns->tests)
-            ts-cnt    (->> ns->tests vals (apply concat) (apply concat) count)]
-        (newline)
-        (once
-          state [:announced-suite]
-          (println
-            "-- Running minitest on"
-            ns-cnt (-> "namespace" (pluralize ns-cnt))
-            (str \( ts-cnt \space (-> "test" (pluralize ts-cnt)) \))))))))
+(defn announce-suite [state position level ns data]
+  (let [ns->tests data
+        ns-cnt    (count ns->tests)
+        ts-cnt    (->> ns->tests vals (apply concat) (apply concat) count)]
+    (newline)
+    (once
+      state [:announced-suite]
+      (println
+        "-- Running minitest on"
+        ns-cnt (-> "namespace" (pluralize ns-cnt))
+        (str \( ts-cnt \space (-> "test" (pluralize ts-cnt)) \))))))
 
-(defn announce-ns| [f]
-  (fn [state position level ns data]
-    (if-not (= [position level] [:before :ns])
-      (f state position level ns data)
-      (let [tests  data
-            ts-cnt (->> tests (apply concat) count)]
-        (println "---- Testing" ns
-                 (str "(" ts-cnt \space
-                      ;; TODO: replace with once.
-                      (once-else state [:announced-nss ns] "more ")
-                      (-> "test" (pluralize ts-cnt))
-                      ")"))))))
+(defn announce-ns [state position level ns data]
+  (let [tests  data
+        ts-cnt (->> tests (apply concat) count)]
+    (println "---- Testing" ns
+             (str "(" ts-cnt \space
+                  ;; TODO: replace with once.
+                  (once-else state [:announced-nss ns] "more ")
+                  (-> "test" (pluralize ts-cnt))
+                  ")"))))
 
 (defn report-case [state position level ns data]
   (when (map? data)
@@ -173,9 +146,9 @@
 
 (def report
   (outside-in->> binding-test-output|
-                 announce-suite|
-                 announce-ns|
-                 (on| [:after :case]  report-case)
-                 (on| [:after :block] remove-effect-reports)
-                 (on| [:after :ns]    separate-namespaces)
-                 (on| [:after :suite] display-stats)))
+                 (on| [:before :suite] announce-suite)
+                 (on| [:before :ns]    announce-ns)
+                 (on| [:after  :case]  report-case)
+                 (on| [:after  :block] remove-effect-reports)
+                 (on| [:after  :ns]    separate-namespaces)
+                 (on| [:after  :suite] display-stats)))

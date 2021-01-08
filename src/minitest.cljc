@@ -125,6 +125,23 @@
 (def ^:no-doc as-thunk #(do `(fn [] ~%)))
 (def ^:no-doc as-form  #(do `'~%))
 
+(defn on| [position-level f & [continue]]
+  (fn
+    ([state level ns data]
+     (if (= [level] position-level)
+       (let [new-data (f state level ns data)]
+         (if continue
+           (continue state level ns new-data)
+           new-data))
+       (when continue (continue state level ns data))))
+    ([state position level ns data]
+        (if (= [position level] position-level)
+          (let [new-data (f state position level ns data)]
+            (if continue
+              (continue state position level ns new-data)
+              new-data))
+          (when continue (continue state position level ns data))))))
+
 (macros/deftime
   (defmacro outside-in->> [& forms]
     `(->> ~@(reverse forms)))
@@ -196,7 +213,7 @@
 
 
    :cljsbuild      {} ;; TODO: not in use
-   :prepl-fn       'cljs.server.node/prepl ;; TODO
+   :prepl-fn-sym   'cljs.server.node/prepl ;; TODO
    #_(:cljs nil
       :clj  {:js-env :node
              ; :WHEN

@@ -24,6 +24,7 @@
     `(let [{~'&run :run-fn ~'&execute :execute-fn ~'&report :report-fn} ~conf]
        ~@body))
 
+  ;; TODO: keep ?
   (defmacro ^:private doseq-each-lang [conf & body]
     `(let [conf# ~conf]
        (doseq [l# (:langs conf#)]

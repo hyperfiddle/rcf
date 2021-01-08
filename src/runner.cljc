@@ -1,10 +1,4 @@
 
-(defprotocol RunnerP
-  (run-suite     [this ns->tests])
-  (run-namespace [this ns tests])
-  (run-block     [this ns cases])
-  (run-case      [this exe ns case]))
-
 ; TODO?
 ; [2021-01-07 20:54:54.775 - WARNING] :shadow.cljs.devtools.server.reload-classpath/macro-reload-ex - {:ns-sym hyperfiddle.hfql20}
 ; IllegalStateException Can't set!: *e from non-binding thread
@@ -36,41 +30,41 @@
     x)
 
   (defn- ^:no-doc run-test-and-yield-report! [ns {:keys [type] :as test}]
-      (case type
-        :effect
-        (let [result (managing-exs (!1-2-3 (call (:thunk test))))]
-          (if (managed-ex? result)
-            (ex-info (str "Error in test effect\n"
-                          (with-out-str (pprint (:form test))))
-                     {:type     :minitest/effect-error
-                      :test     test
-                      :location :effect
-                      :error    (ex result)})
-            :minitest/effect-performed))
-        :expectation
-        (let [testedv
-              (delay (managing-exs (!1-2-3 (-> test :tested   :thunk call))))
-              expectedv
-              (delay (managing-exs         (-> test :expected :thunk call)))]
-          (merge
-            {:ns     ns
-             :op     (:op test)
-             :tested (merge {:form (-> test :tested      :form)}
-                            (when-not (managed-ex? @testedv)
-                              {:val @testedv}))}
-            (when (= (:op test) :=)
-              {:expected (merge {:form (-> test :expectation :form)}
-                                (when-not (managed-ex? @expectedv)
-                                  {:val @expectedv}))})
-            (let [err-expected? (delay (and (= (:op test) :=) (managed-ex? @expectedv)))
-                  success?      (delay (case (:op test)
-                                         :=  (= @testedv @expectedv)
-                                         :?  @testedv))]
-              (cond
-                (managed-ex? @testedv)  {:status :error  :error (ex @testedv)}
-                @err-expected?          {:status :error  :error (ex @expectedv)}
-                @success?               {:status :success}
-                :else                   {:status :failure}))))))
+    (case type
+      :effect
+      (let [result (managing-exs (!1-2-3 (call (:thunk test))))]
+        (if (managed-ex? result)
+          (ex-info (str "Error in test effect\n"
+                        (with-out-str (pprint (:form test))))
+                   {:type     :minitest/effect-error
+                    :test     test
+                    :location :effect
+                    :error    (ex result)})
+          :minitest/effect-performed))
+      :expectation
+      (let [testedv
+            (delay (managing-exs (!1-2-3 (-> test :tested   :thunk call))))
+            expectedv
+            (delay (managing-exs         (-> test :expected :thunk call)))]
+        (merge
+          {:ns     ns
+           :op     (:op test)
+           :tested (merge {:form (-> test :tested      :form)}
+                          (when-not (managed-ex? @testedv)
+                            {:val @testedv}))}
+          (when (= (:op test) :=)
+            {:expected (merge {:form (-> test :expectation :form)}
+                              (when-not (managed-ex? @expectedv)
+                                {:val @expectedv}))})
+          (let [err-expected? (delay (and (= (:op test) :=) (managed-ex? @expectedv)))
+                success?      (delay (case (:op test)
+                                       :=  (= @testedv @expectedv)
+                                       :?  @testedv))]
+            (cond
+              (managed-ex? @testedv)  {:status :error  :error (ex @testedv)}
+              @err-expected?          {:status :error  :error (ex @expectedv)}
+              @success?               {:status :success}
+              :else                   {:status :failure}))))))
 
 
 (defn run [state level ns-name data & [execute-fn]]
@@ -79,8 +73,8 @@
     (case level
       :suite  (->> data
                    (mapv (fn [[ns tsts]]
-                           [ns  (orchestrate s :ns    ns      tsts)]))
+                           [ns (orchestrate s :ns    ns      tsts)]))
                    (into {}))
-      :ns     (doall     (map  #(orchestrate s :block ns-name %)  data))
-      :block  (doall     (map  #(orchestrate s :case  ns-name %)  data))
-      :case   (                  execute-fn  s :do :case ns-name data))))
+      :ns     (doall (map     #(orchestrate s :block ns-name %)  data))
+      :block  (doall (map     #(orchestrate s :case  ns-name %)  data))
+      :case   (                 execute-fn  s :do :case ns-name data))))

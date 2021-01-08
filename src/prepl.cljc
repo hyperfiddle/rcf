@@ -32,16 +32,17 @@
       (get @envs k)))
 
   (defn- prepl-opts []
-    {:name           name
-     :address        "127.0.0.1"
-     :port           0 ;; picked at random
-     :port-file      true
-     :port-file-name (str "." name "-prepl-port")
-     :env            (:js-env (context))
-     :accept         (let [sym (:prepl-fn (config))
-                           ns  (some-> sym namespace symbol)]
-                       (require (-> sym namespace symbol))
-                       (-> sym resolve .toSymbol))})
+    (let [name "minitest"]
+      {:name           name
+       :address        "127.0.0.1"
+       :port           0 ;; picked at random
+       :port-file      true
+       :port-file-name (str "." name "-prepl-port")
+       :env            (:js-env (context))
+       :accept         (let [sym (:prepl-fn-sym (config))
+                             ns  (some-> sym namespace symbol)]
+                         (when ns (require (-> sym namespace symbol)))
+                         (-> sym resolve .toSymbol))}))
 
   ;; TODO: implement support for figwheel prepl
   ;; See:  https://github.com/Olical/propel/blob/407ccf1ae507876e9a879239fac96380f2c1de2b/src/propel/core.clj#L66

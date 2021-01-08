@@ -1,78 +1,55 @@
 (declare run-test-and-yield-report!)
 
-(defn execute-clj [state position level ns-name data]
-  (case [position level]
-    [:before :suite]  nil
-    [:before :ns]     nil
-    [:before :block]  nil
-    [:before :case]   nil
-    [:do     :case]   (run-test-and-yield-report! ns-name data)
-    [:after  :case]   nil
-    [:after  :block]  nil
-    [:after  :ns]     nil
-    [:after  :suite]  nil))
+(def testing-repl (atom nil))
 
-
-(def testing-repl nil)
+(def execute-clj
+  (on| [:do :case] (fn [state position level ns data]
+                     (run-test-and-yield-report! ns data))))
 
 (macros/deftime
   (defn- start-testing-repl! []
-    (assert (nil? testing-repl) "Already started")
-    (alter-var-root #'testing-repl
-                    (constantly
-                      (macros/case
-                        :clj  (do (println "STARTING TESTING REPL") (cljs-prepl))
-                        :cljs nil)))
-    (with-repl testing-repl (~'require '~'minitest))))
-
-;; TODO: handle src-dirs
-; (defn ns-paths [platform]
-;   (->> (cp/classpath)
-;        (filter (memfn ^java.io.File isDirectory))
-;        (mapcat (fn [dir]
-;                  (for [f (find-sources-in-dir dir)
-;                        :let [decl (read-file-ns-decl f (:read-opts platform))]
-;                        :when decl]
-;                    [(name-from-ns-decl decl)
-;                     (.getAbsolutePath f)])))
-;        (into {})))
-
-(defn execute-cljs [state position level ns-name data]
-  (case [position level]
-    [:before :suite]
+    (assert (nil? @testing-repl) "Already started")
     (macros/case
-      :clj (when-not testing-repl
-             (start-testing-repl!)
-             (with-repl testing-repl
-               (~'require '~'minitest :reload) ;; TODO: do not reload minitest
-               (~'use '~'cljs.core) ;; TODO: required ? Else move elsewhere
-               (~'use '~'[cljs.repl :only [doc source error->str]]))))
+      :clj  (let [repl (cljs-prepl)]
+              (println "STARTING TESTING REPL")
+                (reset! testing-repl repl)
+                (with-repl repl (~'require '~'minitest)))
+      :cljs (println "ATTEMPTED TO START THE REPL IN CLJS"))))
 
-    [:before :ns]
-    (macros/case
-      :clj  (let [res (with-repl testing-repl
-                        ;; TODO: reload only if reloading in clj
-                        (~'require '~ns-name :reload))]
-              (dbg "REPL RESULT" res)))
+(defn ensure-testing-repl [state position level ns-name data]
+  (macros/case
+    :clj (when-not @testing-repl
+           (start-testing-repl!)
+           (println "testing-repl" @testing-repl)
+           (with-repl @testing-repl
+             (~'require '~'minitest :reload) ;; TODO: do not reload minitest
+             (~'use '~'cljs.core) ;; TODO: required ? Else move elsewhere
+             (~'use '~'[cljs.repl :only [doc source error->str]])))))
 
-    [:before :block]  nil
-    [:before :case]   nil
+(defn require-tested-ns-in-cljs [state position level ns data]
+  (do (println "TESTING REPL" @testing-repl)
+      (println "ENV" (macros/case  :clj :clj  :cljs :cljs))
+      #_(macros/case
+          :clj  (let [res (with-repl @testing-repl
+                            ;; TODO: reload only if reloading in clj
+                            (~'require '~ns :reload))]
+                  (dbg "REPL RESULT" res)))))
 
-    [:do  :case]
-    (macros/case
-      :cljs (run-test-and-yield-report! ns-name data)
-      :clj  (with-repl testing-repl
-              (run-test-and-yield-report!
-                '~ns-name
-                ~(let [a assoc-in  u update-in  d data]
-                   (-> d
-                       (u [:tested   :form]    #(do `(quote ~%)))
-                       (u [:expected :form]    #(do `(quote ~%)))
-                       (a [:tested   :thunk]   (-> d :tested   :form as-thunk))
-                       (a [:expected :thunk]   (-> d :expected :form as-thunk)))
-                   ))))
+(defn run-case-in-cljs [state position level ns data]
+  (macros/case
+    :cljs (run-test-and-yield-report! ns-name data)
+    :clj  (with-repl @testing-repl
+            (run-test-and-yield-report!
+              '~ns-name
+              ~(let [a assoc-in  u update-in  d data]
+                 (-> d
+                     (u [:tested   :form]    #(do `(quote ~%)))
+                     (u [:expected :form]    #(do `(quote ~%)))
+                     (a [:tested   :thunk]   (-> d :tested   :form as-thunk))
+                     (a [:expected :thunk]   (-> d :expected :form as-thunk)))
+                 )))))
 
-    [:after  :case]   nil
-    [:after  :block]  nil
-    [:after  :ns]     nil
-    [:after  :suite]  nil))
+(def execute-cljs
+  (outside-in->> (on| [:before :suite] ensure-testing-repl)
+                 (on| [:before :ns]    require-tested-ns-in-cljs)
+                 (on| [:do     :case]  run-case-in-cljs)))
