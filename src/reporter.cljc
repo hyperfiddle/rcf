@@ -61,7 +61,6 @@
             ns-cnt    (count ns->tests)
             ts-cnt    (->> ns->tests vals (apply concat) (apply concat) count)]
         (newline)
-        (println "ONCE STATE" state)
         (once
           state [:announced-suite]
           (println
