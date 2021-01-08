@@ -120,8 +120,7 @@
                                    (do (printab prompt v)
                                        (newline)))))))
               (flush))
-            (when (#{:error :failure} status) (newline)))
-          (flush)))
+            (when (#{:error :failure} status) (newline)))))
 
       [:after  :block]
       (remove #{:minitest/effect-performed} data)

@@ -54,7 +54,7 @@
 (defn orchestrate [state level ns data]
   (let [conf (config)]
     (with-context {:test-level level
-                   :lang       (macros/case  :clj :clj  :cljs :cljs)}
+                   :lang       :clj}
       (case level
         (:suite :block) (orchestrate-level state level ns data)
         :ns             (with-context {:ns ns}

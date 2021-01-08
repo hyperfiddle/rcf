@@ -21,7 +21,7 @@
     (alter-var-root #'testing-repl
                     (constantly
                       (macros/case
-                        :clj  (do (dbg "STARTING TESTING REPL") (cljs-prepl))
+                        :clj  (do (println "STARTING TESTING REPL") (cljs-prepl))
                         :cljs nil)))
     (with-repl testing-repl (~'require '~'minitest))))
 
