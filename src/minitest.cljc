@@ -54,7 +54,8 @@
                                          tests-to-process
                                          handling-on-load-tests-in-js
                                          defaccessors
-                                         let-testing-fns]]
+                                         let-testing-fns
+                                         outside-in->]]
                        [clojure.tools.macro :refer [symbol-macrolet]]))
 
   #?(:clj
@@ -118,11 +119,11 @@
                js/_MINITEST_TESTS_TO_PROCESS_))))
 
 (declare config)
-(def ^:no-doc ->|   #(apply comp (reverse %&)))
-(def ^:no-doc call  #(apply %1 %&))
 
-(def ^:no-doc as-thunk       #(do `(fn [] ~%)))
-(def ^:no-doc as-form        #(do `'~%))
+(def ^:no-doc ->|      #(apply comp (reverse %&)))
+(def ^:no-doc call     #(apply %1 %&))
+(def ^:no-doc as-thunk #(do `(fn [] ~%)))
+(def ^:no-doc as-form  #(do `'~%))
 
 (macros/deftime
   (defmacro current-file []

@@ -41,36 +41,74 @@
 (defn orchestrate-level [state level ns data
                          & {:keys [handle-before handle-after]}]
   (let-testing-fns (config)
-    (let [handle-before (or handle-before (fn [& args]
-                                            (apply &report  args)
-                                            (apply &execute args)))
-          handle-after  (or handle-after  (fn [rpts & args]
-                                            (apply &execute args)
-                                            (apply &report  args)))]
-      (handle-before       state :before level ns data)
-      (let [rpts (&run     state         level ns data &execute)]
-        (handle-after rpts state :after  level ns data)))))
+    (let [handle-before (or handle-before (fn [s l n d]
+                                            (&report  s :before l n d)
+                                            (&execute s :before l n d)))
+          handle-after  (or handle-after  (fn [s l n d]
+                                            (&execute s :after l n d)
+                                            (&report  s :after l n d)))]
+      (handle-before       state level ns data)
+      (let [rpt-data (&run state level ns data     &execute)]
+        (handle-after      state level ns rpt-data)))))
 
-(defn orchestrate [state level ns data]
-  (let [conf (config)]
-    (with-context {:test-level level
-                   :lang       :clj}
-      (case level
-        (:suite :block) (orchestrate-level state level ns data)
-        :ns             (with-context {:ns ns}
-                          (orchestrate-level state level ns data))
-        :case           (orchestrate-level
-                          state level ns data
-                          :handle-after
-                          (fn [rpt & args]
-                            (let-testing-fns conf
-                              (if (and
-                                    (:fail-fast conf)
-                                    (some-> rpt :status #{:error :failure}))
-                                (fail-fast! state ns  rpt)
-                                (do (&execute state :after  :case  ns  rpt)
-                                    (&report  state :after  :case  ns  rpt)
-                                    )))))))))
+(defn with-test-level|    [f] (fn [s l n d]
+                                (with-context {:test-level l}
+                                 (f s l n d))))
+(defn with-lang|          [f] (fn [s l n d]
+                                (with-context {:lang :clj}
+                                 (f s l n d))))
+(defn with-ns-in-context| [f] (fn [s l n d]
+                                (if-not (= l :ns)
+                                 (f s l n d)
+                                 (with-context {:ns n}
+                                   (f s l n d)))))
+(defn handling-fail-fast| [f] (fn [s l n d]
+                                (if-not (= l :case)
+                                 (f s l n d)
+                                 (orchestrate-level
+                                   s l n d
+                                   :handle-after
+                                   (fn [s l n d]
+                                     (let [conf (config)]
+                                       (let-testing-fns conf
+                                         (if (and (:fail-fast conf)
+                                                  (some-> d :status
+                                                          #{:error :failure}))
+                                           (fail-fast! s n d)
+                                           (do
+                                             (&execute s :after l n d)
+                                             (&report  s :after l n d))))))))))
+
+; (defn orchestrate [state level ns data]
+;   (let [conf (config)]
+;     (with-context {:test-level level
+;                    :lang       :clj}
+;       (case level
+;         (:suite :block) (orchestrate-level state level ns data)
+;         :ns             (with-context {:ns ns}
+;                           (orchestrate-level state level ns data))
+;         :case           (orchestrate-level
+;                           state level ns data
+;                           :handle-after
+;                           (fn [rpt & args]
+;                             (let-testing-fns conf
+;                               (if (and
+;                                     (:fail-fast conf)
+;                                     (some-> rpt :status #{:error :failure}))
+;                                 (fail-fast! state ns  rpt)
+;                                 (do (&execute state :after  :case  ns  rpt)
+;                                     (&report  state :after  :case  ns  rpt)
+;                                     )))))))))
+
+(macros/deftime
+  (defmacro outside-in-> [& forms]  `(-> ~@(reverse forms))))
+
+(def orchestrate
+  (outside-in-> (with-test-level|)
+                (with-lang|)
+                (with-ns-in-context|)
+                (handling-fail-fast|)
+                orchestrate-level))
 
 (defn ^:no-doc run-execute-report!
   ([level ns->tsts]
