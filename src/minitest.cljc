@@ -126,6 +126,9 @@
 (def ^:no-doc as-form  #(do `'~%))
 
 (macros/deftime
+  (defmacro outside-in-> [& forms]
+    `(-> ~@(reverse forms)))
+
   (defmacro current-file []
     (-> *file* ClassLoader/getSystemResource .getPath))
 
@@ -188,7 +191,7 @@
 
    :run-fn         run
    :execute-fn     nil;; Set in function of the :lang context. See below.
-   :report-fn      report-in-terminal
+   :report-fn      report
    :orchestrate-fn orchestrate
 
 
