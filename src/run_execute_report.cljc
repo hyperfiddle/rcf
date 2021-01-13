@@ -48,7 +48,7 @@
                                             (&execute s :after l n d)
                                             (&report  s :after l n d)))]
       (handle-before       state level ns data)
-      (let [rpt-data (&run state level ns data     &execute)]
+      (let [rpt-data (&run state level ns data)]
         (handle-after      state level ns rpt-data)))))
 
 (defn with-test-level|    [f] (fn [s l n d]
@@ -58,10 +58,9 @@
                                 (with-context {:lang :clj}
                                  (f s l n d))))
 (defn with-ns-in-context| [f] (fn [s l n d]
-                                (if-not (= l :ns)
-                                 (f s l n d)
-                                 (with-context {:ns n}
-                                   (f s l n d)))))
+                                (if n
+                                  (with-context {:ns n} (f s l n d))
+                                  (f s l n d))))
 (defn handling-fail-fast| [f] (fn [s l n d]
                                 (if-not (= l :case)
                                  (f s l n d)

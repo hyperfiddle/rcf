@@ -3,11 +3,13 @@
 *deps*
 *API link*
 
+Runs everywhere, flawlessly
+
 ## M I N I M A L
 
 ```clojure
 (tests
-  )
+  (+ 1 1)  :=  2)
 
 (tests
   )

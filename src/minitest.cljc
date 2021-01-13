@@ -55,7 +55,9 @@
                                          handling-on-load-tests-in-js
                                          defaccessors
                                          let-testing-fns
-                                         outside-in->>]]
+                                         outside-in->>
+                                         def-on-fn
+                                         with-status-in-context]]
                        [clojure.tools.macro :refer [symbol-macrolet]]))
 
   #?(:clj
@@ -75,7 +77,7 @@
 
 ;; ---- Debugging
 (macros/deftime
-  (def ^:private ^:dynamic *debug* false)
+  (def ^:dynamic *debug* false)
 
   (macros/case
     :clj (defmacro dbg [& args]
@@ -125,22 +127,43 @@
 (def ^:no-doc as-thunk #(do `(fn [] ~%)))
 (def ^:no-doc as-form  #(do `'~%))
 
-(defn on| [position-level f & [continue]]
-  (fn
-    ([state level ns data]
-     (if (= [level] position-level)
-       (let [new-data (f state level ns data)]
-         (if continue
-           (continue state level ns new-data)
-           new-data))
-       (when continue (continue state level ns data))))
-    ([state position level ns data]
-        (if (= [position level] position-level)
-          (let [new-data (f state position level ns data)]
-            (if continue
-              (continue state position level ns new-data)
-              new-data))
-          (when continue (continue state position level ns data))))))
+(defmacro def-on-fn [name first-arg pred-expr]
+  (let [f-sym        (gensym "f")
+        continue-sym (gensym "continue")]
+    `(defn ~name [~first-arg ~f-sym & [~continue-sym]]
+       (fn
+         ~@(for [args '[;; This arity for orchestrate-fn
+                        [&state &level &ns &data]
+                        ;; This arity for run-fn, execute-fn & report-fn
+                        [&state &position &level &ns &data]]]
+             `(~args
+                (let [~'&position ~(if (.contains args '&position)
+                                     '&position
+                                     nil)]
+                  (if ~pred-expr
+                    (let [new-data# (~f-sym ~@args)]
+                      (if ~continue-sym
+                        (~continue-sym ~@(butlast args) new-data#)
+                        new-data#))
+                    (if ~continue-sym
+                      (~continue-sym ~@args)
+                      ~'&data)))))))))
+
+(declare context)
+(def-on-fn on|         position-level (cond
+                                        (set? position-level)
+                                        (position-level [&position &level])
+                                        (fn? position-level)
+                                        (position-level &state &position &level
+                                                        &ns &data)
+                                        :else
+                                        (= position-level [&position &level])))
+(def-on-fn on-context| expected-ctx   (= expected-ctx
+                                         (select-keys (context)
+                                                      (keys expected-ctx))))
+(def-on-fn on-config|  expected-cfg   (= expected-cfg
+                                         (select-keys (config)
+                                                      (keys expected-cfg))))
 
 (macros/deftime
   (defmacro outside-in->> [& forms]
@@ -197,62 +220,70 @@
 
   See `(source base-config)`."
   {:dirs           ["src" "test"] ;; TODO: use clojure.java.classpath/classpath
-   :elide-tests    false
-   :fail-fast      false
-   :out            *out*
-   :term-width     120
-   :error-depth    12
-   :silent         false
-   :dots           false
-   :langs          [:clj]
+   :elide-tests         false
+   :out                 *out*
+   ;; Runner opts
+   :fail-fast           false
+   :break-on-failure    false ;; TODO
+   ;; Reporter opts
+   :term-width          120
+   :error-depth         12
+   :silent              false
+   :dots                true
+   ;; Executor opts
+   :langs               [:clj]
 
-   :run-fn         run
-   :execute-fn     nil;; Set in function of the :lang context. See below.
-   :report-fn      report
-   :orchestrate-fn orchestrate
+   :run-fn              run
+   :execute-fn          ::not-set! ;; Set in function of the :lang context.
+   :report-fn           report
+   :orchestrate-fn      orchestrate
 
 
-   :cljsbuild      {} ;; TODO: not in use
-   :prepl-fn-sym   'cljs.server.node/prepl ;; TODO
+   :cljsbuild           {} ;; TODO: not in use
+   :prepl-fn-sym        'cljs.server.node/prepl ;; TODO
    #_(:cljs nil
-      :clj  {:js-env :node
-             ; :WHEN
-             ; {:js-env
-             ;  {:node          'cljs.server.node/prepl
-             ;   :browser       'cljs.server.browser/prepl
-             ;   ; :figwheel      'cljs.core.server/io-prepl
-             ;   ; :lein-figwheel 'cljs.core.server/io-prepl
-             ;   :rhino         'cljs.server.rhino/prepl
-             ;   :graaljs       'cljs.server.graaljs/prepl
-             ;   :nashorn       'cljs.server.nashorn/prepl}}
-             })
+            :clj  {:js-env :node
+                   ; :WHEN
+                   ; {:js-env
+                   ;  {:node          'cljs.server.node/prepl
+                   ;   :browser       'cljs.server.browser/prepl
+                   ;   ; :figwheel      'cljs.core.server/io-prepl
+                   ;   ; :lein-figwheel 'cljs.core.server/io-prepl
+                   ;   :rhino         'cljs.server.rhino/prepl
+                   ;   :graaljs       'cljs.server.graaljs/prepl
+                   ;   :nashorn       'cljs.server.nashorn/prepl}}
+                   })
 
-   :DEFAULT-CTX    {:exec-mode :on-eval
-                    :env       :dev
-                    :js-env    :node}
-   :WHEN           (let [silent-success
-                         {:WHEN {:status    {:success {:silent    true}}}}
-                         run-on-load
-                         {:WHEN {:exec-mode {:on-load {:run-tests true}}}}]
-                     ;; reads as:
-                     ;; when       is          then
-                     {:lang      {:clj  {:execute-fn execute-clj}
-                                  :cljs {:execute-fn execute-cljs}}
-                      :exec-mode {:on-load     {:store-tests true
-                                                :run-tests   false}
-                                  :on-eval     {:store-tests false
-                                                :run-tests   true}}
-                      :env       {:production  {:elide-tests true}
-                                  :cli         {:dots        true}
-                                  :ci          [:cli]
-                                  :dev         run-on-load
-                                  :quiet-dev   [:dev, silent-success]}
-                      :status    {:success     {:logo "✅"}
-                                  :failure     {:logo "❌"}
-                                  :error       {:logo "🔥"}}})
-
-   :break-on-failure false ;; TODO
-   })
+   :CTX  {:exec-mode      :on-eval
+          :env            :dev
+          :js-env         :node
+          :last-in-level  ::not-set
+          :first-in-level ::not-set!
+          :test-level     ::not-set!
+          :status         ::not-set!
+          :dots           true}
+   :WHEN (let [silent-success
+               {:WHEN {:status    {:success {:silent    true}}}}
+               run-on-load
+               {:WHEN {:exec-mode {:on-load {:run-tests true}}}}]
+           ;; reads as:
+           ;; when       is    then         is
+           {:lang       {:clj  {:execute-fn execute-clj}
+                         :cljs {:execute-fn execute-cljs}}
+            :exec-mode  {:on-load     {:store-tests true
+                                       :run-tests   false}
+                         :on-eval     {:store-tests false
+                                       :run-tests   true}}
+            :env        {:production  {:elide-tests true}
+                         :cli         {:dots        true}
+                         :ci          [:cli]
+                         :dev         run-on-load
+                         :quiet-dev   [:dev, silent-success]}
+            :status     {:success     {:logo "✅"}
+                         :failure     {:logo "❌"}
+                         :error       {:logo "🔥"}}
+            :test-level {:ns          {:separator "•\n"}
+                         :block       {:separator "•\n"}}})})
 
    (include "monkeypatch_load")
    (macros/deftime

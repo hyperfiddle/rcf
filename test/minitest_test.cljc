@@ -4,13 +4,15 @@
    #?(:clj  [clojure.pprint       :refer [pprint]]
       :cljs [cljs.pprint          :refer [pprint]])
    #?(:cljs [cljs.reader          :refer [read-string]])
-   #?(:clj  [minitest             :refer [tests test! *tests* config with-context]]
+   #?(:clj  [minitest             :refer [tests test! *tests* config
+                                          with-context with-config *debug*]]
       :cljs [minitest             :refer [      test! *tests* config]])
             ; [minitest-test-namespace]
             )
   #?(:clj  (:require [net.cgrand.macrovich :as macros])
      :cljs (:require-macros [net.cgrand.macrovich :as macros]
-                            [minitest :refer [tests with-context]])))
+                            [minitest :refer [tests
+                                              with-context with-config]])))
 
 
 (macros/deftime
@@ -38,7 +40,7 @@
 ;               (is (= "" printed))))))
 
 #?(:clj (deftest test-elide-tests
-          (with-context {:elide-tests true}
+          #_(with-context {:elide-tests true}
             (reset! *tests* {})
             (let [printed (our-out-str
                             (require 'minitest-test-namespace :reload))]
@@ -71,16 +73,30 @@
                (= x (-> (read-config v) :x)))
        true     true
        false    false
-       :unknown :initial))
+       :unknown :initial
+       ))
 
 (deftest test-contextual-config
-  (testing ":DEFAULT-CTX activates :WHEN"
+  (testing ":CTX activates :WHEN"
     (test-config (fn [v]
-                   {:DEFAULT-CTX {:enabled v}
+                   {:CTX {:enabled v}
                     :WHEN        {:enabled {true  {:x true}
                                             false {:x false}}}})
                  (fn [_v]
                    (config))))
+  #_(testing ":CTX activates :WHEN in :CTX"
+    (test-config (fn [v]
+                   {:CTX {:enabled v
+                          :WHEN    {:enabled {true  {:x true}
+                                              false {:x false}}}}})
+                 (fn [_v]
+                   (config))))
+  #_(testing "with-context activates :WHEN in :CTX"
+    (test-config (fn [_v]
+                   {:CTX {:WHEN    {:enabled {true  {:x true}
+                                              false {:x false}}}}})
+                 #(with-context {:enabled %}
+                    (config))))
   (testing "with-context activates :WHEN in :WHEN"
     (let [f (fn [_v]
               {:WHEN {:optA {true  {:WHEN {:optB {true  {:x true}
@@ -90,14 +106,22 @@
                         (config)))
       (test-config f #(with-context {:optA %     :optB true}
                         (config)))))
-  (testing "with-context activates :WHEN in :DEFAULT-CTX which activates :WHEN"
-    (test-config (fn [v]
-                   {:DEFAULT-CTX {:WHEN {:optA {true  {:optB true}
-                                                false {:optB false}}}}
+  (testing "with-context activates :WHEN in :CTX which activates :WHEN"
+    (test-config (fn [_v]
+                   {:CTX {:WHEN {:optA {true  {:optB true}
+                                        false {:optB false}}}}
                     :WHEN {:optB {true  {:x true}
                                   false {:x false}}}})
                  #(with-context {:optA %}
-                    (config)))))
+                    (config))))
+  ; (testing ""
+  ;   (test-config (fn [_v]
+  ;                  {:CTX {:enabled true
+  ;                         :WHEN {:enabled {true  {:x true}
+  ;                                          false {:x false}}}}})
+  ;                #(with-context {:enabled %}
+  ;                   (config))))
+  )
 
 (run-tests)
 

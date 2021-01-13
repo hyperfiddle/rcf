@@ -1,5 +1,5 @@
 (ns minitest.poney
-  ; {:minitest/config {:run-tests false}}
+  ; {:minitest/config {:dots true}}
   (:require
    #?(:clj  [clojure.pprint    :refer [pprint]]
       :cljs [cljs.pprint       :refer [pprint]])
@@ -12,4 +12,13 @@
 (defn entry-point []
   (println "NODEJS ENTRY POINT"))
 
-(tests (inc 1) := 2)
+(tests
+  (println "a side effect")
+  (inc 1) := 2
+  (inc 2) := 3
+  (/ 1 0) := 1
+  0       := 1
+  1       := 1)
+
+(tests
+  (inc 3) := 4)

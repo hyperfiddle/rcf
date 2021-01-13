@@ -24,7 +24,8 @@
            (with-repl @testing-repl
              (~'require '~'minitest :reload) ;; TODO: do not reload minitest
              (~'use '~'cljs.core) ;; TODO: required ? Else move elsewhere
-             (~'use '~'[cljs.repl :only [doc source error->str]])))))
+             (~'use '~'[cljs.repl :only [doc source error->str]]))))
+  data)
 
 (defn require-tested-ns-in-cljs [state position level ns data]
   (do (println "TESTING REPL" @testing-repl)
@@ -33,7 +34,8 @@
           :clj  (let [res (with-repl @testing-repl
                             ;; TODO: reload only if reloading in clj
                             (~'require '~ns :reload))]
-                  (dbg "REPL RESULT" res)))))
+                  (dbg "REPL RESULT" res))))
+  data)
 
 (defn run-case-in-cljs [state position level ns data]
   (macros/case

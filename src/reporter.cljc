@@ -57,6 +57,16 @@
     (binding [*out* (-> (config) :out)]
       (f state position level ns data))))
 
+(defn separating-levels| [f]
+  (fn [state position level ns data]
+    (let [ctx (context)]
+      (when-let [sep   (and (= position :before) (-> (config) :separator))]
+        (print sep))
+      (let [new-data (f state position level ns data)]
+        (when-let [sep (and (= position :after)  (-> (config) :post-separator))]
+          (print sep))
+        new-data))))
+
 (defn announce-suite [state position level ns data]
   (let [ns->tests data
         ns-cnt    (count ns->tests)
@@ -67,7 +77,8 @@
       (println
         "-- Running minitest on"
         ns-cnt (-> "namespace" (pluralize ns-cnt))
-        (str \( ts-cnt \space (-> "test" (pluralize ts-cnt)) \))))))
+        (str \( ts-cnt \space (-> "test" (pluralize ts-cnt)) \)))))
+  data)
 
 (defn announce-ns [state position level ns data]
   (let [tests  data
@@ -77,10 +88,17 @@
                   ;; TODO: replace with once.
                   (once-else state [:announced-nss ns] "more ")
                   (-> "test" (pluralize ts-cnt))
-                  ")"))))
+                  ")")))
+  data)
+
+(defn for-each-datum| [f]
+  (fn [state position level ns data]
+    (doall (for [datum data]
+             (f state position level ns datum)))))
 
 (defn report-case [state position level ns data]
-  (when (map? data)
+  (if (= data :minitest/effect-performed)
+    data
     (let [report   data
           status   (:status report)
           conf     (with-context {:status status} (config))
@@ -88,50 +106,64 @@
           left-ks  [:tested :form]
           right-ks [:expected :val]
           left     (get-in report left-ks)]
-      (swap! state update-in [:counts status]
-             (fnil inc 0))
-      (with-context {:status status}
-        (binding [*out* (-> conf :out)]
-          (when (#{:error :failure} status) (newline))
-          (cond
-            (-> conf :silent) nil
-            (-> conf :dots)   (print logo)
-            :else
-            (do (print-result report logo left-ks right-ks)
-                (case status
-                  :success nil
-                  :error   #?(:clj  (binding [*err* *out*]
-                                      ;; TODO: set error depth in cljs
-                                      (pst (:error report)
-                                           (-> conf :error-depth))
-                                      (. *err* (flush)))
-                                   :cljs (pst (:error report)))
-                  :failure (let [v      (binding [*print-level* 10000
-                                                  pp/*print-pprint-dispatch*
-                                                  pp/code-dispatch]
-                                          (-> report :tested :val
-                                              pprint-str))
-                                 left-n (count
-                                          (str logo " " (pprint-str left)))
-                                 prompt (str "Actual: ")
-                                 s      (str prompt v)]
-                             (if-not (ugly? s)
-                               (print s)
-                               (do (printab prompt v)
-                                   (newline)))))))
-          (flush))
-        (when (#{:error :failure} status) (newline))))))
+      (print-result report logo left-ks right-ks)
+      (case status
+        :success nil
+        :error   #?(:clj  (binding [*err* *out*]
+                            ;; TODO: set error depth in cljs
+                            (pst (:error report)
+                                 (-> conf :error-depth))
+                            (. *err* (flush)))
+                         :cljs (pst (:error report)))
+        :failure (let [v      (binding [*print-level* 10000
+                                        pp/*print-pprint-dispatch*
+                                        pp/code-dispatch]
+                                (-> report :tested :val
+                                    pprint-str))
+                       left-n (count
+                                (str logo " " (pprint-str left)))
+                       prompt (str "Actual: ")
+                       s      (str prompt v)]
+                   (if-not (ugly? s)
+                     (print s)
+                     (do (printab prompt v)
+                         (newline)))))
+      (assoc data :reported true))))
 
-(defn remove-effect-reports [state position level ns data]
+(defn remove-effect-data [state position level ns data]
   (remove #{:minitest/effect-performed} data))
 
-(defn separate-namespaces [state position level ns data]
-  (do (newline)
-      ;; If the last report was printed in `:dots` mode, it needs a newline
-      (when (with-context {:status (-> data last :status)}
-              (-> (config) :dots))
-        (newline))
-      data))
+(defn when-not-reported| [f]
+  (fn [state position level ns data]
+    (if (and (map? data) (not (:reported data)))
+      (f state position level ns data)
+      data)))
+
+(defn marking-as-reported| [f]
+  (fn [state position level ns data]
+    (-> (f state position level ns data)
+        (assoc :reported true))))
+
+(defn with-status-in-context| [f]
+  (fn [state position level ns data]
+    (if (= level :case)
+      (with-context {:status (:status data)}
+        (f state position level ns data))
+      (f state position level ns data))))
+
+(def ^:private base-report
+  (outside-in->> (on| [:before :suite]  announce-suite)
+                 (on| [:before :ns]     announce-ns)
+                 (on| [:after  :case]   #((:report-fn (config))
+                                          %1 :do :case %4 %5))
+                 (on| [:do     :case]   (when-not-reported| report-case))
+                 (on| [:after  :block]  remove-effect-data)))
+;; --- STATS
+(defn increment-stats [state position level ns data]
+  (let [report data]
+    (swap! state update-in [:counts (:status report)]
+           (fnil inc 0)))
+  data)
 
 (defn display-stats [state position level ns data]
   (let [counts (:counts @state)]
@@ -141,14 +173,81 @@
                  (str $ " " (pluralize "failure" $) ", "))
                (as-> (:error   counts 0) $
                  (str $ " " (pluralize "error"   $) ".")))
-      (newline))
-    data))
+      (newline)))
+  data)
+
+(defn handling-stats| [f]
+  (outside-in->> (on| [:do     :case]   increment-stats)
+                 (on| [:after  :suite]  display-stats)
+                 f))
+
+;; --- DOTS MODE
+(defn report-case-as-dot [state position level ns data]
+  (with-context {:status (:status data)}
+    (print (-> (config) :logo)))
+  data)
+
+(defn handling-dots-mode| [f]
+  (outside-in->> (on| [:do     :case]   (on-config| {:dots true}
+                                          (when-not-reported|
+                                            (marking-as-reported|
+                                              report-case-as-dot))))
+                 f))
+
+;; --- SILENT MODE
+(defn do-nothing [state position level ns data]
+  data)
+
+(defn handling-silent-mode| [f]
+  (let [silence (on-config| {:silent true}
+                  (when-not-reported|
+                    (marking-as-reported|
+                      do-nothing)))]
+    (outside-in->> (on| [:pre  :case]  silence)
+                   (on| [:do   :case]  silence)
+                   (on| [:post :case]  silence)
+                   f)))
+
+(defn continue-when| [pred continue]
+  (fn [& args]
+    (if (apply pred args)
+      (apply continue args)
+      (last args)))) ;; last args is data
+
+(defn without-config| [ks f]
+  (fn [& args]
+    (without-config ks
+      (apply f args))))
+
+(def ^:private ^:dynamic *blocking-reports-below* true)
+(def ^:private ^:dynamic *blocking-redirection*   false)
+(defn doing-reports-at-level| [level f]
+  (let [no-op       (fn  ([s l n d]  d)  ([s p l n d]  d))
+        run-reports (fn [s p l n d]
+                      (if *blocking-redirection*
+                        d
+                        (binding [*blocking-reports-below* false
+                                  *blocking-redirection*   true]
+                          (with-context {:run-fn     no-op
+                                         :execute-fn no-op}
+                            ((-> (config) :run-fn)  s l n d)))))
+        level-below {:suite :ns
+                     :ns    :block
+                     :block :case}]
+    (assert (level-below level) (str "No level below " level))
+    (outside-in->> (continue-when|      (fn [s p l n d]
+                                          (not (and (= l (level-below level))
+                                                    *blocking-reports-below*))))
+                   (on| [:after level]  run-reports)
+                   f)))
 
 (def report
   (outside-in->> binding-test-output|
-                 (on| [:before :suite] announce-suite)
-                 (on| [:before :ns]    announce-ns)
-                 (on| [:after  :case]  report-case)
-                 (on| [:after  :block] remove-effect-reports)
-                 (on| [:after  :ns]    separate-namespaces)
-                 (on| [:after  :suite] display-stats)))
+                 with-status-in-context|
+                 (on| [:after :block] remove-effect-data)
+                 (doing-reports-at-level| :block)
+                 separating-levels|
+                 handling-stats|
+                 handling-silent-mode|
+                 handling-dots-mode|
+                 base-report))

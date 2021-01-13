@@ -66,15 +66,31 @@
               @success?               {:status :success}
               :else                   {:status :failure}))))))
 
-
-(defn run [state level ns-name data & [execute-fn]]
-  (let [s              state
-        orchestrate (-> (config) :orchestrate-fn)]
+(defn run [state level ns data]
+  (let [conf        (config)
+        execute     (-> conf :execute-fn)
+        orchestrate (-> conf :orchestrate-fn)
+        orch        (fn [first? last? s l & [n d]]
+                      (with-context {:first-in-level first?
+                                     :last-in-level  last?}
+                        (when d
+                          [n (orchestrate s l n d)])))
+        process-all
+        (fn [s l n d]
+          (doall
+            (concat
+              (         rest (orch true  false s l n      (-> d first)))
+              (mapcat #(rest (orch false false s l n  %)) (-> d rest butlast))
+              (         rest (orch false true  s l n      (-> d rest last))))))]
     (case level
-      :suite  (->> data
-                   (mapv (fn [[ns tsts]]
-                           [ns (orchestrate s :ns    ns      tsts)]))
-                   (into {}))
-      :ns     (doall (map     #(orchestrate s :block ns-name %)  data))
-      :block  (doall (map     #(orchestrate s :case  ns-name %)  data))
-      :case   (                 execute-fn  s :do :case ns-name data))))
+      :suite
+      (let [d (seq data)]
+        (->>
+          (concat
+            [(apply      orch true  false state :ns    (-> d first))]
+            (map #(apply orch true  false state :ns %) (-> d rest butlast))
+            [(apply      orch true  false state :ns    (-> d rest last))])
+          (into {})))
+      :ns     (process-all state     :block ns data)
+      :block  (process-all state     :case  ns data)
+      :case   (execute     state :do :case  ns data))))
