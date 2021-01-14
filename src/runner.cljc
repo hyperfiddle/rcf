@@ -56,7 +56,8 @@
             {:expected (merge {:form (-> test :expectation :form)}
                               (when-not (managed-ex? @expectedv)
                                 {:val @expectedv}))})
-          (let [err-expected? (delay (and (= (:op test) :=) (managed-ex? @expectedv)))
+          (let [err-expected? (delay (and (= (:op test) :=)
+                                          (managed-ex? @expectedv)))
                 success?      (delay (case (:op test)
                                        :=  (= @testedv @expectedv)
                                        :?  @testedv))]

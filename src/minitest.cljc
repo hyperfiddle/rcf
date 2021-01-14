@@ -56,8 +56,7 @@
                                          defaccessors
                                          let-testing-fns
                                          outside-in->>
-                                         def-on-fn
-                                         with-status-in-context]]
+                                         def-on-fn]]
                        [clojure.tools.macro :refer [symbol-macrolet]]))
 
   #?(:clj
@@ -219,24 +218,31 @@
   configuration map.
 
   See `(source base-config)`."
-  {:dirs           ["src" "test"] ;; TODO: use clojure.java.classpath/classpath
-   :elide-tests         false
-   :out                 *out*
+  {:dirs              ["src" "test"] ;; TODO: use clojure.java.classpath/classpath
+   :elide-tests       false
+   :out               *out*
    ;; Runner opts
-   :fail-fast           false
-   :break-on-failure    false ;; TODO
+   :fail-fast         false
+   :break-on-failure  false ;; TODO
    ;; Reporter opts
-   :term-width          120
-   :error-depth         12
-   :silent              false
-   :dots                true
+   :term-width        120
+   :error-depth       12
+   :silent            false
+   :dots              true
+   :report            true
+   :report-at-level   :block
+   :explain           :true
+   :explain-at-level  :suite
+   :stats             true
+   :stats-at-level    :ns
+   :stats-for         [:success, :error, :failure]
    ;; Executor opts
-   :langs               [:clj]
+   :langs             [:clj]
 
-   :run-fn              run
-   :execute-fn          ::not-set! ;; Set in function of the :lang context.
-   :report-fn           report
-   :orchestrate-fn      orchestrate
+   :run-fn            run
+   :execute-fn        ::not-set! ;; Set in function of the :lang context.
+   :report-fn         report
+   :orchestrate-fn    orchestrate
 
 
    :cljsbuild           {} ;; TODO: not in use
@@ -270,20 +276,29 @@
            ;; when       is    then         is
            {:lang       {:clj  {:execute-fn execute-clj}
                          :cljs {:execute-fn execute-cljs}}
-            :exec-mode  {:on-load     {:store-tests true
-                                       :run-tests   false}
-                         :on-eval     {:store-tests false
-                                       :run-tests   true}}
-            :env        {:production  {:elide-tests true}
-                         :cli         {:dots        true}
+            :exec-mode  {:on-load     {:store-tests    true
+                                       :run-tests      false}
+                         :on-eval     {:store-tests    false
+                                       :run-tests      true}}
+            :env        {:production  {:elide-tests    true}
+                         :lib         {:elide-tests    false}
+                         :cli         {:dots           true}
                          :ci          [:cli]
                          :dev         run-on-load
                          :quiet-dev   [:dev, silent-success]}
-            :status     {:success     {:logo "✅"}
-                         :failure     {:logo "❌"}
-                         :error       {:logo "🔥"}}
-            :test-level {:ns          {:separator "•\n"}
-                         :block       {:separator "•\n"}}})})
+            :status     {:success     {:logo           "✅"}
+                         :failure     {:logo           "❌"}
+                         :error       {:logo           "🔥"}}
+            :test-level {:ns          {:post-separator "\n"}
+                         :block       {:post-separator "\n"}
+                         :stats       {:separator      "  "
+                                       :WHEN {:dots {true {:separator ""}}}
+                                       :post-separator "\n"}}
+            ; {:ns          {:separator      "•\n"}
+            ;  :block       {:separator      "•\n"}
+            ;  :stats       {:separator      "\n"
+            ;                :post-separator "\n"}}
+            })})
 
    (include "monkeypatch_load")
    (macros/deftime
