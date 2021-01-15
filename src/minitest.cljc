@@ -7,6 +7,7 @@
             [clojure.string                    :as    str]
             [clojure.walk                      :refer [postwalk]]
             [net.cgrand.macrovich              :as    macros]
+            [clojure.set                       :as    set]
    #?(:clj  [clojure.pprint                    :as    pp :refer [pprint]]
       :cljs [cljs.pprint                       :as    pp :refer [pprint]])
    #?(:clj  [clojure.core.async                :as    async])
@@ -121,10 +122,11 @@
 
 (declare config)
 
-(def ^:no-doc ->|      #(apply comp (reverse %&)))
-(def ^:no-doc call     #(apply %1 %&))
-(def ^:no-doc as-thunk #(do `(fn [] ~%)))
-(def ^:no-doc as-form  #(do `'~%))
+(def ^:no-doc ->|               #(apply comp (reverse %&)))
+(def ^:no-doc call              #(apply %1 %&))
+(def ^:no-doc as-form           #(do `'~%))
+(def ^:no-doc as-thunk          #(do `(fn [] ~%)))
+(def ^:no-doc as-wildcard-thunk #(do `(fn [] (let [~'_ '~'_] ~%))))
 
 (defmacro def-on-fn [name first-arg pred-expr]
   (let [f-sym        (gensym "f")
@@ -208,6 +210,7 @@
 (include "clojurescript")
 (include "prepl")
 (include "executor")
+(include "walk")
 (include "runner")
 (include "reporter")
 (include "run_execute_report")
@@ -400,23 +403,27 @@
               ;; Sample of what we are processing next:
               ;; [[:effect 0]
               ;;  [:expectation [:= {:tested 1, :op :=, :expected 1}]]]
-              (mapv (fn [[type x]]
-                      (case type
-                        :effect
-                        {:type     :effect
-                         :form     (-> x as-form)
-                         :thunk    (-> x as-thunk)}
+              (mapv
+                (fn [[type x]]
+                  (case type
+                    :effect
+                    {:type     :effect
+                     :form     (-> x as-form)
+                     :thunk    (-> x as-thunk)}
 
-                        :expectation
-                        (let [[op m] x]
-                          (merge {:type     :expectation
-                                  :op       op
-                                  :tested   {:form  (-> m :tested as-form)
-                                             :thunk (-> m :tested as-thunk)}}
-                                 (when (= op :=)
-                                   {:expected {:form  (-> m :expected as-form)
-                                               :thunk (-> m :expected as-thunk)}}))
-                          )))))))
+                    :expectation
+                    (let [[op m] x]
+                      (-> (merge
+                            {:type     :expectation
+                             :op       op
+                             :tested
+                             {:form    (-> m :tested as-form)
+                              :thunk   (-> m :tested as-thunk)}}
+                            (when (= op :=)
+                              {:expected
+                               {:form  (-> m :expected as-form)
+                                :thunk (-> m :expected as-wildcard-thunk)}}))
+                          ))))))))
 
      (defmacro tests [& body]
        (when-not (-> (config) :elide-tests)

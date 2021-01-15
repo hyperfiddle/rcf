@@ -104,6 +104,10 @@
   (and (not (= data :minitest/effect-performed))
        (-> (config) :report)))
 
+(defn- explainable? [data]
+  (and (not (= data :minitest/effect-performed))
+       (-> (config) :explain)))
+
 (defn report-case [state position level ns data]
   (if-not (reportable? data)
     data
@@ -118,7 +122,7 @@
       (assoc report :reported true))))
 
 (defn explain-case [state position level ns data]
-  (if-not (reportable? data)
+  (if-not (explainable? data)
     data
     (let [report   data
           status   (:status report)

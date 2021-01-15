@@ -1,5 +1,5 @@
 (ns minitest.poney
-  ; {:minitest/config {:dots true}}
+  {:minitest/config {}}
   (:require
    #?(:clj  [clojure.pprint    :refer [pprint]]
       :cljs [cljs.pprint       :refer [pprint]])
@@ -23,4 +23,6 @@
 ; (test!)
 
 (tests
-  (inc 3) := 4)
+  (inc 3) := 4
+  [2 4] := [1 _]
+  )

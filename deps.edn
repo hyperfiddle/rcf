@@ -6,8 +6,7 @@
   org.clojure/tools.reader     {:mvn/version "1.3.3"}
   org.clojure/tools.macro      {:mvn/version "0.1.2"}
   net.cgrand/macrovich         {:mvn/version "0.2.1"}
-  robert/hooke                 {:mvn/version "1.3.0"}
-  derrida                      {:mvn/version "0.1.0"}}
+  robert/hooke                 {:mvn/version "1.3.0"}}
 
  :aliases
  {:test         {:extra-paths ["test" "test_resources"]}

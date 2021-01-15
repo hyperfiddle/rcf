@@ -29,43 +29,76 @@
     (set! *3 *2) (set! *2 *1) (set! *1 x)
     x)
 
-  (defn- ^:no-doc run-test-and-yield-report! [ns {:keys [type] :as test}]
+  (defn- run-effect! [{:keys [thunk form] :as test}]
+    (let [result (managing-exs (!1-2-3 (call thunk)))]
+      (if (managed-ex? result)
+        (ex-info (str "Error in test effect\n"
+                      (with-out-str (pprint form)))
+                 {:type     :minitest/effect-error
+                  :test     test
+                  :location :effect
+                  :error    (ex result)})
+        :minitest/effect-performed)))
+
+  (defn- run-simple-expectation! [ns test & [testedv expectedv]]
+    (let [testedv
+          (delay (or testedv
+                     (managing-exs (!1-2-3 (-> test :tested   :thunk call)))))
+          expectedv
+          (delay (or expectedv
+                     (managing-exs         (-> test :expected :thunk call))))]
+      (doto (merge
+              {:ns     ns
+               :op     (:op test)
+               :tested (merge {:form (-> test :tested :form)}
+                              (when-not (managed-ex? @testedv)
+                                {:val @testedv}))}
+              (when (= (:op test) :=)
+                {:expected (merge {:form (-> test :expected :form)}
+                                  (when-not (managed-ex? @expectedv)
+                                    {:val @expectedv}))})
+              (let [err-expected? (delay (and (= (:op test) :=)
+                                              (managed-ex? @expectedv)))
+                    success?      (delay (case (:op test)
+                                           :=  (= @testedv @expectedv)
+                                           :?  @testedv))]
+                (cond
+                  (managed-ex? @testedv)  {:status :error  :error (ex @testedv)}
+                  @err-expected?          {:status :error  :error (ex @expectedv)}
+                  @success?               {:status :success}
+                  :else                   {:status :failure})))
+            pprint)))
+
+(defn wildcard-expectation? [test]
+  (and (= (:op test) :=)
+       (let [result (managing-exs (-> test :expected :thunk call))]
+         (if (managed-ex? result)
+           [result  result]
+           [result  (and (coll? result) (->> result flatten (some #{'_})))]))))
+
+  (defn- run-wildcard-expectation! [ns test expectedv]
+    (let [testedv          (managing-exs (!1-2-3 (-> test :tested :thunk call)))
+          [new-testedv _]  (copostwalk (fn wildcardize [tested expected]
+                                         [(if  (= expected '_)  '_  tested)
+                                          expected])
+                                       testedv expectedv)]
+      (run-simple-expectation!
+        ns
+        test
+        new-testedv
+        expectedv)))
+
+  (defn run-expectation! [ns test]
+    (let [[v w] (wildcard-expectation? test)]
+      (println "[v w]" [v w])
+      (if w
+        (run-wildcard-expectation! ns test v)
+        (run-simple-expectation! ns test))))
+
+  (defn- run-test-and-yield-report! [ns {:keys [type op] :as test}]
     (case type
-      :effect
-      (let [result (managing-exs (!1-2-3 (call (:thunk test))))]
-        (if (managed-ex? result)
-          (ex-info (str "Error in test effect\n"
-                        (with-out-str (pprint (:form test))))
-                   {:type     :minitest/effect-error
-                    :test     test
-                    :location :effect
-                    :error    (ex result)})
-          :minitest/effect-performed))
-      :expectation
-      (let [testedv
-            (delay (managing-exs (!1-2-3 (-> test :tested   :thunk call))))
-            expectedv
-            (delay (managing-exs         (-> test :expected :thunk call)))]
-        (merge
-          {:ns     ns
-           :op     (:op test)
-           :tested (merge {:form (-> test :tested      :form)}
-                          (when-not (managed-ex? @testedv)
-                            {:val @testedv}))}
-          (when (= (:op test) :=)
-            {:expected (merge {:form (-> test :expectation :form)}
-                              (when-not (managed-ex? @expectedv)
-                                {:val @expectedv}))})
-          (let [err-expected? (delay (and (= (:op test) :=)
-                                          (managed-ex? @expectedv)))
-                success?      (delay (case (:op test)
-                                       :=  (= @testedv @expectedv)
-                                       :?  @testedv))]
-            (cond
-              (managed-ex? @testedv)  {:status :error  :error (ex @testedv)}
-              @err-expected?          {:status :error  :error (ex @expectedv)}
-              @success?               {:status :success}
-              :else                   {:status :failure}))))))
+      :effect      (run-effect!         test)
+      :expectation (run-expectation! ns test)))
 
 (defn run [state level ns data]
   (let [conf        (config)
