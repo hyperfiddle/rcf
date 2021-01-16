@@ -231,14 +231,14 @@
    :term-width        120
    :error-depth       12
    :silent            false
-   :dots              true
-   :report            true
-   :report-at-level   :block
-   :explain           :true
-   :explain-at-level  :suite
-   :stats             true
-   :stats-at-level    :ns
-   :stats-for         [:success, :error, :failure]
+   :dots              false
+   :report            {:enabled true
+                       :level   :block}
+   :explaination      {:enabled true
+                       :level   :block}
+   :stats             {:enabled true
+                       :level   :suite
+                       :for     [:success :failure :error]}
    ;; Executor opts
    :langs             [:clj]
 
@@ -270,7 +270,7 @@
           :first-in-level ::not-set!
           :test-level     ::not-set!
           :status         ::not-set!
-          :dots           true}
+          :dots           false}
    :WHEN (let [silent-success
                {:WHEN {:status    {:success {:silent    true}}}}
                run-on-load

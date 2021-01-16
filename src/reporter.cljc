@@ -102,11 +102,11 @@
 
 (defn- reportable? [data]
   (and (not (= data :minitest/effect-performed))
-       (-> (config) :report)))
+       (-> (config) :report :enabled)))
 
 (defn- explainable? [data]
   (and (not (= data :minitest/effect-performed))
-       (-> (config) :explain)))
+       (-> (config) :explaination :enabled)))
 
 (defn report-case [state position level ns data]
   (if-not (reportable? data)
@@ -258,37 +258,43 @@
 
 ;; --- REPORT LEVEL
 (defn doing-reports-at-report-level|
-  ([f] (doing-reports-at-report-level|  (-> (config) :report-at-level)  f))
+  ([f] (doing-reports-at-report-level|  (-> (config) :report :level)  f))
   ([target-level f]
    (fn [s p l n d]
      (call (perform-at-level| target-level
                               :do-reports
                               (fn [s _p l n d]
-                                (with-config {:execute-fn do-nothing
-                                              :explain    false}
+                                (with-config {:execute-fn   do-nothing
+                                              ; :explaination {:enabled false}
+                                              }
                                   ((-> (config) :run-fn)  s l n d)))
                               f)
            s p l n d))))
 
 ;; --- EXPLAIN LEVEL
-(defn explaining-reports-at-explain-level|
-  ([f] (explaining-reports-at-explain-level|  (:explain-at-level (config))  f))
+(defn explaining-reports-at-explaination-level|
+  ([f] (explaining-reports-at-explaination-level|
+         (-> (config) :explaination :level) f))
   ([target-level f]
    (fn [s p l n d]
-     (call (perform-at-level| target-level
-                              :explain-reports
-                              (fn [s _p l n d]
-                                (with-config {:execute-fn do-nothing
-                                              :report     false}
-                                  ((-> (config) :run-fn)  s l n d)))
-                              f)
+     (println "----->" (-> (config) :explaination :enabled))
+     (call (if-not (-> (config) :explaination :enabled)
+             do-nothing
+             (perform-at-level| target-level
+                                   :explain-reports
+                                   (fn [s _p l n d]
+                                     (with-config {:execute-fn do-nothing
+                                                   ; :report {:enabled false}
+                                                   }
+                                       ((-> (config) :run-fn)  s l n d)))
+                                   f))
            s p l n d))))
 
 ;; --- STATS
 (defn increment-stats [state position level ns data]
   (let [report    data
         status    (:status report)
-        stats-for (-> (config) :stats-for set)]
+        stats-for (-> (config) :stats :for set)]
     (when (stats-for status)
       (swap! state update-in [:counts (:status report)]
              (fnil inc 0))))
@@ -298,7 +304,7 @@
   (with-context {:test-level :stats}
     (let [conf   (config)
           counts (:counts @state)
-          ks     (keep (-> counts keys set) (-> conf :stats-for))] ;; prsv order
+          ks     (keep (-> counts keys set) (-> conf :stats :for))];; keep order
       (when-let [sep (-> conf :separator)]       (print sep))
       (doseq [k ks
               :let [cnt   (get counts k 0)
@@ -310,9 +316,9 @@
   data)
 
 (defn handling-stats-at-stats-level|
-  ([f] (handling-stats-at-stats-level|  (-> (config) :stats-at-level)  f))
+  ([f] (handling-stats-at-stats-level|  (-> (config) :stats :level)  f))
   ([level f]
-    (if-not (-> (config) :stats)
+    (if-not (-> (config) :stats :enabled)
       do-nothing
       (fn [s p l n d]
           (let [g (outside-in->> (on| [:do     :case]  increment-stats)
@@ -343,10 +349,13 @@
                        with-status-in-context|
                        (on| [:after :block] remove-effect-data)
                        separating-levels|
-                       doing-reports-at-report-level|
-                       ; explaining-reports-at-explain-level|
+                       ; doing-reports-at-report-level|
+                       ; explaining-reports-at-explaination-level|
                        handling-stats-at-stats-level|
                        handling-silent-mode|
                        handling-dots-mode|
                        base-report)
         s p l n d))
+
+
+(println "ARRRRRRRRGL")
