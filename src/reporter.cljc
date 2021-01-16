@@ -108,10 +108,10 @@
   (and (not (= data :minitest/effect-performed))
        (-> (config) :explaination :enabled)))
 
-(macros/deftime
-  (defn- flush-outputs []
-    (.flush *out*)
-    (.flush *err*)))
+(macros/case
+  :clj (defn- flush-outputs []
+         (.flush *out*)
+         (.flush *err*)))
 
 (defn report-case [state position level ns data]
   (if-not (reportable? data)
@@ -364,6 +364,3 @@
                        handling-dots-mode|
                        base-report)
         s p l n d))
-
-
-(println "ARRRRRRRRGL")
