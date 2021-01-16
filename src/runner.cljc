@@ -91,8 +91,8 @@
     (let [[v w] (wildcard-expectation? test)]
       ; (if w
       ;   (run-wildcard-expectation! ns test v)
-      ;   (run-simple-expectation! ns test)))
-    (run-simple-expectation! ns test))
+      ;   (run-simple-expectation! ns test))
+      (run-simple-expectation! ns test)))
 
   (defn- run-test-and-yield-report! [ns {:keys [type op] :as test}]
     (case type
