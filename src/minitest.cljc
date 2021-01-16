@@ -212,7 +212,7 @@
 (include "clojurescript")
 (include "prepl")
 (include "executor")
-(include "walk")
+; (include "walk")
 (include "runner")
 (include "reporter")
 (include "run_execute_report")
