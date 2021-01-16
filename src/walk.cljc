@@ -54,33 +54,12 @@
          (map reshape colls))))
 
 (defn- cowalk [inner outer & [form :as forms]]
-  {:test
-   (fn []
-     (is (= [[2 2 2] [1 1 1]] (cowalk (bounce| 0 +) #(do %&) [1 1 1] [1 1 1])))
-     (is (= [[2 2 1] [1 1]]   (cowalk (bounce| 0 +) #(do %&) [1 1 1] [1 1])))
-     (is (= [[1 1]   [2 2 1]] (cowalk (bounce| 1 +) #(do %&) [1 1] [1 1 1])))
-     (is (= [{:a 2 :b 4} {:a 1 :b 2 :c 3}]
-            (cowalk (bounce| 0 (fn [& [[k _v] :as es]]
-                                 [k (apply + (map val es))]))
-                    #(do %&)
-                    {:a 1 :b 2}
-                    {:a 1 :b 2 :c 3}))))}
   (if (every? coll? forms)
     (apply outer (apply comap inner forms))
     (apply outer forms)))
 
 (defn- coprewalk [f & forms]
-  {:test (fn []
-           (is (= [[1 2 4] [identity identity inc]]
-                  (coprewalk (bounce| 0 #(if  (number? %1)  (%2 %1)  %1))
-                             [1 2 3]
-                             [identity identity inc]))))}
   (apply cowalk (partial coprewalk f) #(do %&) (apply f forms)))
 
 (defn- copostwalk [f & forms]
-  {:test (fn []
-           (is (= [[1 2 4] [identity identity inc]]
-                  (copostwalk (bounce| 0 #(if  (number? %1)  (%2 %1)  %1))
-                              [1 2 3]
-                              [identity identity inc]))))}
   (apply cowalk (partial copostwalk f) f forms))
