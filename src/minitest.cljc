@@ -171,7 +171,9 @@
     `(->> ~@(reverse forms)))
 
   (defmacro current-file []
-    (-> *file* ClassLoader/getSystemResource .getPath))
+    (if (-> *file* first (= \/))
+      *file*
+      (-> *file* ClassLoader/getSystemResource .getPath)))
 
   (defmacro current-ns-name []
     `'~(ns-name *ns*))
