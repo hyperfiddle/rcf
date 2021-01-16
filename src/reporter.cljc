@@ -119,6 +119,8 @@
           right-ks [:expected :val]
           left     (get-in report left-ks)]
       (print-result report logo left-ks right-ks)
+      (.flush *out*)
+      (.flush *err*)
       (assoc report :reported true))))
 
 (defn explain-case [state position level ns data]
@@ -151,6 +153,8 @@
                      (print s)
                      (do (printab prompt v)
                          (newline)))))
+      (.flush *out*)
+      (.flush *err*)
       (assoc report :explained true))))
 
 (defn remove-effect-data [state position level ns data]

@@ -3,3 +3,6 @@
 .cljs_node_repl/
 .shadow-cljs/
 .rebel_readline_history
+.idea
+out
+minitest.iml
