@@ -108,6 +108,11 @@
   (and (not (= data :minitest/effect-performed))
        (-> (config) :explaination :enabled)))
 
+(macros/deftime
+  (defn- flush-outputs []
+    (.flush *out*)
+    (.flush *err*)))
+
 (defn report-case [state position level ns data]
   (if-not (reportable? data)
     data
@@ -119,8 +124,7 @@
           right-ks [:expected :val]
           left     (get-in report left-ks)]
       (print-result report logo left-ks right-ks)
-      (.flush *out*)
-      (.flush *err*)
+      (macros/case :clj (flush-outputs))
       (assoc report :reported true))))
 
 (defn explain-case [state position level ns data]
@@ -134,12 +138,13 @@
           left     (get-in report left-ks)]
       (case status
         :success nil
-        :error   #?(:clj  (binding [*err* *out*]
-                            ;; TODO: set error depth in cljs
-                            (pst (:error report)
-                                 (-> conf :error-depth))
-                            (. *err* (flush)))
-                         :cljs (pst (:error report)))
+        :error   (macros/case
+                   :clj  (binding [*err* *out*]
+                           ;; TODO: set error depth in cljs
+                           (pst (:error report)
+                                (-> conf :error-depth))
+                           (macros/case :clj (.flush *err*)))
+                   :cljs (pst (:error report)))
         :failure (let [v      (binding [*print-level* 10000
                                         pp/*print-pprint-dispatch*
                                         pp/code-dispatch]
@@ -153,8 +158,7 @@
                      (print s)
                      (do (printab prompt v)
                          (newline)))))
-      (.flush *out*)
-      (.flush *err*)
+      (macros/case :clj (flush-outputs))
       (assoc report :explained true))))
 
 (defn remove-effect-data [state position level ns data]

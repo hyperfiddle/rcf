@@ -6,3 +6,4 @@
 .idea
 out
 minitest.iml
+nodejs-target/
