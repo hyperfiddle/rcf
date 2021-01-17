@@ -438,8 +438,10 @@
               (if (currently-loading?)
                 (when (or (:store-tests c#)
                           (:run-tests   c#)) (process-after-load! ns# [block#]))
-                (when     (:run-tests   c#)  (run-execute-report! :block
-                                                                  ns# block#))))
+                (when     (:run-tests   c#) (macros/case
+                                              :clj (binding [*1 nil *2 nil *3 nil]
+                                                     (run-execute-report! :block ns# block#))
+                                              :cljs (run-execute-report! :block ns# block#)))))
             nil))))
 
    (defn- config-kw? [x]
@@ -475,7 +477,10 @@
                  (if (empty? ns->tests)
                    :no-test
                    (with-config (into {} (map vec conf))
-                     (run-execute-report! :suite ns->tests)
+                     (macros/case
+                       :clj (binding [*1 nil *2 nil *3 nil]
+                              (run-execute-report! :suite ns->tests))
+                       :cljs (run-execute-report! :suite ns->tests))
                      nil)))))
 
    ;; DONE:
