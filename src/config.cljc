@@ -1,4 +1,5 @@
 ;; TODO: assert config keys.
+;; TODO: config should be lazy
 
 ;; Yo, the default config map is in minitest.cljc around line 200
 (declare base-config)
@@ -86,12 +87,15 @@
                                    (~'clojure.core/unquote-splicing
                                      ~'body#))))))))))
 
-(defn- parse-profile [m x]
+(defn at-runtime? [coll] (-> coll flatten first (= :AT-RUNTIME)))
+
+(defn- parse-WHEN-val [m x]
   (condp call x
     map?        x
-    sequential? (->> (map (partial parse-profile m) x)
-                     (apply deep-merge))
-    (do         (some-> m :WHEN (get x) (->> (parse-profile m))))))
+    sequential? (if (at-runtime? x)
+                  (->> (map (partial parse-WHEN-val m) x)
+                       (apply deep-merge)))
+    (do         (some-> m :WHEN (get x) (->> (parse-WHEN-val m))))))
 
 (defn- ctx-map? [x]
   (and (map? x) (contains? x :WHEN)))
@@ -104,7 +108,7 @@
                (let [when-map   (:WHEN form)
                      active-ctx (deep-merge (:CTX form)
                                             (select-keys ctx (keys when-map)))
-                     ms         (map #(parse-profile form (get-in when-map %))
+                     ms         (map #(parse-WHEN-val form (get-in when-map %))
                                      active-ctx)
                      new-form   (apply deep-merge form ms)]
                  ;; Since a when-map can bring in another one, contextualize

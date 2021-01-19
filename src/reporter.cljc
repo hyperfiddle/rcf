@@ -340,7 +340,7 @@
     (print (-> (config) :logo)))
   data)
 
-(defn handling-dots-mode| [f]
+(defn handling-dots-mode| [continue]
   (outside-in->> (on| [:do      :case]  (on-config| {:dots true}
                                           (when-not-reported|
                                             (marking-as-reported|
@@ -349,7 +349,7 @@
                                           (when-not-reported|
                                             (marking-as-reported|
                                               explain-case))))
-                 f))
+                 continue))
 
 ;; --- Main entry point
 (defn report [s p l n d]

@@ -6,7 +6,8 @@
   org.clojure/tools.reader     {:mvn/version "1.3.3"}
   org.clojure/tools.macro      {:mvn/version "0.1.2"}
   net.cgrand/macrovich         {:mvn/version "0.2.1"}
-  robert/hooke                 {:mvn/version "1.3.0"}}
+  robert/hooke                 {:mvn/version "1.3.0"}
+  applied-science/js-interop   {:mvn/version "0.2.7"}}
 
  :aliases
  {:test         {:extra-paths ["test" "test_resources"]}

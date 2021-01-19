@@ -10,10 +10,7 @@
     (let [conf  (config)
           tests @(tests-to-process)]
       (when (:store-tests conf) (run! #(apply store-tests! %) tests))
-      (when (:run-tests   conf) (macros/case
-                                  :clj (binding [*1 nil *2 nil *3 nil]
-                                         (run-execute-report! :suite tests))
-                                  :cljs (run-execute-report! :suite tests))))
+      (when (:run-tests   conf) (run-execute-report! :suite   tests)))
     (finally
       (reset! (tests-to-process) nil))))
 

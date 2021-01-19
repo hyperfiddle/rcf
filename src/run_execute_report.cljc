@@ -1,6 +1,4 @@
 
-(def ^:private ^:dynamic *testing-state* nil)
-
 (defn- fail-fast! [state ns rpt]
   ;; since the ex we are about to throw will be printed on *err*, and to avoid
   ;; a printing race condition with *out* when it's bound to it, we need to
@@ -51,16 +49,6 @@
       (let [rpt-data (&run state level ns data)]
         (handle-after      state level ns rpt-data)))))
 
-(defn with-test-level|    [f] (fn [s l n d]
-                                (with-context {:test-level l}
-                                 (f s l n d))))
-(defn with-lang|          [f] (fn [s l n d]
-                                (with-context {:lang :clj}
-                                 (f s l n d))))
-(defn with-ns-in-context| [f] (fn [s l n d]
-                                (if n
-                                  (with-context {:ns n} (f s l n d))
-                                  (f s l n d))))
 (defn handling-fail-fast| [f] (fn [s l n d]
                                 (if-not (= l :case)
                                  (f s l n d)
@@ -78,11 +66,21 @@
                                              (&execute s :after l n d)
                                              (&report  s :after l n d))))))))))
 
+(defn install-config-bindings| [f]
+  (fn [s l n d]
+    (let [bindings-map (-> (config) :bindings (dissoc :WHEN))]
+      (if (seq bindings-map)
+        (with-bindings* bindings-map #(f s l n d))
+        (f s l n d)))))
+
+
 (def orchestrate
-  (outside-in->> (with-test-level|)
-                 (with-lang|)
-                 (with-ns-in-context|)
-                 (handling-fail-fast|)
+  (outside-in->> (with-context| {:test-level &level
+                                 :ns         &ns
+                                 :lang       (macros/case
+                                               :clj :clj  :cljs :cljs)})
+                 install-config-bindings|
+                 handling-fail-fast|
                  orchestrate-level))
 
 (defn ^:no-doc run-execute-report!
@@ -90,5 +88,4 @@
    (run-execute-report! level nil ns->tsts))
   ([level ns data]
    (let [orchestrate-fn (-> (config) :orchestrate-fn)]
-     (ensuring-testing-state
-       (orchestrate-fn *testing-state* level ns data)))))
+     (ensuring-testing-state (orchestrate-fn *testing-state* level ns data)))))

@@ -34,7 +34,8 @@
    #?(:clj  [cljs.analyzer.api                 :as    ana])
    #?(:clj  [cljs.env                          :as    env])
    #?(:clj  [clojure.edn                       :as    edn])
-   #?(:clj  [robert.hooke                      :refer [add-hook]]))
+   #?(:clj  [robert.hooke                      :refer [add-hook]])
+   #?(:cljs [applied-science.js-interop        :as    j]))
 
   #?(:cljs
       (:require-macros [minitest :refer [include
@@ -47,13 +48,13 @@
                                          cljs-out-path
                                          current-ns-name
                                          find-test-namespaces
-                                         with-context
-                                         with-config
+                                         anaph|
+                                         with-context with-context|
+                                         with-config with-config|
                                          managing-exs
                                          ; lay TODO
                                          currently-loading?
                                          tests-to-process
-                                         handling-on-load-tests-in-js
                                          defaccessors
                                          let-testing-fns
                                          outside-in->>
@@ -73,7 +74,7 @@
 
 ;; (cljs/build "test" {:main 'minitest-test :output-to "compiled.js" :output-dir "out" :optimizations :simple :target :nodejs})
 
-;; (require 'shadow.cljs.devtools.server) (shadow.cljs.devtools.server/start!) (require '[shadow.cljs.devtools.api :as shadow]) (shadow/watch :app)
+;; (require 'shadow.cljs.devtools.server) (shadow.cljs.devtools.server/start!) (require '[shadow.cljs.devtools.api :as shadow]) (shadow/watch :browser-support)
 
 ;; ---- Debugging
 (macros/deftime
@@ -99,6 +100,7 @@
 (def ^:dynamic ^:no-doc *currently-loading* false)
 (def ^:dynamic ^:no-doc *tested-ns*         nil)
 (def ^:dynamic ^:no-doc *tests-to-process*  nil)
+(def ^:dynamic ^:no-doc *testing-state*     nil)
 
 (macros/deftime
   (defmacro currently-loading? []
@@ -128,27 +130,28 @@
 (def ^:no-doc as-thunk          #(do `(fn [] ~%)))
 (def ^:no-doc as-wildcard-thunk #(do `(fn [] (let [~'_ '~'_] ~%))))
 
-(defmacro def-on-fn [name first-arg pred-expr]
-  (let [f-sym        (gensym "f")
-        continue-sym (gensym "continue")]
-    `(defn ~name [~first-arg ~f-sym & [~continue-sym]]
-       (fn
-         ~@(for [args '[;; This arity for orchestrate-fn
-                        [&state &level &ns &data]
-                        ;; This arity for run-fn, execute-fn & report-fn
-                        [&state &position &level &ns &data]]]
-             `(~args
-                (let [~'&position ~(if (.contains args '&position)
-                                     '&position
-                                     nil)]
-                  (if ~pred-expr
-                    (let [new-data# (~f-sym ~@args)]
+(macros/deftime
+  (defmacro def-on-fn [name first-arg pred-expr]
+    (let [f-sym        (gensym "f")
+          continue-sym (gensym "continue")]
+      `(defn ~name [~first-arg ~f-sym & [~continue-sym]]
+         (fn
+           ~@(for [args '[;; This arity for orchestrate-fn
+                          [&state &level &ns &data]
+                          ;; This arity for run-fn, execute-fn & report-fn
+                          [&state &position &level &ns &data]]]
+               `(~args
+                  (let [~'&position ~(if (.contains args '&position)
+                                       '&position
+                                       nil)]
+                    (if ~pred-expr
+                      (let [new-data# (~f-sym ~@args)]
+                        (if ~continue-sym
+                          (~continue-sym ~@(butlast args) new-data#)
+                          new-data#))
                       (if ~continue-sym
-                        (~continue-sym ~@(butlast args) new-data#)
-                        new-data#))
-                    (if ~continue-sym
-                      (~continue-sym ~@args)
-                      ~'&data)))))))))
+                        (~continue-sym ~@args)
+                        ~'&data))))))))))
 
 (declare context)
 (def-on-fn on|         position-level (cond
@@ -165,6 +168,16 @@
 (def-on-fn on-config|  expected-cfg   (= expected-cfg
                                          (select-keys (config)
                                                       (keys expected-cfg))))
+
+(defmacro anaph| [f]
+  `(fn
+     ([      ~'&state             ~'&level ~'&ns ~'&data]
+      (~f    ~'&state             ~'&level ~'&ns ~'&data))
+     ([      ~'&state ~'&position ~'&level ~'&ns ~'&data]
+      (~f    ~'&state ~'&position ~'&level ~'&ns ~'&data))))
+
+(defmacro with-config|  [ctx f] `(anaph| #(with-config  ~ctx (apply ~f %&))))
+(defmacro with-context| [ctx f] `(anaph| #(with-context ~ctx (apply ~f %&))))
 
 (macros/deftime
   (defmacro outside-in->> [& forms]
@@ -213,6 +226,7 @@
 (include "prepl")
 (include "executor")
 ; (include "walk")
+(include "with_bindings")
 (include "runner")
 (include "reporter")
 (include "run_execute_report")
@@ -241,6 +255,15 @@
    :stats             {:enabled true
                        :level   :suite
                        :for     [:success :failure :error]}
+   :bindings {:WHEN {:test-level
+                     {:suite {:WHEN {:lang {:clj {#'*e [:AT-RUNTIME #(or *e nil)]
+                                                  #'*1 [:AT-RUNTIME #(or *1 nil)]
+                                                  #'*2 [:AT-RUNTIME #(or *2 nil)]
+                                                  #'*3 [:AT-RUNTIME #(or *3 nil)]}}}}
+                      :block {:WHEN {:lang {:clj {#'*e [:AT-RUNTIME #(or *e nil)]
+                                                  #'*1 [:AT-RUNTIME #(or *1 nil)]
+                                                  #'*2 [:AT-RUNTIME #(or *2 nil)]
+                                                  #'*3 [:AT-RUNTIME #(or *3 nil)]}}}}}}}
    ;; Executor opts
    :langs             [:clj]
 
@@ -438,10 +461,8 @@
               (if (currently-loading?)
                 (when (or (:store-tests c#)
                           (:run-tests   c#)) (process-after-load! ns# [block#]))
-                (when     (:run-tests   c#) (macros/case
-                                              :clj (binding [*1 nil *2 nil *3 nil]
-                                                     (run-execute-report! :block ns# block#))
-                                              :cljs (run-execute-report! :block ns# block#)))))
+                (when     (:run-tests   c#)  (run-execute-report! :block
+                                                                  ns#  block#))))
             nil))))
 
    (defn- config-kw? [x]
@@ -477,10 +498,7 @@
                  (if (empty? ns->tests)
                    :no-test
                    (with-config (into {} (map vec conf))
-                     (macros/case
-                       :clj (binding [*1 nil *2 nil *3 nil]
-                              (run-execute-report! :suite ns->tests))
-                       :cljs (run-execute-report! :suite ns->tests))
+                     (run-execute-report! :suite ns->tests)
                      nil)))))
 
    ;; DONE:

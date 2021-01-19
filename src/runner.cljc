@@ -87,17 +87,17 @@
 ;       new-testedv
 ;       expectedv)))
 
-  (defn run-expectation! [ns test]
-    (let [[v w] (wildcard-expectation? test)]
-      ; (if w
-      ;   (run-wildcard-expectation! ns test v)
-      ;   (run-simple-expectation! ns test))
-      (run-simple-expectation! ns test)))
+(defn run-expectation! [ns test]
+  (let [[v w] (wildcard-expectation? test)]
+    ; (if w
+    ;   (run-wildcard-expectation! ns test v)
+    ;   (run-simple-expectation! ns test))
+    (run-simple-expectation! ns test)))
 
-  (defn- run-test-and-yield-report! [ns {:keys [type op] :as test}]
-    (case type
-      :effect      (run-effect!         test)
-      :expectation (run-expectation! ns test)))
+(defn- run-test-and-yield-report! [ns {:keys [type op] :as test}]
+  (case type
+    :effect      (run-effect!         test)
+    :expectation (run-expectation! ns test)))
 
 (defn run [state level ns data]
   (let [conf        (config)
@@ -120,9 +120,9 @@
       (let [d (seq data)]
         (->>
           (concat
-            [(apply      orch true  false state :ns    (-> d first))]
-            (map #(apply orch true  false state :ns %) (-> d rest butlast))
-            [(apply      orch true  false state :ns    (-> d rest last))])
+            [(apply      orch true  false state :ns           (-> d first))]
+            (doall (map #(apply orch true  false state :ns %) (-> d rest butlast)))
+            [(apply      orch true  false state :ns           (-> d rest last))])
           (into {})))
       :ns     (process-all state     :block ns data)
       :block  (process-all state     :case  ns data)
