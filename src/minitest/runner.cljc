@@ -1,3 +1,14 @@
+(ns minitest.runner
+  (:require [minitest.config #?@(:clj  [:refer        [config
+                                                       with-context]]
+                                 :cljs [:refer        [config]
+                                        :refer-macros [with-context]])]
+            [minitest.utils             :refer        [call]]
+            [minitest.config            :refer        [config]]
+            [clojure.pprint             :refer        [pprint]]
+            [net.cgrand.macrovich       :as           macros])
+  #?(:cljs
+      (:require-macros [minitest.runner :refer        [managing-exs]])))
 
 ; TODO?
 ; [2021-01-07 20:54:54.775 - WARNING] :shadow.cljs.devtools.server.reload-classpath/macro-reload-ex - {:ns-sym hyperfiddle.hfql20}
@@ -94,7 +105,7 @@
     ;   (run-simple-expectation! ns test))
     (run-simple-expectation! ns test)))
 
-(defn- run-test-and-yield-report! [ns {:keys [type op] :as test}]
+(defn run-test-and-yield-report! [ns {:keys [type op] :as test}]
   (case type
     :effect      (run-effect!         test)
     :expectation (run-expectation! ns test)))

@@ -1,11 +1,19 @@
+(ns minitest.config
+  (:require
+    #?(:clj [clojure.java.io        :as    io])
+    #?(:clj [clojure.edn            :as    edn])
+    #?(:clj [clojure.tools.reader   :as    r])
+            [net.cgrand.macrovich   :as    macros]
+            [minitest.base-config   :refer [base-config]]
+            [minitest.utils         :refer [call]])
+  #?(:cljs (:require-macros
+             [minitest.config       :refer [file-config defaccessors]])))
+
 ;; TODO: assert config keys.
 ;; TODO: config should be lazy
 
-;; Yo, the default config map is in minitest.cljc around line 200
-(declare base-config)
-
 (macros/deftime
-  (defn- config-file []
+  (defn config-file []
     (let [f (io/file "./minitest.edn")]
       (or (when  (and (.exists f) (-> f slurp edn/read-string empty? not))
             f)
@@ -87,21 +95,27 @@
                                    (~'clojure.core/unquote-splicing
                                      ~'body#))))))))))
 
-(defn at-runtime? [coll] (-> coll flatten first (= :AT-RUNTIME)))
+(defn at-runtime?    [coll] (-> coll flatten first (= :AT-RUNTIME)))
+(defn get-at-runtime [coll] (-> coll second call))
 
 (defn- parse-WHEN-val [m x]
   (condp call x
     map?        x
-    sequential? (if (at-runtime? x)
-                  (->> (map (partial parse-WHEN-val m) x)
-                       (apply deep-merge)))
+    sequential? (->> (map (partial parse-WHEN-val m) x)
+                     (apply deep-merge))
     (do         (some-> m :WHEN (get x) (->> (parse-WHEN-val m))))))
 
 (defn- ctx-map? [x]
   (and (map? x) (contains? x :WHEN)))
 
 (defn contextualize [m ctx & [cfg]]
-  (->> m (clojure.walk/postwalk
+  (->> m
+       (clojure.walk/prewalk
+         (fn [form]
+           (if (at-runtime? form)
+             (get-at-runtime form)
+             form)))
+       (clojure.walk/postwalk
            (fn [form]
              (if-not (ctx-map? form)
                form
@@ -123,13 +137,18 @@
 
 (defn- ns-config [] (some-> *context* :ns find-ns meta :minitest/config))
 
+(declare config)
 (defn context    [& [ctx default-ctx]]
   (deep-merge (or default-ctx (:CTX (config)))
               *context*
               ctx))
 
 (defn  config    [& [conf]]
-  (let [srcs        [base-config *early-config* (ns-config) conf *late-config*]
+  (let [srcs        [(base-config)
+                     *early-config*
+                     (ns-config)
+                     conf
+                     *late-config*]
         merged      (apply deep-merge srcs)
         base-ctx    (as-> (:CTX merged {}) $
                       (contextualize $ $ merged))

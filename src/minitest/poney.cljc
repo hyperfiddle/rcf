@@ -3,11 +3,11 @@
   (:require
    #?(:clj  [clojure.pprint    :refer [pprint]]
       :cljs [cljs.pprint       :refer [pprint]])
-   #?(:clj  [minitest          :refer [test! tests with-context]]
+   #?(:clj  [minitest          :refer [test! tests]]
       :cljs [minitest          :refer [test!]]))
 
   #?(:cljs (:require-macros [net.cgrand.macrovich :as macros]
-                            [minitest :refer [tests with-context]])))
+                            [minitest :refer [tests]])))
 
 (defn entry-point []
   (println "NODEJS ENTRY POINT"))
@@ -25,5 +25,5 @@
 
 (tests
   (inc 3) := 4
-  [2 4] := [1 _]
+  [1 4] := [1 _]
   )

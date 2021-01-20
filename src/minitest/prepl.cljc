@@ -1,12 +1,26 @@
+(ns minitest.prepl
+  (:require [clojure.pprint          :refer        [pprint]]
+    #?(:clj [clojure.core.server     :as           server])
+    #?(:clj [clojure.core.async      :as           async])
+    #?(:clj [clojure.tools.reader    :as           r])
+    #?(:clj [cljs.env                :as           env])
+    #?(:clj [cljs.repl.node          :as           node])
+    #?(:clj [cljs.repl.browser       :as           browser])
+    #?(:clj [cljs.env                :as           env])
+            [net.cgrand.macrovich    :as           macros]
+            [minitest.config         :refer        [context config]]
+            [minitest.dbg #?@(:clj  [:refer        [dbg]]
+                              :cljs [:refer-macros [dbg]])])
 
+  #?(:clj
+      (:import [java.io  PipedReader PipedWriter]
+               [java.net Socket])))
 (macros/deftime
-  (def ^:dynamic ^:private *executing-cljs* false)
-
   ;; Taken and adapter from cljs.server.node to accept a repl-env as argument.
   (defn- default-opts [repl-env]
     (case repl-env
-      cljs.repl.node/repl-env    {:host "localhost" :port 55555 #_49001}
-      cljs.repl.browser/repl-env {:host "localhost" :port 55555 #_9000}
+      node/repl-env    {:host "localhost" :port 55555 #_49001}
+      browser/repl-env {:host "localhost" :port 55555 #_9000}
                                  {:host "localhost" :port 55555 #_50000}))
 
   (defonce ^:private envs (atom {}))
@@ -47,7 +61,7 @@
   ;; TODO: implement support for figwheel prepl
   ;; See:  https://github.com/Olical/propel/blob/407ccf1ae507876e9a879239fac96380f2c1de2b/src/propel/core.clj#L66
   (defn- start-prepl! [opts]
-    (clojure.core.server/start-server opts))
+    (server/start-server opts))
 
   ;; Taken from https://github.com/Olical/propel/blob/master/src/propel/util.clj
   (defmacro thread
@@ -81,7 +95,7 @@
 
   (defn- stop-prepl! [{:keys [name]}]
     (let []
-      (clojure.core.server/stop-server name)))
+      (server/stop-server name)))
 
   (defn cljs-prepl
     "The used js-env is dictated by (:js-env (minitest/context))."
@@ -96,7 +110,7 @@
           env    (-> (context) :js-env name)]
       (thread (str "remote js prepl connection (" env ")")
         (with-open [reader reader]
-          (clojure.core.server/remote-prepl
+          (server/remote-prepl
             (.. server getInetAddress getHostAddress) (.getLocalPort server)
             reader out-fn
             :valf identity)))
@@ -113,10 +127,9 @@
                   (recur)))))))
       {:in in> :out out> :name (:name opts)}))
 
-  ;; TODO: use partial
-  (defn repl-exec!  [repl cmd]  (async/>!! (:in repl)  cmd))
-  (defn repl-quit!  [repl]      (repl-exec! repl ::quit))
-  (defn repl-result [repl]      (async/<!! (:out repl)))
+  (defn repl-exec!  [repl cmd] (async/>!! (:in repl)  cmd))
+  (defn repl-quit!  [repl]     (repl-exec! repl ::quit))
+  (defn repl-result [repl]     (async/<!! (:out repl)))
 
   (defmacro with-repl
     "Evaluates `body` in `repl`.

@@ -1,3 +1,24 @@
+(ns minitest.reporter
+  (:require [clojure.string                   :as           str]
+            [clojure.pprint                   :as           pp
+                                              :refer        [pprint]]
+            [minitest.higher-order #?@(:clj  [:refer        [on-level|
+                                                             on-config|
+                                                             outside-in->>]]
+                                       :cljs [:refer        [on-level|
+                                                             on-config|]
+                                              :refer-macros [outside-in->>]])]
+            [minitest.config       #?@(:clj  [:refer        [config context
+                                                             with-context
+                                                             with-config]]
+                                       :cljs [:refer        [config context]
+                                              :refer-macros [with-context
+                                                             with-config]])]
+            [minitest.utils                   :refer        [call ->|]]
+            [clojure.repl                     :refer        [pst]]
+            [net.cgrand.macrovich             :as           macros])
+  #?(:cljs
+      (:require-macros [minitest.reporter     :refer        [once once-else]])))
 
 (defn- lines   [s]     (str/split s #"\r?\n"))
 (defn- tabl   ([s]     (tabl "  " s))
@@ -185,16 +206,16 @@
 (def ^:private base-report
   (let [report-via| (fn [mode]  (fn [s _p _l n d]
                                   ((:report-fn (config))  s mode :case n d)))]
-    (outside-in->> (on| [:before  :suite]  announce-suite)
-                   (on| [:before  :ns]     announce-ns)
-                   (on| [:after   :case]   (report-via| :do))
-                   (on| [:do      :case]   (when-not-reported|
+    (outside-in->> (on-level| [:before  :suite]  announce-suite)
+                   (on-level| [:before  :ns]     announce-ns)
+                   (on-level| [:after   :case]   (report-via| :do))
+                   (on-level| [:do      :case]   (when-not-reported|
                                              (fn [s p l n d]
                                                (let [rpt (report-case s p l n d)]
                                                  ((report-via| :explain)
                                                   s p l n rpt)))))
-                   (on| [:explain :case]   explain-case)
-                   (on| [:after   :block]  remove-effect-data))))
+                   (on-level| [:explain :case]   explain-case)
+                   (on-level| [:after   :block]  remove-effect-data))))
 
 ;; --- SILENT MODE
 (defn do-nothing
@@ -206,9 +227,9 @@
                   (when-not-reported|
                     (marking-as-reported|
                       do-nothing)))]
-    (outside-in->> (on| [:pre  :case]  silence)
-                   (on| [:do   :case]  silence)
-                   (on| [:post :case]  silence)
+    (outside-in->> (on-level| [:pre  :case]  silence)
+                   (on-level| [:do   :case]  silence)
+                   (on-level| [:post :case]  silence)
                    f)))
 
 ;; --- LEVEL CONTROL
@@ -260,7 +281,7 @@
                                               (blocking-reports?)))))
             cont                (outside-in->>
                                   block-levels-below|
-                                  (on| [:after target] run-reports)
+                                  (on-level| [:after target] run-reports)
                                   (if continue continue do-nothing))]
         (cont s p l n d))))
 
@@ -329,8 +350,8 @@
     (if-not (-> (config) :stats :enabled)
       do-nothing
       (fn [s p l n d]
-          (let [g (outside-in->> (on| [:do     :case]  increment-stats)
-                                 (on| [:after  level]  display-stats)
+          (let [g (outside-in->> (on-level| [:do     :case]  increment-stats)
+                                 (on-level| [:after  level]  display-stats)
                                  f)]
             (g s p l n d))))))
 
@@ -341,11 +362,11 @@
   data)
 
 (defn handling-dots-mode| [continue]
-  (outside-in->> (on| [:do      :case]  (on-config| {:dots true}
+  (outside-in->> (on-level| [:do      :case]  (on-config| {:dots true}
                                           (when-not-reported|
                                             (marking-as-reported|
                                               report-case-as-dot))))
-                 (on| [:explain :case]  (on-config| {:dots true}
+                 (on-level| [:explain :case]  (on-config| {:dots true}
                                           (when-not-reported|
                                             (marking-as-reported|
                                               explain-case))))
@@ -355,7 +376,7 @@
 (defn report [s p l n d]
   (call (outside-in->> binding-test-output|
                        with-status-in-context|
-                       (on| [:after :block] remove-effect-data)
+                       (on-level| [:after :block] remove-effect-data)
                        separating-levels|
                        ; doing-reports-at-report-level|
                        ; explaining-reports-at-explaination-level|

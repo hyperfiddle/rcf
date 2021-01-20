@@ -1,3 +1,21 @@
+(ns minitest.orchestrator
+  (:require
+    [net.cgrand.macrovich             :as           macros]
+    [minitest.higher-order #?@(:clj  [:refer        [outside-in->>
+                                                     with-context|]]
+                               :cljs [:refer-macros [outside-in->>
+                                                     with-context|]])]
+    [minitest.config       #?@(:clj  [:refer        [config
+                                                     with-config]]
+                               :cljs [:refer        [config]
+                                      :refer-macros [with-config]])]
+  #?(:cljs [minitest.with-bindings    :refer        [with-bindings*]]))
+  #?(:cljs
+      (:require-macros
+        [minitest.orchestrator        :refer        [let-testing-fns
+                                                     ensuring-testing-state]])))
+
+(def ^:dynamic ^:no-doc *testing-state* nil)
 
 (defn- fail-fast! [state ns rpt]
   ;; since the ex we are about to throw will be printed on *err*, and to avoid
@@ -88,4 +106,6 @@
    (run-execute-report! level nil ns->tsts))
   ([level ns data]
    (let [orchestrate-fn (-> (config) :orchestrate-fn)]
+     ; (println orchestrate-fn)
+     ; (clojure.pprint/pprint (config))
      (ensuring-testing-state (orchestrate-fn *testing-state* level ns data)))))

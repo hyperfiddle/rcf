@@ -1,12 +1,18 @@
+(ns minitest.ns
+  (:require [net.cgrand.macrovich         :as    macros]
+    #?(:clj [clojure.java.io              :as    io])
+    #?(:clj [clojure.tools.namespace.find :as    tools])
+    #?(:clj [minitest.config              :refer [config]])
+            [minitest.utils               :refer [call ->|]]))
 
 (macros/deftime
   (defmacro find-test-namespaces []
     (let [dirs (-> (config) :dirs set)]
-      `'~(set (mapcat #(find-namespaces-in-dir
+      `'~(set (mapcat #(tools/find-namespaces-in-dir
                          (io/file %)
                          (macros/case
-                           :clj  clojure.tools.namespace.find/clj
-                           :cljs clojure.tools.namespace.find/cljs))
+                           :clj  tools/clj
+                           :cljs tools/cljs))
                       dirs)))))
 
 (defn- regex? [x]
@@ -57,7 +63,7 @@
   (with-meta (->| f #(if % :exclude %))
     {::exclude true}))
 
-(defn- parse-selectors [data]
+(defn parse-selectors [data]
   (let [parse
         (fn parse-them [[x & more]]
           (when x

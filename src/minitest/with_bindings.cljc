@@ -1,3 +1,7 @@
+(ns minitest.with-bindings
+  (:require  [net.cgrand.macrovich       :as macros]
+    #?(:cljs [applied-science.js-interop :as j])
+    #?(:cljs [clojure.string             :as str])))
 
 (macros/case :cljs
   (do (defn var-name [var]
@@ -7,11 +11,11 @@
         (munge (str (-> var meta :ns) "." (-> var meta :name))))
 
       (def bindings-jsa
-        "Joint security area to convey data between Cljs and runtime evaled Js
+        "Joint security area to convoy data between Cljs and runtime evaled Js
         without relying on the Cljs compiler"
         (js-obj))
 
-      (def ^:private bindings-jsa-name
+      (def ^:private ^:export bindings-jsa-name
         (-> `bindings-jsa str (str/replace "/" ".") munge))
 
       (defn ^:private var-set [var val]
@@ -30,9 +34,4 @@
           (try (apply f args)
             (finally
               (doseq [[var orig-val] orig]
-                (var-set var orig-val))))))
-
-      ; (macros/deftime
-      ;   (defmacro with-bindings [binding-map & body]
-      ;     `(with-bindings* ~binding-map (fn [] ~@body))))
-      ))
+                (var-set var orig-val))))))))

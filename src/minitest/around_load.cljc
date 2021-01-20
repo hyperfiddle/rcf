@@ -1,3 +1,39 @@
+(ns minitest.around-load
+  (:require
+    #?(:clj [cljs.analyzer.api          :as           ana])
+    #?(:clj [cljs.compiler              :as           cljsc])
+    #?(:clj [robert.hooke               :refer        [add-hook]])
+            [net.cgrand.macrovich       :as           macros]
+    #?(:clj [minitest.utils             :refer        [->|]])
+            [minitest.dbg    #?@(:clj  [:refer        [dbg]]
+                                 :cljs [:refer-macros [dbg]])]
+            [minitest.orchestrator      :refer        [run-execute-report!]]
+            [minitest.config #?@(:clj  [:refer        [config
+                                                       with-context]]
+                                 :cljs [:refer        [config]
+                                        :refer-macros [with-context]])])
+  #?(:cljs
+      (:require-macros
+        [minitest.around-load           :refer        [currently-loading?
+                                                       tests-to-process]])))
+
+(def ^:dynamic          *tests*             (atom {}))
+(def ^:dynamic ^:no-doc *currently-loading* false)
+(def ^:dynamic ^:no-doc *tested-ns*         nil)
+(def ^:dynamic ^:no-doc *tests-to-process*  nil)
+
+(macros/deftime
+  (defmacro currently-loading? []
+    (macros/case
+      :clj  `*currently-loading*
+      :cljs `(when (cljs.core/exists? js/_MINITEST_CURRENTLY_LOADING_)
+               js/_MINITEST_CURRENTLY_LOADING_)))
+
+  (defmacro tests-to-process []
+    (macros/case
+      :clj  `*tests-to-process*
+      :cljs `(when (cljs.core/exists? js/_MINITEST_TESTS_TO_PROCESS_)
+               js/_MINITEST_TESTS_TO_PROCESS_))))
 
 (defn clear-tests!        [a & nss]    (swap! a #(apply dissoc % nss)))
 (defn add-tests!          [a ns blocs] (swap! a update ns concat blocs))
@@ -24,10 +60,12 @@
 
 ;; Clojure
 (macros/deftime
+  (def ^:dynamic ^:private *executing-cljs* false)
+
   (declare apply-cljs-patches apply-shadow-patches)
 
   (defn- clj-core-load-around-hook [orig-load & paths]
-    (dbg "AROUND LOAD" paths (str "(for " (if *executing-cljs* :cljS :clj) ")"))
+    (dbg "AROUND LOAD" paths (str "(for " (if *executing-cljs* :cljs :clj) ")"))
     (let [path->ns (->> (all-ns)
                         (mapv (juxt
                                 (->| str @#'clojure.core/root-resource)
@@ -145,16 +183,16 @@
     (add-hook (resolve 'shadow.build.compiler/shadow-emit)
               #'shadow-build-compiler-shadow-emit-around-hook))
 
-  (defn cljs-repl-node-node-eval-around-hook [orig-eval & [repl-env js
-                                                           :as args]]
-    (dbg "EVALUATING JS")
-    (dbg js)
-    (dbg "")
-    (apply orig-eval args))
+  ; (defn cljs-repl-node-node-eval-around-hook [orig-eval & [repl-env js
+  ;                                                          :as args]]
+  ;   (dbg "EVALUATING JS")
+  ;   (dbg js)
+  ;   (dbg "")
+  ;   (apply orig-eval args))
 
-  (defn- apply-patch-to-cljs-repl-node-node-eval []
-    (add-hook #'cljs.repl.node/node-eval
-              #'cljs-repl-node-node-eval-around-hook))
+  ; (defn- apply-patch-to-cljs-repl-node-node-eval []
+  ;   (add-hook #'cljs.repl.node/node-eval
+  ;             #'cljs-repl-node-node-eval-around-hook))
 
 
   (defn apply-clj-patches []
@@ -169,7 +207,8 @@
         (when (find-ns 'cljs.compiler)  (apply-patch-to-cljs-compiler-emit))
 
         ;; TODO: remove
-        (when (find-ns 'cljs.repl.node) (apply-patch-to-cljs-repl-node-node-eval)))))
+        ; (when (find-ns 'cljs.repl.node) (apply-patch-to-cljs-repl-node-node-eval))
+        )))
 
   (defn apply-shadow-patches []
     (let [langs (-> (config) :langs set)]

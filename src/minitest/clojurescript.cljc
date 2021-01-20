@@ -1,3 +1,8 @@
+(ns minitest.clojurescript
+  (:require [clojure.tools.reader :as r]
+            [net.cgrand.macrovich :as macros]
+    #?(:clj [clojure.java.io      :as io])
+    #?(:clj [net.cgrand.macrovich :as macros])))
 
 ;; TODO: handle multiple projects running minitest at the same time
 (macros/deftime
