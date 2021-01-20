@@ -106,7 +106,7 @@
                      (apply deep-merge))
     (do         (some-> m :WHEN (get x) (->> (parse-WHEN-val m))))))
 
-(defn- ctx-map? [x]
+(defn- when-map? [x]
   (and (map? x) (contains? x :WHEN)))
 
 (defn contextualize [m ctx]
@@ -118,7 +118,7 @@
              form)))
        (postwalk
          (fn [form]
-           (if-not (ctx-map? form)
+           (if-not (when-map? form)
              form
              (let [when-map   (:WHEN form)
                    active-ctx (deep-merge (:CTX form)
@@ -152,5 +152,8 @@
         ctx      (context nil (deep-merge merged base-ctx))]
     (->> (concat srcs [ctx])
          (map #(contextualize % ctx))
-         (apply deep-merge))))
+         (apply deep-merge)
+         (postwalk #(if (when-map? %)
+                      (dissoc % :CTX :WHEN)
+                      %)))))
 
