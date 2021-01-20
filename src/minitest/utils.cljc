@@ -4,8 +4,8 @@
 (def ->|               #(apply comp (reverse %&)))
 (def call              #(apply %1 %&))
 (def as-form           #(do `'~%))
-(def as-thunk          #(do `(fn [] ~%)))
-(def as-wildcard-thunk #(do `(fn [] (let [~'_ '~'_] ~%))))
+(def as-thunk          #(do `(bound-fn [] ~%)))
+(def as-wildcard-thunk #(do `(bound-fn [] (let [~'_ '~'_] ~%))))
 
 (macros/deftime
   (defmacro current-file []
