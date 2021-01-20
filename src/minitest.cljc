@@ -15,23 +15,20 @@
             [minitest.reporter                 :refer [report]]
             [minitest.orchestrator             :refer [orchestrate
                                                        run-execute-report!]]
-            [minitest.config #?@(:clj  [       :refer [config
-                                                       config-file
-                                                       with-context
-                                                       with-config]]
-                                 :cljs [       :refer [config]
-                                        :refer-macros [with-context
-                                                       with-config]])]
+            [minitest.config #?@(:clj  [       :refer [config-file]]
+                                 :cljs [:include-macros true])]
             [minitest.utils  #?@(:clj  [       :refer [as-form
                                                        as-thunk
                                                        as-wildcard-thunk
                                                        ->|
-                                                       current-ns-name]]
+                                                       current-ns-name
+                                                       defalias]]
                                  :cljs [       :refer [as-form
                                                        as-thunk
                                                        as-wildcard-thunk
                                                        ->|]
-                                        :refer-macros [current-ns-name]])]
+                                        :refer-macros [current-ns-name
+                                                       defalias]])]
             [minitest.around-load   #?@(:clj  [:refer [apply-clj-patches
                                                        store-or-run-tests!
                                                        process-after-load!
@@ -43,6 +40,11 @@
                                          :refer-macros [currently-loading?]])]))
 
 (macros/deftime (disable-reload!))
+
+(defalias config       minitest.config/config)
+(defalias context      minitest.config/context)
+(defalias with-config  minitest.config/with-config)
+(defalias with-context minitest.config/with-context)
 
 ;; -- Dev tools
 ;; ---- Some commands

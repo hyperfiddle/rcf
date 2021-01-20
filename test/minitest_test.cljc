@@ -1,12 +1,14 @@
 (ns minitest-test
-  (:require [clojure.string       :as    str]
-            [clojure.test         :refer [deftest testing is are run-tests]]
-   #?(:clj  [clojure.pprint       :refer [pprint]]
-      :cljs [cljs.pprint          :refer [pprint]])
-   #?(:cljs [cljs.reader          :refer [read-string]])
-   #?(:clj  [minitest             :refer [tests test! *tests* config
-                                          with-context with-config *debug*]]
-      :cljs [minitest             :refer [      test! *tests* config]])
+  (:require [clojure.string       :as           str]
+            [clojure.test         :refer        [deftest testing is are
+                                                 run-tests]]
+   #?(:clj  [clojure.pprint       :refer        [pprint]]
+      :cljs [cljs.pprint          :refer        [pprint]])
+   #?(:cljs [cljs.reader          :refer        [read-string]])
+            [minitest #?@(:clj   [:refer        [test! config context
+                                                 tests with-config with-context]]
+                          :cljs  [:refer        [test! config context]
+                                  :refer-macros [tests with-config with-context]])]
             ; [minitest-test-namespace]
             )
   #?(:clj  (:require [net.cgrand.macrovich :as macros])
@@ -74,31 +76,42 @@
                (= x (-> (read-config v) :x)))
        true     true
        false    false
-       :unknown :initial
-       ))
+       :unknown :initial))
 
 (deftest test-contextual-config
-  (testing ":CTX activates :WHEN"
-    (test-config (fn [v]
-                   {:CTX {:enabled v}
-                    :WHEN        {:enabled {true  {:x true}
+  (testing "CFG -> WHEN -> CFG"
+    (test-config (fn [v]  {:enabled v
+                           :WHEN {:enabled {true  {:x true}
                                             false {:x false}}}})
-                 (fn [_v]
-                   (config))))
-  #_(testing ":CTX activates :WHEN in :CTX"
-    (test-config (fn [v]
-                   {:CTX {:enabled v
-                          :WHEN    {:enabled {true  {:x true}
-                                              false {:x false}}}}})
-                 (fn [_v]
-                   (config))))
-  #_(testing "with-context activates :WHEN in :CTX"
-    (test-config (fn [_v]
-                   {:CTX {:WHEN    {:enabled {true  {:x true}
-                                              false {:x false}}}}})
-                 #(with-context {:enabled %}
-                    (config))))
-  (testing "with-context activates :WHEN in :WHEN"
+                 (fn [_v] (config))))
+  (testing "with-config -> WHEN -> CFG"
+    (test-config (fn [_v] {:WHEN {:enabled {true  {:x true}
+                                            false {:x false}}}})
+                 (fn [v]  (with-config {:enabled v} (config)))))
+  (testing "CFG -> CTX>WHEN -> CFG"
+    (test-config (fn [v]  {:enabled v
+                           :CTX {:WHEN {:enabled {true  {:x true}
+                                                  false {:x false}}}}})
+                 (fn [_v] (config))))
+  (testing "CTX -> WHEN -> CFG"
+    (test-config (fn [v]  {:CTX  {:enabled v}
+                           :WHEN {:enabled {true  {:x true}
+                                            false {:x false}}}})
+                 (fn [_v] (config))))
+  (testing "CTX -> CTX>WHEN -> CFG"
+    (test-config (fn [v]  {:CTX {:enabled v
+                                 :WHEN    {:enabled {true  {:x true}
+                                                     false {:x false}}}}})
+                 (fn [_v] (config))))
+  (testing "with-context -> WHEN -> CFG"
+    (test-config (fn [_v] {:WHEN {:enabled {true  {:x true}
+                                            false {:x false}}}})
+                 (fn [v]  (with-context {:enabled v} (config)))))
+  (testing "with-context -> CTX>WHEN -> CFG"
+    (test-config (fn [_v] {:CTX {:WHEN    {:enabled {true  {:x true}
+                                                     false {:x false}}}}})
+                 (fn [v]  (with-context {:enabled v} (config)))))
+  (testing "with-context -> WHEN>WHEN -> CFG"
     (let [f (fn [_v]
               {:WHEN {:optA {true  {:WHEN {:optB {true  {:x true}
                                                   false {:x false}}}}
@@ -107,7 +120,7 @@
                         (config)))
       (test-config f #(with-context {:optA %     :optB true}
                         (config)))))
-  (testing "with-context activates :WHEN in :CTX which activates :WHEN"
+  (testing "with-context -> CTX>WHEN -> WHEN -> CFG"
     (test-config (fn [_v]
                    {:CTX {:WHEN {:optA {true  {:optB true}
                                         false {:optB false}}}}
@@ -123,8 +136,6 @@
   ;                #(with-context {:enabled %}
   ;                   (config))))
   )
-
-(run-tests)
 
 ; ; - [√] A "bug". We don't want to have to order the tests any differently
 ; ;       than the rest of the code; i.e. tests are run after the code has
@@ -159,3 +170,5 @@
 ;        :x (= 1 1))
 
 ; ; (test!)
+
+(run-tests)

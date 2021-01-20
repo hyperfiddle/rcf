@@ -3,6 +3,7 @@
     #?(:clj [clojure.java.io        :as    io])
     #?(:clj [clojure.edn            :as    edn])
     #?(:clj [clojure.tools.reader   :as    r])
+            [clojure.walk           :refer [prewalk postwalk]]
             [net.cgrand.macrovich   :as    macros]
             [minitest.base-config   :refer [base-config]]
             [minitest.utils         :refer [call]])
@@ -108,28 +109,28 @@
 (defn- ctx-map? [x]
   (and (map? x) (contains? x :WHEN)))
 
-(defn contextualize [m ctx & [cfg]]
+(defn contextualize [m ctx]
   (->> m
-       (clojure.walk/prewalk
+       (prewalk
          (fn [form]
            (if (at-runtime? form)
              (get-at-runtime form)
              form)))
-       (clojure.walk/postwalk
-           (fn [form]
-             (if-not (ctx-map? form)
-               form
-               (let [when-map   (:WHEN form)
-                     active-ctx (deep-merge (:CTX form)
-                                            (select-keys ctx (keys when-map)))
-                     ms         (map #(parse-WHEN-val form (get-in when-map %))
-                                     active-ctx)
-                     new-form   (apply deep-merge form ms)]
-                 ;; Since a when-map can bring in another one, contextualize
-                 ;, again until fix point is reached
-                 (if (= form new-form)
-                   new-form
-                   (contextualize new-form ctx cfg))))))))
+       (postwalk
+         (fn [form]
+           (if-not (ctx-map? form)
+             form
+             (let [when-map   (:WHEN form)
+                   active-ctx (deep-merge (:CTX form)
+                                          (select-keys ctx (keys when-map)))
+                   ms         (map #(parse-WHEN-val form (get-in when-map %))
+                                   active-ctx)
+                   new-form   (apply deep-merge form ms)]
+               ;; Since a when-map can bring in another one, contextualize
+               ;, again until fix point is reached
+               (if (= form new-form)
+                 new-form
+                 (contextualize new-form ctx))))))))
 
 (defaccessors default-config *early-config*)
 (defaccessors config         *late-config*  :getter false)
@@ -138,21 +139,17 @@
 (defn- ns-config [] (some-> *context* :ns find-ns meta :minitest/config))
 
 (declare config)
-(defn context    [& [ctx default-ctx]]
+(defn context [& [ctx default-ctx]]
   (deep-merge (or default-ctx (:CTX (config)))
               *context*
               ctx))
 
-(defn  config    [& [conf]]
-  (let [srcs        [(base-config)
-                     *early-config*
-                     (ns-config)
-                     conf
-                     *late-config*]
-        merged      (apply deep-merge srcs)
-        base-ctx    (as-> (:CTX merged {}) $
-                      (contextualize $ $ merged))
-        ctx         (context nil base-ctx)]
+(defn  config [& [conf]]
+  (let [srcs     [(base-config) *early-config* (ns-config) conf *late-config*]
+        merged   (apply deep-merge srcs)
+        base-ctx (as-> (:CTX merged {}) $
+                   (contextualize $ $))
+        ctx      (context nil (deep-merge merged base-ctx))]
     (->> (concat srcs [ctx])
          (map #(contextualize % ctx))
          (apply deep-merge))))

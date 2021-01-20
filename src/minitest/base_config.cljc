@@ -59,11 +59,10 @@
    :CTX  {:exec-mode      :on-eval
           :env            :dev
           :js-env         :node
-          :last-in-level  ::not-set
+          :last-in-level  ::not-set!
           :first-in-level ::not-set!
           :test-level     ::not-set!
-          :status         ::not-set!
-          :dots           false}
+          :status         ::not-set!}
    :WHEN (let [silent-success
                {:WHEN {:status    {:success {:silent    true}}}}
                run-on-load
