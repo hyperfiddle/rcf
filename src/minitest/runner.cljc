@@ -1,12 +1,13 @@
 (ns minitest.runner
-  (:require [minitest.config #?@(:clj  [:refer        [config
+  (:require [clojure.pprint             :refer        [pprint]]
+            [net.cgrand.macrovich       :as           macros]
+            [minitest.config #?@(:clj  [:refer        [config
                                                        with-context]]
                                  :cljs [:refer        [config]
                                         :refer-macros [with-context]])]
             [minitest.utils             :refer        [call]]
             [minitest.config            :refer        [config]]
-            [clojure.pprint             :refer        [pprint]]
-            [net.cgrand.macrovich       :as           macros])
+            [minitest.walk              :refer        [copostwalk]])
   #?(:cljs
       (:require-macros [minitest.runner :refer        [managing-exs]])))
 
@@ -86,24 +87,23 @@
            [result  result]
            [result  (and (coll? result) (->> result flatten (some #{'_})))]))))
 
-; (defn- run-wildcard-expectation! [ns test expectedv]
-;   (let [testedv          (managing-exs (!1-2-3 (-> test :tested :thunk call)))
-;         [new-testedv _]  (copostwalk (fn wildcardize [tested expected]
-;                                        [(if  (= expected '_)  '_  tested)
-;                                         expected])
-;                                      testedv expectedv)]
-;     (run-simple-expectation!
-;       ns
-;       test
-;       new-testedv
-;       expectedv)))
+(defn- run-wildcard-expectation! [ns test expectedv]
+  (let [testedv          (managing-exs (!1-2-3 (-> test :tested :thunk call)))
+        [new-testedv _]  (copostwalk (fn wildcardize [tested expected]
+                                       [(if  (= expected '_)  '_  tested)
+                                        expected])
+                                     testedv expectedv)]
+    (run-simple-expectation!
+      ns
+      test
+      new-testedv
+      expectedv)))
 
 (defn run-expectation! [ns test]
   (let [[v w] (wildcard-expectation? test)]
-    ; (if w
-    ;   (run-wildcard-expectation! ns test v)
-    ;   (run-simple-expectation! ns test))
-    (run-simple-expectation! ns test)))
+    (if w
+      (run-wildcard-expectation! ns test v)
+      (run-simple-expectation! ns test))))
 
 (defn run-test-and-yield-report! [ns {:keys [type op] :as test}]
   (case type

@@ -1,8 +1,12 @@
+(ns minitest.walk
+  (:require [clojure.set    :as    set]
+            [minitest.utils :refer [call]]))
+
 
 (defn- transpose [coll-of-colls]
   (apply map #(apply list %&) coll-of-colls))
 
-(defn- coshaped? [[form & more-forms]]
+(defn coshaped? [[form & more-forms]]
   (every? (condp call form
             sequential?  sequential?
             associative? associative?
@@ -10,14 +14,14 @@
             (constantly true))
           more-forms))
 
-(defn- map-aligned [f m & ms]
+(defn map-aligned [f m & ms]
   (map (fn [e]
          (let [k (key e)
                other-es (map #(find % k) ms)]
            (apply f e other-es)))
        m))
 
-(defn- map+ [f & [form :as forms]]
+(defn map+ [f & [form :as forms]]
   (letfn [(safe| [f]
                  (fn [& in-items]
                    (let [out-items (apply f in-items)]
@@ -43,7 +47,7 @@
                           (map #(concat %2 %1) unique-ms))))))
 
 ;; TODO: handle records
-(defn- comap [f & colls]
+(defn comap [f & colls]
   (letfn [(reshape [original anew]
                    (condp call original
                      list?      (apply list anew)
@@ -53,13 +57,13 @@
     (->> (apply map+ f colls)
          (map reshape colls))))
 
-(defn- cowalk [inner outer & [form :as forms]]
+(defn cowalk [inner outer & [form :as forms]]
   (if (every? coll? forms)
     (apply outer (apply comap inner forms))
     (apply outer forms)))
 
-(defn- coprewalk [f & forms]
+(defn coprewalk [f & forms]
   (apply cowalk (partial coprewalk f) #(do %&) (apply f forms)))
 
-(defn- copostwalk [f & forms]
+(defn copostwalk [f & forms]
   (apply cowalk (partial copostwalk f) f forms))
