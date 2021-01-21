@@ -37,73 +37,76 @@
   ;              body
   ;              `[(lay ~more-bindings ~@body)])))))
 
-  (defn- !1-2-3 [x]
-    (set! *3 *2) (set! *2 *1) (set! *1 x)
-    x)
+(defn- !1-2-3 [x]
+  (set! *3 *2) (set! *2 *1) (set! *1 x)
+  x)
 
-  (defn- run-effect! [{:keys [thunk form] :as test}]
-    (let [result (managing-exs (!1-2-3 (call thunk)))]
-      (if (managed-ex? result)
-        (ex-info (str "Error in test effect\n"
-                      (with-out-str (pprint form)))
-                 {:type     :minitest/effect-error
-                  :test     test
-                  :location :effect
-                  :error    (ex result)})
-        :minitest/effect-performed)))
+(defn- run-effect! [{:keys [thunk form] :as test}]
+  (let [result (managing-exs (!1-2-3 (call thunk)))]
+    (if (managed-ex? result)
+      (ex-info (str "Error in test effect\n"
+                    (with-out-str (pprint form)))
+               {:type     :minitest/effect-error
+                :test     test
+                :location :effect
+                :error    (ex result)})
+      :minitest/effect-performed)))
 
-  (defn- run-simple-expectation! [ns test & [testedv expectedv]]
-    (let [testedv
-          (delay (or testedv
-                     (managing-exs (!1-2-3 (-> test :tested   :thunk call)))))
-          expectedv
-          (delay (or expectedv
-                     (managing-exs         (-> test :expected :thunk call))))]
-      (merge
-                    {:ns     ns
-                     :op     (:op test)
-                     :tested (merge {:form (-> test :tested :form)}
-                                    (when-not (managed-ex? @testedv)
-                                      {:val @testedv}))}
-                    (when (= (:op test) :=)
-                      {:expected (merge {:form (-> test :expected :form)}
-                                        (when-not (managed-ex? @expectedv)
-                                          {:val @expectedv}))})
-                    (let [err-expected? (delay (and (= (:op test) :=)
-                                                    (managed-ex? @expectedv)))
-                          success?      (delay (case (:op test)
-                                                 :=  (= @testedv @expectedv)
-                                                 :?  @testedv))]
-                      (cond
-                        (managed-ex? @testedv)  {:status :error  :error (ex @testedv)}
-                        @err-expected?          {:status :error  :error (ex @expectedv)}
-                        @success?               {:status :success}
-                        :else                   {:status :failure})))))
+(defn- run-simple-expectation! [ns test & [testedv expectedv]]
+  (let [testedv
+        (delay (or testedv
+                   (managing-exs (!1-2-3 (-> test :tested   :thunk call)))))
+        expectedv
+        (delay (or expectedv
+                   (managing-exs         (-> test :expected :thunk call))))]
+    (merge
+      {:ns     ns
+       :op     (:op test)
+       :tested (merge {:form (-> test :tested :form)}
+                      (when-not (managed-ex? @testedv)
+                        {:val @testedv}))}
+      (when (= (:op test) :=)
+        {:expected (merge {:form (-> test :expected :form)}
+                          (when-not (managed-ex? @expectedv)
+                            {:val @expectedv}))})
+      (let [err-expected? (delay (and (= (:op test) :=)
+                                      (managed-ex? @expectedv)))
+            success?      (delay (case (:op test)
+                                   :=  (= @testedv @expectedv)
+                                   :?  @testedv))]
+        (cond
+          (managed-ex? @testedv)  {:status :error  :error (ex @testedv)}
+          @err-expected?          {:status :error  :error (ex @expectedv)}
+          @success?               {:status :success}
+          :else                   {:status :failure})))))
+
+(defn wildcard-symbol? [x]
+  (= x '_))
 
 (defn wildcard-expectation? [test]
   (and (= (:op test) :=)
-       (let [result (managing-exs (-> test :expected :thunk call))]
-         (if (managed-ex? result)
-           [result  result]
-           [result  (and (coll? result) (->> result flatten (some #{'_})))]))))
+       (let [expectedv (managing-exs (-> test :expected :thunk call))]
+         (if (managed-ex? expectedv)
+           [expectedv expectedv]
+           [expectedv (and (coll? expectedv)
+                        (->> (tree-seq coll? identity expectedv)
+                             (remove coll?)
+                             (some wildcard-symbol?)))]))))
 
 (defn- run-wildcard-expectation! [ns test expectedv]
   (let [testedv          (managing-exs (!1-2-3 (-> test :tested :thunk call)))
-        [new-testedv _]  (copostwalk (fn wildcardize [tested expected]
-                                       [(if  (= expected '_)  '_  tested)
-                                        expected])
-                                     testedv expectedv)]
-    (run-simple-expectation!
-      ns
-      test
-      new-testedv
-      expectedv)))
+        [new-testedv _]  (copostwalk
+                           (fn wildcardize [tested expected]
+                             [(if  (wildcard-symbol? expected)  '_  tested)
+                              expected])
+                           testedv expectedv)]
+    (run-simple-expectation! ns test new-testedv expectedv)))
 
 (defn run-expectation! [ns test]
-  (let [[v w] (wildcard-expectation? test)]
-    (if w
-      (run-wildcard-expectation! ns test v)
-      (run-simple-expectation! ns test))))
+  (let [[expectedv wildcard?] (wildcard-expectation? test)]
+    (if wildcard?
+      (run-wildcard-expectation! ns test expectedv)
+      (run-simple-expectation!   ns test))))
 
 (defn run-test-and-yield-report! [ns {:keys [type op] :as test}]
   (case type
