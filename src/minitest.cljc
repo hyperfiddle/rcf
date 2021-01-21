@@ -8,15 +8,15 @@
    #?(:clj  [clojure.edn                       :as    edn])
             [net.cgrand.macrovich              :as    macros]
             [minitest.ns                       :as    ns
-             #?@(:cljs [:refer-macros [find-test-namespaces]])]
+             #?@(:cljs [:include-macros true])]
             [minitest.base-config              :refer [base-config]]
             [minitest.runner                   :refer [run]]
             [minitest.executor                 :refer [execute-clj execute-cljs]]
             [minitest.reporter                 :refer [report]]
             [minitest.orchestrator             :refer [orchestrate
                                                        run-execute-report!]]
-            [minitest.config #?@(:clj  [       :refer [config-file]]
-                                 :cljs [:include-macros true])]
+            [minitest.config                   :as    config
+                        #?@(:cljs [:include-macros    true])]
             [minitest.utils  #?@(:clj  [       :refer [as-form
                                                        as-thunk
                                                        as-wildcard-thunk
@@ -41,10 +41,10 @@
 
 (macros/deftime (disable-reload!))
 
-(defalias config       minitest.config/config)
-(defalias context      minitest.config/context)
-(defalias with-config  minitest.config/with-config)
-(defalias with-context minitest.config/with-context)
+; (defalias config       minitest.config/config)
+; (defalias context      minitest.config/context)
+; (defalias with-config  minitest.config/with-config)
+; (defalias with-context minitest.config/with-context)
 
 ;; -- Dev tools
 ;; ---- Some commands
@@ -181,9 +181,10 @@
                           ))))))))
 
      (defmacro tests [& body]
-       (when-not (-> (config) :elide-tests)
-         `(with-context {:exec-mode (if (currently-loading?) :on-load :on-eval)}
-            (let [c#     (config)
+       (when-not (-> (config/config) :elide-tests)
+         `(config/with-context {:exec-mode
+                                (if (currently-loading?) :on-load :on-eval)}
+            (let [c#     (config/config)
                   ns#    (current-ns-name)
                   block# ~(parse-tests body)]
               (if (currently-loading?)
@@ -209,8 +210,8 @@
    (defn test!
      ([]       (let [ns (current-ns-name)]
                  (cond
-                   (currently-loading?) (with-config {:run-tests   true
-                                                      :store-tests false}
+                   (currently-loading?) (config/with-config {:run-tests   true
+                                                             :store-tests false}
                                           (store-or-run-tests!))
                    (get @*tests* ns)    (test! ns)
                    :else                (test! :all))))
@@ -225,7 +226,7 @@
                  (macros/case :clj (doto (run! require nss)))
                  (if (empty? ns->tests)
                    :no-test
-                   (with-config (into {} (map vec conf))
+                   (config/with-config (into {} (map vec conf))
                      (run-execute-report! :suite ns->tests)
                      nil)))))
 
@@ -266,7 +267,7 @@
        (newline)
        (println (source-fn `base-config))
        (newline)
-       (let [confile (config-file)]
+       (let [confile (config/config-file)]
          (if confile
            (do (println "On top of this, here is your config from"
                         (str (->> confile .toURI
@@ -278,14 +279,14 @@
                (println "./minitest.edn or ./resources/minitest.edn"))))
        (newline)
        (println "And the resulting config after minitest deep-merges them is:")
-       (pprint (config))))
+       (pprint (config/config))))
 
    (macros/case
      :clj
      (defn -main [& args]
        (if (-> args first #{"help" ":help" "h" "-h" "--help"})
          (print-usage)
-         (with-context {:env :cli}
+         (config/with-context {:env :cli}
            (->> (str \[ (str/join \space args) \])
                 edn/read-string
                 (apply test!))))))
