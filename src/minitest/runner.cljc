@@ -126,17 +126,18 @@
         (fn [s l n d]
           (doall
             (concat
-              (         rest (orch true  false s l n      (-> d first)))
-              (mapcat #(rest (orch false false s l n  %)) (-> d rest butlast))
-              (         rest (orch false true  s l n      (-> d rest last))))))]
+              (                rest (orch true  false s l n      (-> d first)))
+              (doall (mapcat #(rest (orch false false s l n  %)) (-> d rest butlast)))
+              (                rest (orch false true  s l n      (-> d rest last)))
+              )))]
     (case level
       :suite
       (let [d (seq data)]
         (->>
           (concat
-            [(apply      orch true  false state :ns           (-> d first))]
+            [(apply             orch true  false state :ns    (-> d first))]
             (doall (map #(apply orch true  false state :ns %) (-> d rest butlast)))
-            [(apply      orch true  false state :ns           (-> d rest last))])
+            [(apply             orch true  false state :ns    (-> d rest last))])
           (into {})))
       :ns     (process-all state     :block ns data)
       :block  (process-all state     :case  ns data)
