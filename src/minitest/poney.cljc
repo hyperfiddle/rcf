@@ -12,20 +12,19 @@
 (defn entry-point []
   (println "NODEJS ENTRY POINT"))
 
-(tests
-  (println "a side effect")
-  (inc 1) := 2
-  (inc 2) := 3
-  [*1 *2 *3] := [3 2 nil]
-  (/ 1 0) := 1
-  0       := 1
-  1       := 1)
+; (tests
+;   (println "a side effect")
+;   (inc 1) := 2
+;   (inc 2) := 3
+;   [*1 *2 *3] := [3 2 nil]
+;   (/ 1 0) := 1
+;   0       := 1
+;   1       := 1)
 
-; (test!)
+; ; (test!)
 
 (tests
   (inc 3) := 4
-  [1 4] := [1 _]
-  {1 :a} := {1 _}
-  ; {:a 1} := {_ 1}
-  )
+  [1 4]   := [1 _]
+  {1 :a}  := {1 _}
+  #{1}    := #{_})

@@ -7,7 +7,7 @@
                                         :refer-macros [with-context]])]
             [minitest.utils             :refer        [call]]
             [minitest.config            :refer        [config]]
-            [minitest.walk              :refer        [copostwalk]])
+            [minitest.walk              :refer        [coprewalk]])
   #?(:cljs
       (:require-macros [minitest.runner :refer        [managing-exs]])))
 
@@ -80,8 +80,7 @@
           @success?               {:status :success}
           :else                   {:status :failure})))))
 
-(defn wildcard-symbol? [x]
-  (= x '_))
+(def wildcard-symbol '_)
 
 (defn wildcard-expectation? [test]
   (and (= (:op test) :=)
@@ -91,15 +90,27 @@
            [expectedv (and (coll? expectedv)
                         (->> (tree-seq coll? identity expectedv)
                              (remove coll?)
-                             (some wildcard-symbol?)))]))))
+                             (some #{wildcard-symbol})))]))))
 
 (defn- run-wildcard-expectation! [ns test expectedv]
   (let [testedv          (managing-exs (!1-2-3 (-> test :tested :thunk call)))
-        [new-testedv _]  (copostwalk
-                           (fn wildcardize [tested expected]
-                             [(if  (wildcard-symbol? expected)  '_  tested)
-                              expected])
-                           testedv expectedv)]
+        [new-testedv _]
+        (coprewalk
+          (fn wildcardize [tested expected]
+            (when-let [msg
+                       (cond
+                         (and (map? expected)
+                              (contains? (set (keys expected)) wildcard-symbol))
+                         "[Minitest] Can't use wildcards as keys in maps"
+                         (and (set? expected)
+                              (contains? expected              wildcard-symbol))
+                         "[Minitest] Can't use wildcards in sets")]
+              (throw (ex-info msg {:type :minitest/illegal-wildcard
+                                   :tested   tested
+                                   :expected expected})))
+            [(if (= wildcard-symbol expected) expected tested)
+             expected])
+          testedv expectedv)]
     (run-simple-expectation! ns test new-testedv expectedv)))
 
 (defn run-expectation! [ns test]

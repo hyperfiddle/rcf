@@ -23,6 +23,7 @@
    :stats             {:enabled true
                        :level   :suite
                        :for     [:success :failure :error]}
+
    :bindings {:WHEN {:test-level
                      {:suite {:WHEN {:lang {:clj {#'*e [:AT-RUNTIME #(or *e nil)]
                                                   #'*1 [:AT-RUNTIME #(or *1 nil)]

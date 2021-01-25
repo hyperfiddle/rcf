@@ -3,7 +3,7 @@
             [minitest.utils :refer [call]]))
 
 
-(defn- transpose [coll-of-colls]
+(defn transpose [coll-of-colls]
   (apply map #(apply list %&) coll-of-colls))
 
 (defn coshaped? [[form & more-forms]]
@@ -22,11 +22,10 @@
        m))
 
 (defn map+ [f & [form :as forms]]
-  (letfn [(safe| [f]
-                 (fn [& in-items]
-                   (let [out-items (apply f in-items)]
-                     (assert (= (count in-items) (count out-items)))
-                     out-items)))]
+  (letfn [(safe| [f]  (fn [& in-items]
+                        (let [out-items (apply f in-items)]
+                          (assert (= (count in-items) (count out-items)))
+                          out-items)))]
     (assert (coshaped? forms)
             (apply str "Forms are not coshaped:\n"
                    (map #(str "- " \( (type %) \) \space % \newline)
@@ -44,18 +43,19 @@
                          unique-ms (map #(select-keys % unique-ks) forms)]
                      (->> (apply map-aligned (safe| f) common-ms)
                           transpose
+                          seq (or [{}])
                           (map #(concat %2 %1) unique-ms))))))
 
 ;; TODO: handle records
 (defn comap [f & colls]
-  (letfn [(reshape [original anew]
-                   (condp call original
-                     list?      (apply list anew)
-                     map-entry? (vec anew)
-                     seq?       (doall anew)
-                     coll?      (into (empty original) anew)))]
+  (letfn [(shape-back [original anew]
+            (condp call original
+              list?      (apply list anew)
+              map-entry? (vec anew)
+              seq?       (doall anew)
+              coll?      (into (empty original) anew)))]
     (->> (apply map+ f colls)
-         (map reshape colls))))
+         (map shape-back colls))))
 
 (defn cowalk [inner outer & [form :as forms]]
   (if (every? coll? forms)
