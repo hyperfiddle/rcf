@@ -121,13 +121,31 @@
                   ")")))
   data)
 
-(defn- reportable? [data]
-  (and (not (= data :minitest/effect-performed))
-       (-> (config) :report :enabled)))
+(defn report-expectation [report]
+  (let [status   (:status report)
+        logo     (-> (config) :logo)
+        left-ks  [:tested :form]
+        right-ks [:expected :val]
+        left     (get-in report left-ks)]
+    (print-result report logo left-ks right-ks))
+  report)
 
-(defn- explainable? [data]
-  (and (not (= data :minitest/effect-performed))
-       (-> (config) :explaination :enabled)))
+(defn announce-effect [data & {:keys [force printer] :or {printer println}}]
+  ;; TODO: use lay for config
+  (if (or force (-> (config) :effects :show-form))
+    (let [logo (-> (config) :logo)]
+      (printer logo (:form data))
+        (assoc data :showed-form true))
+    data))
+
+(defn report-effect [data]
+  (if (and (-> (config) :effects :show-result)
+           (not (-> data :form first #{'println})))
+    (do (when-not (-> data :showed-form)
+          (announce-effect data :force true :printer print))
+        (println " ->" (:result data))
+        (assoc data :showed-result true))
+    data))
 
 (macros/case
   :clj (defn- flush-outputs []
@@ -135,42 +153,42 @@
          (.flush *err*)))
 
 (defn report-case [state position level ns data]
-  (if-not (reportable? data)
+  (if-not (-> (config) :report :enabled)
     data
-    (let [report   data
-          status   (:status report)
-          conf     (with-context {:status status} (config))
-          logo     (-> conf :logo)
-          left-ks  [:tested :form]
-          right-ks [:expected :val]
-          left     (get-in report left-ks)]
-      (print-result report logo left-ks right-ks)
+    (let [new-data (case (:type data)
+                     :effect      (report-effect      data)
+                     :expectation (report-expectation data))]
       (macros/case :clj (flush-outputs))
-      (assoc report :reported true))))
+      (assoc new-data :reported true))))
+
+(defn- explainable? [data]
+  (or (-> data :type (= :expectation))
+      (and (-> data :type   (= :effect))
+           (-> data :status (= :error)))))
 
 (defn explain-case [state position level ns data]
-  (if-not (explainable? data)
+  (if (or (not (-> (config) :explanation :enabled))
+          (not (explainable? data)))
     data
-    (let [report   data
-          status   (:status report)
-          conf     (with-context {:status status} (config))
+    (let [status   (:status   data)
+          location (:location data)
+          conf     (config)
           logo     (-> conf :logo)
           left-ks  [:tested :form]
-          left     (get-in report left-ks)]
+          left     (get-in data left-ks)]
       (case status
         :success nil
         :error   (macros/case
                    :clj  (binding [*err* *out*]
                            ;; TODO: set error depth in cljs
-                           (pst (:error report)
+                           (pst (:error data)
                                 (-> conf :error-depth))
                            (macros/case :clj (.flush *err*)))
-                   :cljs (pst (:error report)))
+                   :cljs (pst (:error data)))
         :failure (let [v      (binding [*print-level* 10000
                                         pp/*print-pprint-dispatch*
                                         pp/code-dispatch]
-                                (-> report :tested :val
-                                    pprint-str))
+                                (-> data :tested :val pprint-str))
                        left-n (count
                                 (str logo " " (pprint-str left)))
                        prompt (str "Actual: ")
@@ -180,10 +198,10 @@
                      (do (printab prompt v)
                          (newline)))))
       (macros/case :clj (flush-outputs))
-      (assoc report :explained true))))
+      (assoc data :explained true))))
 
 (defn remove-effect-data [state position level ns data]
-  (remove #{:minitest/effect-performed} data))
+  (remove #(-> % :type (= :effect)) data))
 
 (defn when-not-reported| [f]
   (fn [state position level ns data]
@@ -203,19 +221,28 @@
         (f state position level ns data))
       (f state position level ns data))))
 
-(def ^:private base-report
+(defn with-location-in-context| [f]
+  (fn [state position level ns data]
+    (if (= level :case)
+      (with-context {:location (:location data)}
+        (f state position level ns data))
+      (f state position level ns data))))
+
+(def base-report
   (let [report-via| (fn [mode]  (fn [s _p _l n d]
                                   ((:report-fn (config))  s mode :case n d)))]
     (outside-in->> (on-level| [:before  :suite]  announce-suite)
                    (on-level| [:before  :ns]     announce-ns)
                    (on-level| [:after   :case]   (report-via| :do))
                    (on-level| [:do      :case]   (when-not-reported|
-                                             (fn [s p l n d]
-                                               (let [rpt (report-case s p l n d)]
-                                                 ((report-via| :explain)
-                                                  s p l n rpt)))))
+                                                   (fn [s p l n d]
+                                                     (let [rpt (report-case
+                                                                 s p l n d)]
+                                                       ((report-via| :explain)
+                                                        s p l n rpt)))))
                    (on-level| [:explain :case]   explain-case)
-                   (on-level| [:after   :block]  remove-effect-data))))
+                   ; (on-level| [:after   :block]  remove-effect-data)
+                   )))
 
 ;; --- SILENT MODE
 (defn do-nothing
@@ -294,20 +321,19 @@
                               :do-reports
                               (fn [s _p l n d]
                                 (with-config {:execute-fn   do-nothing
-                                              ; :explaination {:enabled false}
+                                              ; :explanation {:enabled false}
                                               }
                                   ((-> (config) :run-fn)  s l n d)))
                               f)
            s p l n d))))
 
-;; --- EXPLAIN LEVEL
-(defn explaining-reports-at-explaination-level|
-  ([f] (explaining-reports-at-explaination-level|
-         (-> (config) :explaination :level) f))
+;; --- EXPLANATION LEVEL
+(defn explaining-reports-at-explanation-level|
+  ([f] (explaining-reports-at-explanation-level|
+         (-> (config) :explanation :level) f))
   ([target-level f]
    (fn [s p l n d]
-     (println "----->" (-> (config) :explaination :enabled))
-     (call (if-not (-> (config) :explaination :enabled)
+     (call (if-not (-> (config) :explanation :enabled)
              do-nothing
              (perform-at-level| target-level
                                    :explain-reports
@@ -357,29 +383,29 @@
 
 ;; --- DOTS MODE
 (defn report-case-as-dot [state position level ns data]
-  (with-context {:status (:status data)}
-    (print (-> (config) :logo)))
+  (print (-> (config) :logo))
   data)
 
 (defn handling-dots-mode| [continue]
   (outside-in->> (on-level| [:do      :case]  (on-config| {:dots true}
-                                          (when-not-reported|
-                                            (marking-as-reported|
-                                              report-case-as-dot))))
+                                                (when-not-reported|
+                                                  (marking-as-reported|
+                                                    report-case-as-dot))))
                  (on-level| [:explain :case]  (on-config| {:dots true}
-                                          (when-not-reported|
-                                            (marking-as-reported|
-                                              explain-case))))
+                                                (when-not-reported|
+                                                  (marking-as-reported|
+                                                    explain-case))))
                  continue))
 
 ;; --- Main entry point
 (defn report [s p l n d]
   (call (outside-in->> binding-test-output|
                        with-status-in-context|
-                       (on-level| [:after :block] remove-effect-data)
+                       with-location-in-context|
+                       ; (on-level| [:after :block] remove-effect-data)
                        separating-levels|
                        ; doing-reports-at-report-level|
-                       ; explaining-reports-at-explaination-level|
+                       ; explaining-reports-at-explanation-level|
                        handling-stats-at-stats-level|
                        handling-silent-mode|
                        handling-dots-mode|

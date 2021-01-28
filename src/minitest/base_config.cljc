@@ -16,23 +16,27 @@
    :error-depth       12
    :silent            false
    :dots              false
-   :report            {:enabled true
-                       :level   :block}
-   :explaination      {:enabled true
-                       :level   :block}
-   :stats             {:enabled true
-                       :level   :suite
-                       :for     [:success :failure :error]}
+   :report            {:enabled     true
+                       :level       :block}
+   :explanation       {:enabled     true
+                       :level       :block}
+   :stats             {:enabled     true
+                       :level       :suite
+                       :for         [:success :failure :error]}
+   :effects           {:show-form   false
+                       :show-result false}
 
    :bindings {:WHEN {:test-level
                      {:suite {:WHEN {:lang {:clj {#'*e [:AT-RUNTIME #(or *e nil)]
                                                   #'*1 [:AT-RUNTIME #(or *1 nil)]
                                                   #'*2 [:AT-RUNTIME #(or *2 nil)]
-                                                  #'*3 [:AT-RUNTIME #(or *3 nil)]}}}}
+                                                  #'*3 [:AT-RUNTIME #(or *3 nil)]
+                                                  }}}}
                       :block {:WHEN {:lang {:clj {#'*e [:AT-RUNTIME #(or *e nil)]
                                                   #'*1 [:AT-RUNTIME #(or *1 nil)]
                                                   #'*2 [:AT-RUNTIME #(or *2 nil)]
-                                                  #'*3 [:AT-RUNTIME #(or *3 nil)]}}}}}}}
+                                                  #'*3 [:AT-RUNTIME #(or *3 nil)]
+                                                  }}}}}}}
    ;; Executor opts
    :langs             [:clj]
 
@@ -57,13 +61,16 @@
                    ;   :nashorn       'cljs.server.nashorn/prepl}}
                    })
 
-   :CTX  {:exec-mode      :on-eval
-          :env            :dev
+   :CTX  {:exec-mode      :on-eval    ;; #{:on-eval :on-load}
+          :env            :dev        ;; #{:production :lib :cli :ci :dev
+                                      ;;   :quiet-dev}
           :js-env         :node
-          :last-in-level  ::not-set!
-          :first-in-level ::not-set!
-          :test-level     ::not-set!
-          :status         ::not-set!}
+          :last-in-level  ::not-set!  ;; #{true false}
+          :first-in-level ::not-set!  ;; #{true false}
+          :test-level     ::not-set!  ;; #{:suite :ns :block :case}
+          :status         ::not-set!  ;; #{:success :failure :error}
+          :refreshing     false       ;; #{true false}
+          :location       ::not-set!} ;; #{:expectation :effect}
    :WHEN (let [silent-success
                {:WHEN {:status    {:success {:silent    true}}}}
                run-on-load
@@ -82,9 +89,13 @@
                          :ci          [:cli]
                          :dev         run-on-load
                          :quiet-dev   [:dev, silent-success]}
-            :status     {:success     {:logo           "✅"}
+            :status     {:success     {:logo           "✅"
+                                       :WHEN {:location
+                                              {:effect {:logo "[Effect] "}}}}
                          :failure     {:logo           "❌"}
-                         :error       {:logo           "🔥"}}
+                         :error       {:logo           "🔥"
+                                       :WHEN {:location
+                                              {:effect {:logo "😱[Effect] "}}}}}
             :test-level {:ns          {:post-separator "\n"}
                          :block       {:post-separator "\n"}
                          :stats       {:separator      "  "

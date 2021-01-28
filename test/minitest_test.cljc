@@ -5,10 +5,14 @@
    #?(:clj  [clojure.pprint       :refer        [pprint]]
       :cljs [cljs.pprint          :refer        [pprint]])
    #?(:cljs [cljs.reader          :refer        [read-string]])
-            [minitest #?@(:clj   [:refer        [test! config context
-                                                 tests with-config with-context]]
-                          :cljs  [:refer        [test! config context]
-                                  :refer-macros [tests with-config with-context]])]
+            [minitest #?@(:clj   [:refer        [test! tests]]
+                          :cljs  [:refer        [test!]
+                                  :refer-macros [tests]])]
+            [minitest.config
+                      #?@(:clj   [:refer        [config context
+                                                 with-config with-context]]
+                          :cljs  [:refer        [config context]
+                                  :refer-macros [with-config with-context]])]
             ; [minitest-test-namespace]
             )
   #?(:clj  (:require [net.cgrand.macrovich :as macros])

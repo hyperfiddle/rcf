@@ -27,44 +27,45 @@
                                                           :cljs 'js/Error) t#
                                        (set! *e t#)
                                        [::caught t#]))))
-
-  ;; TODO
-  ; (defmacro lay [[sym expr & more-bindings] & body]
-  ;   (let [delay-sym (gensym (str "laid-" sym "-"))]
-  ;     `(let [~delay-sym (delay ~expr)]
-  ;        (symbol-macrolet [~sym (deref ~delay-sym)]
-  ;          ~@(if (empty? more-bindings)
-  ;              body
-  ;              `[(lay ~more-bindings ~@body)])))))
-
 (defn- !1-2-3 [x]
   (set! *3 *2) (set! *2 *1) (set! *1 x)
   x)
 
-(defn- run-effect! [{:keys [thunk form] :as test}]
+(defn- run-effect! [ns {:keys [thunk form] :as test}]
   (let [result (managing-exs (!1-2-3 (call thunk)))]
-    (if (managed-ex? result)
-      (ex-info (str "Error in test effect\n"
-                    (with-out-str (pprint form)))
-               {:type     :minitest/effect-error
-                :test     test
-                :location :effect
-                :error    (ex result)})
-      :minitest/effect-performed)))
-
-(defn- run-simple-expectation! [ns test & [testedv expectedv]]
-  (let [testedv
-        (delay (or testedv
-                   (managing-exs (!1-2-3 (-> test :tested   :thunk call)))))
-        expectedv
-        (delay (or expectedv
-                   (managing-exs         (-> test :expected :thunk call))))]
     (merge
-      {:ns     ns
+      {:type     :effect
+       :ns       ns
+       :form     form
+       :location :effect}
+      (if (managed-ex? result)
+        {:status :error
+         :error  (ex result)}
+        {:status :success
+         :result result}))))
+
+;; TODO
+; (defmacro lay [[sym expr & more-bindings] & body]
+;   (let [delay-sym (gensym (str "laid-" sym "-"))]
+;     `(let [~delay-sym (delay ~expr)]
+;        (symbol-macrolet [~sym (deref ~delay-sym)]
+;          ~@(if (empty? more-bindings)
+;              body
+;              `[(lay ~more-bindings ~@body)])))))
+
+
+(defn- run-simple-expectation! [ns test]
+  (let
+    [testedv   (delay (managing-exs (!1-2-3 (-> test :tested   :thunk call))))
+     expectedv (delay (managing-exs         (-> test :expected :thunk call)))]
+    (merge
+      {:type  :expectation
+       :ns     ns
        :op     (:op test)
        :tested (merge {:form (-> test :tested :form)}
                       (when-not (managed-ex? @testedv)
-                        {:val @testedv}))}
+                        {:val @testedv}))
+       :location :expectation}
       (when (= (:op test) :=)
         {:expected (merge {:form (-> test :expected :form)}
                           (when-not (managed-ex? @expectedv)
@@ -92,36 +93,48 @@
                              (remove coll?)
                              (some #{wildcard-symbol})))]))))
 
-(defn- run-wildcard-expectation! [ns test expectedv]
-  (let [testedv          (managing-exs (!1-2-3 (-> test :tested :thunk call)))
+(defn- run-wildcard-expectation! [ns test]
+  (let [testedv     (managing-exs (!1-2-3 (-> test :tested :thunk call)))
+        wildcardize (fn wildcardize [tested expected]
+                      (when-let
+                        [msg (cond
+                               (and (map? expected)
+                                    (contains? (set (keys expected))
+                                               wildcard-symbol))
+                               "[Minitest] Can't use wildcards as keys in maps"
+                               (and (set? expected)
+                                    (contains? expected
+                                               wildcard-symbol))
+                               "[Minitest] Can't use wildcards in sets")]
+                        (throw (ex-info msg {:type :minitest/illegal-wildcard
+                                             :tested   tested
+                                             :expected expected})))
+                      [(if (= wildcard-symbol expected) expected tested)
+                       expected])
         [new-testedv _]
-        (coprewalk
-          (fn wildcardize [tested expected]
-            (when-let [msg
-                       (cond
-                         (and (map? expected)
-                              (contains? (set (keys expected)) wildcard-symbol))
-                         "[Minitest] Can't use wildcards as keys in maps"
-                         (and (set? expected)
-                              (contains? expected              wildcard-symbol))
-                         "[Minitest] Can't use wildcards in sets")]
-              (throw (ex-info msg {:type :minitest/illegal-wildcard
-                                   :tested   tested
-                                   :expected expected})))
-            [(if (= wildcard-symbol expected) expected tested)
-             expected])
-          testedv expectedv)]
-    (run-simple-expectation! ns test new-testedv expectedv)))
+        (if (managed-ex? testedv)
+          [testedv nil]
+          (let [expectedv (-> test :expected :thunk call)
+                result    (managing-exs
+                            (coprewalk wildcardize testedv expectedv))]
+            (if (managed-ex? result)
+              [result nil]
+              result)))]
+    (-> (run-simple-expectation!
+          ns (assoc-in test [:tested :thunk] (fn [] new-testedv)))
+        ;; re-establish original value for reporting
+        (assoc-in [:tested :val] testedv))))
 
 (defn run-expectation! [ns test]
   (let [[expectedv wildcard?] (wildcard-expectation? test)]
     (if wildcard?
-      (run-wildcard-expectation! ns test expectedv)
+      (run-wildcard-expectation! ns (assoc-in test [:expected :thunk]
+                                              (fn [] expectedv)))
       (run-simple-expectation!   ns test))))
 
 (defn run-test-and-yield-report! [ns {:keys [type op] :as test}]
   (case type
-    :effect      (run-effect!         test)
+    :effect      (run-effect!      ns test)
     :expectation (run-expectation! ns test)))
 
 (defn run [state level ns data]
