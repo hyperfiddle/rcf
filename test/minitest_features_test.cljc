@@ -1,5 +1,6 @@
 (ns minitest-features-test
-  {:minitest/config {:effects {:show-form   true
+  {:minitest/config {:error-depth 0
+                     :effects {:show-form   true
                                :show-result true}
                      :WHEN {:test-level {:block {:post-separator "\n\n"}}}}}
   (:require [minitest #?@(:clj  [:refer        [tests]]
@@ -58,7 +59,5 @@
   (println "wildcards are not supported...")
   (println "... as keys in maps")
   {:a 1} :=  {_ 1}
-  (ex-message *e) := "[Minitest] Can't use wildcards as keys in maps"
   (println "... as elements of sets")
-  #{1 2} := #{_ 2}
-  (println "... in effects"))
+  #{1 2} := #{_ 2})

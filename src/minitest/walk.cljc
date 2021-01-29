@@ -41,10 +41,10 @@
                          common-ms (map #(select-keys % common-ks) forms)
                          unique-ks (set/difference all-ks common-ks)
                          unique-ms (map #(select-keys % unique-ks) forms)]
-                     (->> (apply map-aligned (safe| f) common-ms)
-                          transpose
-                          seq (or [{}])
-                          (map #(concat %2 %1) unique-ms))))))
+                     (-> (apply map-aligned (safe| f) common-ms)
+                         transpose
+                         seq (or [{}])
+                         (->> (map #(concat %2 %1) unique-ms)))))))
 
 ;; TODO: handle records
 (defn comap [f & colls]

@@ -125,7 +125,7 @@
 ;; - [√] Clarify config names
 ;; - [ ] Config map init-fn
 ;; - [√] set-context!
-;; - [ ] namespaces as context
+;; - [√] namespaces as context
 
 (macros/deftime
   ;; TODO: too much
