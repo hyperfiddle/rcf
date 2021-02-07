@@ -40,6 +40,7 @@
                                          :refer-macros [currently-loading?]])]))
 
 (macros/deftime (disable-reload!))
+(macros/deftime (macros/case :clj (apply-clj-patches)))
 
 ; (defalias config       minitest.config/config)
 ; (defalias context      minitest.config/context)

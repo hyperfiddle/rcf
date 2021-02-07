@@ -43,7 +43,6 @@
                          unique-ms (map #(select-keys % unique-ks) forms)]
                      (-> (apply map-aligned (safe| f) common-ms)
                          transpose
-                         seq (or [{}])
                          (->> (map #(concat %2 %1) unique-ms)))))))
 
 ;; TODO: handle records

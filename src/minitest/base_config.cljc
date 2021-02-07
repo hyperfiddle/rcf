@@ -1,6 +1,9 @@
-(ns minitest.base-config)
+(ns minitest.base-config
+  (:require [minitest.utils #?@(:clj  [:refer        [at-runtime]]
+                                :cljs [:refer-macros [at-runtime]])]))
 
-(defn base-config []
+
+(def base-config
   "Any config you may provide to minitest will merge into this base
   configuration map.
 
@@ -24,26 +27,27 @@
                        :level       :suite
                        :for         [:success :failure :error]}
    :effects           {:show-form   false
-                       :show-result false}
+                       :show-result false
+                       :silent      false}
 
    :bindings {:WHEN {:test-level
-                     {:suite {:WHEN {:lang {:clj {#'*e [:AT-RUNTIME #(or *e nil)]
-                                                  #'*1 [:AT-RUNTIME #(or *1 nil)]
-                                                  #'*2 [:AT-RUNTIME #(or *2 nil)]
-                                                  #'*3 [:AT-RUNTIME #(or *3 nil)]
+                     {:suite {:WHEN {:lang {:clj {#'*e (at-runtime (or *e nil))
+                                                  #'*1 (at-runtime (or *1 nil))
+                                                  #'*2 (at-runtime (or *2 nil))
+                                                  #'*3 (at-runtime (or *3 nil))
                                                   }}}}
-                      :block {:WHEN {:lang {:clj {#'*e [:AT-RUNTIME #(or *e nil)]
-                                                  #'*1 [:AT-RUNTIME #(or *1 nil)]
-                                                  #'*2 [:AT-RUNTIME #(or *2 nil)]
-                                                  #'*3 [:AT-RUNTIME #(or *3 nil)]
+                      :block {:WHEN {:lang {:clj {#'*e (at-runtime (or *e nil))
+                                                  #'*1 (at-runtime (or *1 nil))
+                                                  #'*2 (at-runtime (or *2 nil))
+                                                  #'*3 (at-runtime (or *3 nil))
                                                   }}}}}}}
    ;; Executor opts
    :langs             [:clj]
 
-   :run-fn            [:AT-RUNTIME #(deref (resolve 'minitest.runner/run))]
+   :run-fn            (at-runtime (deref (resolve 'minitest.runner/run)))
    :execute-fn        ::not-set! ;; Set in function of the :lang context.
-   :report-fn         [:AT-RUNTIME #(deref (resolve 'minitest.reporter/report))]
-   :orchestrate-fn    [:AT-RUNTIME #(deref (resolve 'minitest.orchestrator/orchestrate))]
+   :report-fn         (at-runtime (deref (resolve 'minitest.reporter/report)))
+   :orchestrate-fn    (at-runtime (deref (resolve 'minitest.orchestrator/orchestrate)))
 
 
    :cljsbuild           {} ;; TODO: not in use
@@ -62,9 +66,8 @@
                    })
 
    :CTX  {:exec-mode      :on-eval    ;; #{:on-eval :on-load}
-          :env            :dev        ;; #{:production :lib :cli :ci :dev
-                                      ;;   :quiet-dev}
-          :js-env         :node
+          :env            :dev        ;; #{:production :lib :cli :ci :dev :quiet-dev}
+          :js-env         :node       ;; TODO
           :last-in-level  ::not-set!  ;; #{true false}
           :first-in-level ::not-set!  ;; #{true false}
           :test-level     ::not-set!  ;; #{:suite :ns :block :case}
@@ -77,8 +80,8 @@
                {:WHEN {:exec-mode {:on-load {:run-tests true}}}}]
            ;; reads as:
            ;; when       is    then         is
-           {:lang       {:clj  {:execute-fn [:AT-RUNTIME #(deref (resolve 'minitest.executor/execute-clj))]}
-                         :cljs {:execute-fn [:AT-RUNTIME #(deref (resolve 'minitest.executor/execute-cljs))]}}
+           {:lang       {:clj  {:execute-fn (at-runtime (deref (resolve 'minitest.executor/execute-clj)))}
+                         :cljs {:execute-fn (at-runtime (deref (resolve 'minitest.executor/execute-cljs)))}}
             :exec-mode  {:on-load     {:store-tests    true
                                        :run-tests      false}
                          :on-eval     {:store-tests    false

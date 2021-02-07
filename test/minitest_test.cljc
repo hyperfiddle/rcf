@@ -13,6 +13,7 @@
                                                  with-config with-context]]
                           :cljs  [:refer        [config context]
                                   :refer-macros [with-config with-context]])]
+            [minitest.utils       :refer        [->|]]
             ; [minitest-test-namespace]
             )
   #?(:clj  (:require [net.cgrand.macrovich :as macros])
@@ -83,63 +84,82 @@
        :unknown :initial))
 
 (deftest test-contextual-config
-  (testing "CFG -> WHEN -> CFG"
-    (test-config (fn [v]  {:enabled v
-                           :WHEN {:enabled {true  {:x true}
-                                            false {:x false}}}})
-                 (fn [_v] (config))))
-  (testing "with-config -> WHEN -> CFG"
-    (test-config (fn [_v] {:WHEN {:enabled {true  {:x true}
-                                            false {:x false}}}})
-                 (fn [v]  (with-config {:enabled v} (config)))))
-  (testing "CFG -> CTX>WHEN -> CFG"
-    (test-config (fn [v]  {:enabled v
-                           :CTX {:WHEN {:enabled {true  {:x true}
-                                                  false {:x false}}}}})
-                 (fn [_v] (config))))
-  (testing "CTX -> WHEN -> CFG"
-    (test-config (fn [v]  {:CTX  {:enabled v}
-                           :WHEN {:enabled {true  {:x true}
-                                            false {:x false}}}})
-                 (fn [_v] (config))))
-  (testing "CTX -> CTX>WHEN -> CFG"
-    (test-config (fn [v]  {:CTX {:enabled v
-                                 :WHEN    {:enabled {true  {:x true}
-                                                     false {:x false}}}}})
-                 (fn [_v] (config))))
-  (testing "with-context -> WHEN -> CFG"
-    (test-config (fn [_v] {:WHEN {:enabled {true  {:x true}
-                                            false {:x false}}}})
-                 (fn [v]  (with-context {:enabled v} (config)))))
-  (testing "with-context -> CTX>WHEN -> CFG"
-    (test-config (fn [_v] {:CTX {:WHEN    {:enabled {true  {:x true}
-                                                     false {:x false}}}}})
-                 (fn [v]  (with-context {:enabled v} (config)))))
-  (testing "with-context -> WHEN>WHEN -> CFG"
-    (let [f (fn [_v]
-              {:WHEN {:optA {true  {:WHEN {:optB {true  {:x true}
-                                                  false {:x false}}}}
-                             false {:x false}}}})]
-      (test-config f #(with-context {:optA true  :optB %}
-                        (config)))
-      (test-config f #(with-context {:optA %     :optB true}
-                        (config)))))
-  (testing "with-context -> CTX>WHEN -> WHEN -> CFG"
-    (test-config (fn [_v]
-                   {:CTX {:WHEN {:optA {true  {:optB true}
-                                        false {:optB false}}}}
-                    :WHEN {:optB {true  {:x true}
-                                  false {:x false}}}})
-                 #(with-context {:optA %}
-                    (config))))
-  ; (testing ""
-  ;   (test-config (fn [_v]
-  ;                  {:CTX {:enabled true
-  ;                         :WHEN {:enabled {true  {:x true}
-  ;                                          false {:x false}}}}})
-  ;                #(with-context {:enabled %}
-  ;                   (config))))
-  )
+  (testing "memoization"
+    (testing "doesn't leak"
+      (let [count-memo #(->> @minitest.config/config-memo
+                             (map (fn [[k v]] [k (count v)]))
+                             (into {}))
+            original-cnts (do (config) (count-memo))
+            new-cnts      (do (config) (count-memo))]
+        (is (= original-cnts new-cnts)))))
+  (testing "runtime computed values"
+    (let [calls (atom 0)]
+      (with-redefs [minitest.utils/map-func|
+                    (fn [f]
+                      (with-meta (->|  (fn [x] (swap! calls inc) x)  f)
+                        {:minitest/map-func true}))]
+        (require 'minitest.base-config :reload)
+        (require 'minitest.config      :reload)
+        (testing "are computed until the very last moment"
+          (is (= false (-> (config) :fail-fast)))
+          (is (= @calls 0))
+          (is (= minitest.runner/run (-> (config) :run-fn)))
+          (is (= @calls 1)))
+        (testing "can be burried under nested maps"
+          (with-context {:test-level :suite :lang :clj}
+            (binding [*1 :abc]
+              (is (= :abc (-> (config) :bindings (get #'*1))))
+              (is (= @calls 2))))))))
+  (testing "contextualisation"
+    (testing "CFG -> WHEN -> CFG"
+      (test-config (fn [v]  {:enabled v
+                             :WHEN {:enabled {true  {:x true}
+                                              false {:x false}}}})
+                   (fn [_v] (config))))
+    (testing "with-config -> WHEN -> CFG"
+      (test-config (fn [_v] {:WHEN {:enabled {true  {:x true}
+                                              false {:x false}}}})
+                   (fn [v]  (with-config {:enabled v} (config)))))
+    (testing "CFG -> CTX>WHEN -> CFG"
+      (test-config (fn [v]  {:enabled v
+                             :CTX {:WHEN {:enabled {true  {:x true}
+                                                    false {:x false}}}}})
+                   (fn [_v] (config))))
+    (testing "CTX -> WHEN -> CFG"
+      (test-config (fn [v]  {:CTX  {:enabled v}
+                             :WHEN {:enabled {true  {:x true}
+                                              false {:x false}}}})
+                   (fn [_v] (config))))
+    (testing "CTX -> CTX>WHEN -> CFG"
+      (test-config (fn [v]  {:CTX {:enabled v
+                                   :WHEN    {:enabled {true  {:x true}
+                                                       false {:x false}}}}})
+                   (fn [_v] (config))))
+    (testing "with-context -> WHEN -> CFG"
+      (test-config (fn [_v] {:WHEN {:enabled {true  {:x true}
+                                              false {:x false}}}})
+                   (fn [v]  (with-context {:enabled v} (config)))))
+    (testing "with-context -> CTX>WHEN -> CFG"
+      (test-config (fn [_v] {:CTX {:WHEN    {:enabled {true  {:x true}
+                                                       false {:x false}}}}})
+                   (fn [v]  (with-context {:enabled v} (config)))))
+    (testing "with-context -> WHEN>WHEN -> CFG"
+      (let [f (fn [_v]
+                {:WHEN {:optA {true  {:WHEN {:optB {true  {:x true}
+                                                    false {:x false}}}}
+                               false {:x false}}}})]
+        (test-config f #(with-context {:optA true  :optB %}
+                          (config)))
+        (test-config f #(with-context {:optA %     :optB true}
+                          (config)))))
+    (testing "with-context -> CTX>WHEN -> WHEN -> CFG"
+      (test-config (fn [_v]
+                     {:CTX {:WHEN {:optA {true  {:optB true}
+                                          false {:optB false}}}}
+                      :WHEN {:optB {true  {:x true}
+                                    false {:x false}}}})
+                   #(with-context {:optA %}
+                      (config))))))
 
 ; ; - [√] A "bug". We don't want to have to order the tests any differently
 ; ;       than the rest of the code; i.e. tests are run after the code has

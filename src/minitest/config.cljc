@@ -6,34 +6,49 @@
             [clojure.walk           :refer [prewalk postwalk]]
             [net.cgrand.macrovich   :as    macros]
             [minitest.base-config   :refer [base-config]]
-            [minitest.utils         :refer [call]])
+            [minitest.utils         :refer [call func-map filtered-map]])
   #?(:cljs (:require-macros
-             [minitest.config       :refer [file-config defaccessors]])))
+             [minitest.config       :refer [file-config defaccessors memo]])))
 
 ;; TODO: assert config keys.
 ;; TODO: config should be lazy
 
 (macros/deftime
+  ;; TODO: clarify where the config file should be
   (defn config-file []
     (let [f (io/file "./minitest.edn")]
       (or (when  (and (.exists f) (-> f slurp edn/read-string empty? not))
             f)
           (io/resource "minitest.edn"))))
 
+  ;; TODO: it does not eval/resolve symbols -> hence can't place function and
+  ;; other vars in file configs
   (defmacro ^:private file-config []
     ;; TODO: remove case and use cljs version for both
     (macros/case
       :clj  `(some-> (config-file) slurp edn/read-string)
       :cljs `(quote ~(some-> (config-file) slurp edn/read-string)))))
 
+(defonce config-memo (atom {}))
+
+(macros/deftime
+  (defmacro memo [ks vals & body]
+    `(let [full-path# (concat ~ks ~vals)
+           already#   (get-in @config-memo full-path# ::not-found)]
+       (if (= already# ::not-found)
+         (doto (do ~@body)
+               (->> (swap! config-memo assoc-in full-path#)))
+         already#))))
+
 ;; Taken from https://gist.github.com/danielpcox/c70a8aa2c36766200a95
 ;; TODO: acknowledge.
 (defn ^:no-doc deep-merge [& maps]
-  (apply merge-with (fn [& args]
-                      (if (every? #(or (map? %) (nil? %)) args)
-                        (apply deep-merge args)
-                        (last args)))
-         maps))
+  (memo [:deep-merge] maps
+        (reduce (partial merge-with (fn [x y]
+                                      (if (every? #(or (map? %) (nil? %)) [x y])
+                                        (deep-merge x y)
+                                        y)))
+                maps)))
 
 (def ^:dynamic *early-config*  (file-config))
 (def ^:dynamic *late-config*   nil)
@@ -96,41 +111,35 @@
                                    (~'clojure.core/unquote-splicing
                                      ~'body#))))))))))
 
-(defn at-runtime?    [coll] (-> coll flatten first (= :AT-RUNTIME)))
-(defn get-at-runtime [coll] (-> coll second call))
-
 (defn- parse-WHEN-val [m x]
   (condp call x
     map?        x
     sequential? (->> (map (partial parse-WHEN-val m) x)
-                     (apply deep-merge))
+                     (reduce deep-merge))
     (do         (some-> m :WHEN (get x) (->> (parse-WHEN-val m))))))
 
 (defn- when-map? [x]
   (and (map? x) (contains? x :WHEN)))
 
 (defn contextualize [m ctx]
-  (->> m
-       (prewalk
-         (fn [form]
-           (if (at-runtime? form)
-             (get-at-runtime form)
-             form)))
-       (postwalk
-         (fn [form]
-           (if-not (when-map? form)
-             form
-             (let [when-map   (:WHEN form)
-                   active-ctx (deep-merge (:CTX form)
-                                          (select-keys ctx (keys when-map)))
-                   ms         (map #(parse-WHEN-val form (get-in when-map %))
-                                   active-ctx)
-                   new-form   (apply deep-merge form ms)]
-               ;; Since a when-map can bring in another one, contextualize
-               ;, again until fix point is reached
-               (if (= form new-form)
-                 new-form
-                 (contextualize new-form ctx))))))))
+  (memo
+    [:contextualize] [m ctx]
+    (->> m
+         (postwalk
+           (fn [form]
+             (if-not (when-map? form)
+               form
+               (let [when-map   (:WHEN form)
+                     active-ctx (deep-merge (:CTX form)
+                                            (select-keys ctx (keys when-map)))
+                     ms         (map #(parse-WHEN-val form (get-in when-map %))
+                                     active-ctx)
+                     new-form   (reduce deep-merge (cons form ms))]
+                 ;; Since a when-map can bring in another one, contextualize
+                 ;, again until fix point is reached
+                 (if (= form new-form)
+                   new-form
+                   (contextualize new-form ctx)))))))))
 
 (defaccessors default-config *early-config*)
 (defaccessors config         *late-config*  :getter false)
@@ -140,20 +149,22 @@
 
 (declare config)
 (defn context [& [ctx default-ctx]]
-  (deep-merge (or default-ctx (:CTX (config)))
-              *context*
-              ctx))
+  (reduce deep-merge [(or default-ctx (:CTX (config :finalize false)))
+                      *context*
+                      ctx]))
 
-(defn  config [& [conf]]
-  (let [srcs     [(base-config) *early-config* (ns-config) conf *late-config*]
-        merged   (apply deep-merge srcs)
+(defn  config [& {:keys [finalize] :or {finalize true}}]
+  (let [srcs     [base-config *early-config* (ns-config) *late-config*]
+        merged   (reduce deep-merge srcs)
         base-ctx (as-> (:CTX merged {}) $
                    (contextualize $ $))
-        ctx      (context nil (deep-merge merged base-ctx))]
-    (->> (concat srcs [ctx])
-         (map #(contextualize % ctx))
-         (apply deep-merge)
-         (postwalk #(if (when-map? %)
-                      (dissoc % :CTX :WHEN)
-                      %)))))
+        ctx      (context nil (deep-merge merged base-ctx))
+        result   (->> (concat srcs [ctx])
+                      (map #(contextualize % ctx))
+                      (reduce deep-merge))]
+    (if finalize
+      (-> result
+          (filtered-map [:CTX :WHEN])
+          (func-map))
+      result)))
 

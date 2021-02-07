@@ -86,7 +86,7 @@
 
 (defn install-config-bindings| [f]
   (fn [s l n d]
-    (let [bindings-map (-> (config) :bindings (dissoc :WHEN))]
+    (let [bindings-map (-> (config) :bindings)]
       (if (seq bindings-map)
         (with-bindings* bindings-map #(f s l n d))
         (f s l n d)))))
@@ -106,6 +106,4 @@
    (run-execute-report! level nil ns->tsts))
   ([level ns data]
    (let [orchestrate-fn (-> (config) :orchestrate-fn)]
-     ; (println orchestrate-fn)
-     ; (clojure.pprint/pprint (config))
      (ensuring-testing-state (orchestrate-fn *testing-state* level ns data)))))
