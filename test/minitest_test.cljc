@@ -76,8 +76,7 @@
 
 (defn test-config [build-config read-config]
   (are [v x] (with-redefs [minitest.base-config/base-config
-                           #(do (merge {:x :initial}
-                                       (build-config v)))]
+                           (merge {:x :initial} (build-config v))]
                (= x (-> (read-config v) :x)))
        true     true
        false    false
