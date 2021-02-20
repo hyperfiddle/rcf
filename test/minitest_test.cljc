@@ -93,7 +93,7 @@
         (is (= original-cnts new-cnts)))))
   (testing "runtime computed values"
     (let [calls (atom 0)]
-      (with-redefs [minitest.utils/map-func|
+      (with-redefs [minitest.custom-map/map-func|
                     (fn [f]
                       (with-meta (->|  (fn [x] (swap! calls inc) x)  f)
                         {:minitest/map-func true}))]

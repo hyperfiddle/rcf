@@ -1,6 +1,6 @@
 (ns minitest.base-config
-  (:require [minitest.utils #?@(:clj  [:refer        [at-runtime]]
-                                :cljs [:refer-macros [at-runtime]])]))
+  (:require [minitest.custom-map #?@(:clj  [:refer        [at-runtime]]
+                                     :cljs [:refer-macros [at-runtime]])]))
 
 
 (def base-config
@@ -19,10 +19,14 @@
    :error-depth       12
    :silent            false
    :dots              false
+
    :report            {:enabled     true
-                       :level       :block}
-   :explanation       {:enabled     true
-                       :level       :block}
+                       :WHEN {:status {:success {:level :suite}
+                                       :failure {:level :ns}
+                                       :error   {:level :case}}}}
+   :explain           {:enabled     false
+                       :level       :ns
+                       :WHEN {:status {:success {:level :case}}}}
    :stats             {:enabled     true
                        :level       :suite
                        :for         [:success :failure :error]}
@@ -65,15 +69,17 @@
                    ;   :nashorn       'cljs.server.nashorn/prepl}}
                    })
 
-   :CTX  {:exec-mode      :on-eval    ;; #{:on-eval :on-load}
-          :env            :dev        ;; #{:production :lib :cli :ci :dev :quiet-dev}
-          :js-env         :node       ;; TODO
-          :last-in-level  ::not-set!  ;; #{true false}
-          :first-in-level ::not-set!  ;; #{true false}
-          :test-level     ::not-set!  ;; #{:suite :ns :block :case}
-          :status         ::not-set!  ;; #{:success :failure :error}
-          :refreshing     false       ;; #{true false}
-          :location       ::not-set!} ;; #{:expectation :effect}
+   :CTX  {:exec-mode      :on-eval            ;; #{:on-eval :on-load}
+          :env            :dev                ;; #{:production :lib :cli :ci
+                                              ;;   :dev :quiet-dev}
+          :js-env         :node               ;; TODO
+          :last-in-level  :minitest/not-set!  ;; #{true false}
+          :first-in-level :minitest/not-set!  ;; #{true false}
+          :test-level     :minitest/not-set!  ;; #{:suite :ns :block :case}
+          :test-position  :minitest/not-set!  ;; #{:before :after :do}
+          :status         :minitest/not-set!  ;; #{:success :failure :error}
+          :refreshing     false               ;; #{true false}
+          :location       :minitest/not-set!} ;; #{:expectation :effect}
    :WHEN (let [silent-success
                {:WHEN {:status    {:success {:silent    true}}}}
                run-on-load
@@ -92,15 +98,15 @@
                          :ci          [:cli]
                          :dev         run-on-load
                          :quiet-dev   [:dev, silent-success]}
-            :status     {:success     {:logo           "✅"
+            :status     {:success     {:logo                  "✅"
                                        :WHEN {:location
                                               {:effect {:logo "[Effect] "}}}}
-                         :failure     {:logo           "❌"}
-                         :error       {:logo           "🔥"
+                         :failure     {:logo                  "❌"}
+                         :error       {:logo                  "🔥"
                                        :WHEN {:location
                                               {:effect {:logo "😱[Effect] "}}}}}
-            :test-level {:ns          {:post-separator "\n"}
-                         :block       {:post-separator "\n"}
-                         :stats       {:separator      "  "
-                                       :WHEN {:dots {true {:separator ""}}}
-                                       :post-separator "\n"}}})})
+            :test-level {:ns          {:WHEN {:position {:after {:separator "\n"}}}}
+                         :block       {:WHEN {:position {:after {:separator "\n"}}}}
+                         :stats       {:WHEN {:position {:before {:separator "  "
+                                                                  :WHEN {:dots {true {:separator ""}}}}
+                                                         :after {:separator "\n"}}}}}})})

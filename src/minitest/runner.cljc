@@ -32,12 +32,14 @@
   x)
 
 (defn- run-effect! [ns {:keys [thunk form] :as test}]
+  (assert (-> test :run not))
   (let [result (managing-exs (!1-2-3 (call thunk)))]
     (merge
       {:type     :effect
        :ns       ns
        :form     form
-       :location :effect}
+       :location :effect
+       :run      true}
       (if (managed-ex? result)
         {:status :error
          :error  (ex result)}
@@ -55,6 +57,7 @@
 
 
 (defn- run-simple-expectation! [ns test]
+  (assert (-> test :run not))
   (let
     [testedv   (delay (managing-exs (!1-2-3 (-> test :tested   :thunk call))))
      expectedv (delay (managing-exs         (-> test :expected :thunk call)))]
@@ -65,7 +68,8 @@
        :tested (merge {:form (-> test :tested :form)}
                       (when-not (managed-ex? @testedv)
                         {:val @testedv}))
-       :location :expectation}
+       :location :expectation
+       :run      :true}
       (when (= (:op test) :=)
         {:expected (merge {:form (-> test :expected :form)}
                           (when-not (managed-ex? @expectedv)
@@ -87,7 +91,7 @@
   (and (= (:op test) :=)
        (let [expectedv (managing-exs (-> test :expected :thunk call))]
          (if (managed-ex? expectedv)
-           [expectedv expectedv]
+           [expectedv false]
            [expectedv (and (coll? expectedv)
                         (->> (tree-seq coll? identity expectedv)
                              (remove coll?)
@@ -126,11 +130,12 @@
         (assoc-in [:tested :val] testedv))))
 
 (defn run-expectation! [ns test]
-  (let [[expectedv wildcard?] (wildcard-expectation? test)]
-    (if wildcard?
-      (run-wildcard-expectation! ns (assoc-in test [:expected :thunk]
-                                              (fn [] expectedv)))
-      (run-simple-expectation!   ns test))))
+  (let [[expectedv wildcard?] (wildcard-expectation? test)
+        run                   (if wildcard?
+                                run-wildcard-expectation!
+                                run-simple-expectation!)]
+    (run ns (assoc-in test [:expected :thunk]
+                      (fn [] expectedv)))))
 
 (defn run-test-and-yield-report! [ns {:keys [type op] :as test}]
   (case type

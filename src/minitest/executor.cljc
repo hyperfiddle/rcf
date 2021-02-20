@@ -14,7 +14,7 @@
 
 (def execute-clj
   (on-level| [:do :case] (fn [state position level ns data]
-                     (run-test-and-yield-report! ns data))))
+                           (run-test-and-yield-report! ns data))))
 
 (macros/deftime
   (defn- start-testing-repl! []

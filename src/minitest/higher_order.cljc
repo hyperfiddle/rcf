@@ -37,12 +37,24 @@
   (defmacro anaph| [f]
     `(fn
        ([      ~'&state             ~'&level ~'&ns ~'&data]
-        (~f    ~'&state             ~'&level ~'&ns ~'&data))
+        (let           [~'&position nil]
+          (~f  ~'&state             ~'&level ~'&ns ~'&data)))
        ([      ~'&state ~'&position ~'&level ~'&ns ~'&data]
         (~f    ~'&state ~'&position ~'&level ~'&ns ~'&data))))
 
-  (defmacro outside-in->> [& forms]
-    `(->> ~@(reverse forms))))
+  (defmacro anafn [& body]
+    `(fn
+       ([      ~'&state             ~'&level ~'&ns ~'&data]
+        (let     [~'&position nil]
+          ~@body))
+       ([      ~'&state ~'&position ~'&level ~'&ns ~'&data]
+        ~@body)))
+
+  (defn     apply|        [f]      #(apply f %))
+  (defmacro when|         [expr f] `(anaph| #(if ~expr (apply ~f %&) ~'&data)))
+  (defmacro with-config|  [ctx  f] `(anaph| #(with-config  ~ctx (apply ~f %&))))
+  (defmacro with-context| [ctx  f] `(anaph| #(with-context ~ctx (apply ~f %&))))
+  (defmacro outside-in->> [& frms] `(->> ~@(reverse frms))))
 
 ;; For cljs
 (declare on-level|)
@@ -51,19 +63,17 @@
 
 (def-on-fn on-level|   position-level (cond
                                         (set? position-level)
-                                        (position-level [&position &level])
+                                        ( position-level [&position &level])
                                         (fn? position-level)
-                                        (position-level &state &position &level
-                                                        &ns &data)
+                                        ( position-level &state &position &level
+                                                         &ns &data)
                                         :else
-                                        (= position-level [&position &level])))
+                                        ( or (= position-level [&position &level])
+                                             (= position-level &position))))
 (def-on-fn on-context| expected-ctx   (= expected-ctx
                                          (select-keys (context)
                                                       (keys expected-ctx))))
 (def-on-fn on-config|  expected-cfg   (= expected-cfg
                                          (select-keys (config)
                                                       (keys expected-cfg))))
-
-(defmacro with-config|  [ctx f] `(anaph| #(with-config  ~ctx (apply ~f %&))))
-(defmacro with-context| [ctx f] `(anaph| #(with-context ~ctx (apply ~f %&))))
 

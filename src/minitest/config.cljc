@@ -6,7 +6,8 @@
             [clojure.walk           :refer [prewalk postwalk]]
             [net.cgrand.macrovich   :as    macros]
             [minitest.base-config   :refer [base-config]]
-            [minitest.utils         :refer [call func-map filtered-map]])
+            [minitest.utils         :refer [call dissoc-in]]
+            [minitest.custom-map    :refer [func-map filtered-map]])
   #?(:cljs (:require-macros
              [minitest.config       :refer [file-config defaccessors memo]])))
 
@@ -54,18 +55,6 @@
 (def ^:dynamic *late-config*   nil)
 (def ^:dynamic *context*       nil)
 
-
-;; Taken from https://stackoverflow.com/questions/14488150/how-to-write-a-dissoc-in-command-for-clojure
-(defn- dissoc-in [m [k & ks :as keys]]
-  (if ks
-    (if-let [nextmap (get m k)]
-      (let [newmap (dissoc-in nextmap ks)]
-        (if (seq newmap)
-          (assoc m k newmap)
-          (dissoc m k)))
-      m)
-    (dissoc m k)))
-
 (macros/deftime
   (defmacro ^:private defaccessors
     [name var-name & {:keys [getter setter clearer binder unbinder]
@@ -111,6 +100,10 @@
                                    (~'clojure.core/unquote-splicing
                                      ~'body#))))))))))
 
+(defaccessors default-config *early-config*)
+(defaccessors config         *late-config*  :getter false)
+(defaccessors context        *context*      :getter false)
+
 (defn- parse-WHEN-val [m x]
   (condp call x
     map?        x
@@ -141,25 +134,20 @@
                    new-form
                    (contextualize new-form ctx)))))))))
 
-(defaccessors default-config *early-config*)
-(defaccessors config         *late-config*  :getter false)
-(defaccessors context        *context*      :getter false)
-
 (defn- ns-config [] (some-> *context* :ns find-ns meta :minitest/config))
 
 (declare config)
-(defn context [& [ctx default-ctx]]
-  (reduce deep-merge [(or default-ctx (:CTX (config :finalize false)))
-                      *context*
-                      ctx]))
+(defn context [& [default-ctx]]
+  (deep-merge (or default-ctx (:CTX (config :finalize false)))
+              *context*))
 
 (defn  config [& {:keys [finalize] :or {finalize true}}]
   (let [srcs     [base-config *early-config* (ns-config) *late-config*]
         merged   (reduce deep-merge srcs)
         base-ctx (as-> (:CTX merged {}) $
                    (contextualize $ $))
-        ctx      (context nil (deep-merge merged base-ctx))
-        result   (->> (concat srcs [ctx])
+        ctx      (context (deep-merge merged base-ctx))
+        result   (->> (concat srcs [base-ctx])
                       (map #(contextualize % ctx))
                       (reduce deep-merge))]
     (if finalize

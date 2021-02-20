@@ -9,6 +9,7 @@
                                                      with-config]]
                                :cljs [:refer        [config]
                                       :refer-macros [with-config]])]
+    [minitest.utils                   :refer        [->|]]
   #?(:cljs [minitest.with-bindings    :refer        [with-bindings*]]))
   #?(:cljs
       (:require-macros
@@ -54,35 +55,38 @@
                 [l# (do ~@body)])))
           (into {}))))
 
+(defn handling-case-config| [fetch f]
+  (fn [s l n d]
+    (if (= l :case)
+      (with-config (fetch d)
+        (f s l n d))
+      (f s l n d))))
+
 (defn orchestrate-level [state level ns data
                          & {:keys [handle-before handle-after]}]
   (let-testing-fns (config)
-    (let [handle-before (or handle-before (fn [s l n d]
-                                            (&report  s :before l n d)
-                                            (&execute s :before l n d)))
-          handle-after  (or handle-after  (fn [s l n d]
-                                            (&execute s :after l n d)
-                                            (&report  s :after l n d)))]
+    (let [handle-before (with-context|
+                          {:position :before}
+                          (handling-case-config|
+                            (->| :form meta)
+                            (or handle-before (fn [s l n d]
+                                                (&report  s :before l n d)
+                                                (&execute s :before l n d)))))
+          handle-after  (with-context|
+                          {:position :after
+                           :location   (if (= &level :case)
+                                         (:location &data) :minitest/not-set!)
+                           :status     (if (= &level :case)
+                                         (:status   &data) :minitest/not-set!)}
+                          (handling-case-config|
+                            (->| meta :minitest/config
+                                 (partial merge (-> data :form meta)))
+                            (or handle-after  (fn [s l n d]
+                                                (&execute s :after l n d)
+                                                (&report  s :after l n d)))))]
       (handle-before       state level ns data)
       (let [rpt-data (&run state level ns data)]
         (handle-after      state level ns rpt-data)))))
-
-(defn handling-fail-fast| [f] (fn [s l n d]
-                                (if-not (= l :case)
-                                 (f s l n d)
-                                 (orchestrate-level
-                                   s l n d
-                                   :handle-after
-                                   (fn [s l n d]
-                                     (let [conf (config)]
-                                       (let-testing-fns conf
-                                         (if (and (:fail-fast conf)
-                                                  (some-> d :status
-                                                          #{:error :failure}))
-                                           (fail-fast! s n d)
-                                           (do
-                                             (&execute s :after l n d)
-                                             (&report  s :after l n d))))))))))
 
 (defn install-config-bindings| [f]
   (fn [s l n d]
@@ -91,15 +95,31 @@
         (with-bindings* bindings-map #(f s l n d))
         (f s l n d)))))
 
+(defn handling-fail-fast| [f]
+  (fn [s l n d]
+    (if-not (= l :case)
+      (f s l n d)
+      (orchestrate-level
+        s l n d
+        :handle-after
+        (fn [s l n d]
+          (let [conf (config)]
+            (let-testing-fns conf
+              (if (and (:fail-fast conf)
+                       (some-> d :status #{:error :failure}))
+                (fail-fast! s n d)
+                (do (&execute s :after l n d)
+                    (&report  s :after l n d))))))))))
 
 (def orchestrate
-  (outside-in->> (with-context| {:test-level &level
-                                 :ns         &ns
-                                 :lang       (macros/case
-                                               :clj :clj  :cljs :cljs)})
-                 install-config-bindings|
-                 handling-fail-fast|
-                 orchestrate-level))
+  (outside-in->>
+    (with-context|
+      {:test-level &level
+       :ns         &ns
+       :lang       (macros/case  :clj :clj  :cljs :cljs)})
+    install-config-bindings|
+    handling-fail-fast|
+    orchestrate-level))
 
 (defn ^:no-doc run-execute-report!
   ([level ns->tsts]
