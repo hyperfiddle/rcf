@@ -5,17 +5,21 @@
             [minitest.higher-order #?@(:clj  [:refer        [on-level|
                                                              on-config|
                                                              apply|
+                                                             chain|
                                                              outside-in->>
                                                              anafn
                                                              anaph|
-                                                             when|]]
+                                                             when|
+                                                             with-context|]]
                                        :cljs [:refer        [on-level|
                                                              on-config|
-                                                             apply|]
+                                                             apply|
+                                                             chain|]
                                               :refer-macros [outside-in->>
                                                              anafn
                                                              anaph|
-                                                             when|]])]
+                                                             when|
+                                                             with-context|]])]
             [minitest.config       #?@(:clj  [:refer        [config context
                                                              with-context
                                                              with-config]]
@@ -100,7 +104,7 @@
                 (map (partial map-data pred :block)))
     :block (map pred data)))
 
-(def actions [:report])
+(def actions [:report :explain])
 
 (def befores (atom {}))
 
@@ -114,11 +118,11 @@
         (print sep)))
 
     (let [new-data (f state position level ns data)
-          sep      (and (= position :after)
-                        (or (= level :case)
-                            (not= (-> befores deref level peek)
-                                  (map-data :reported level data)))
-                        (-> (config) :separator))]
+          sep      (when (and (= position :after)
+                              (or (= level :case)
+                                  (not= (-> befores deref level peek)
+                                        (map-data :reported level data))))
+                     (-> (config) :separator))]
       (try (do (when sep  (print sep))
                new-data)
         (finally
@@ -240,10 +244,11 @@
     (-> (f s p l n d)
         (assoc k true))))
 
+(defn report-via| [pos]
+  (fn [s _ l n d]  ((:report-fn (config)) s pos l n d)))
+
 (def base-report
-  (let [report-via|    (fn [pos]
-                         (fn [s _ l n d]  ((:report-fn (config)) s pos l n d)))
-        do|            (fn [action]
+  (let [do|            (fn [action]
                          (let [actioned (keyword (str (name action) "ed"))]
                            (anaph|
                              (->| (when| (and (-> (config) action :enabled)
@@ -274,56 +279,84 @@
 
 (def ^:dynamic *reporting-level* {})
 
+(defn stop-when-not-at-level| [f]
+  (anaph|
+    (fn [& args]
+      (if-let
+        [disabled-actions
+         (and (= [&position &level] [:do :case])
+              (let [conf (config)]
+                (seq (filter
+                       #(or (not (-> conf % :enabled))
+                            (not (contains?
+                                   (set [:case (*reporting-level* %)])
+                                   (-> conf % :level))))
+                       actions))))]
+        (with-config (->> (for [a disabled-actions]
+                            [a {:enabled false}])
+                          (into {}))
+          (apply f args))
+        (apply f args)))))
+
+(defn mark-for-later| [f]
+  (outside-in->>
+    (on-level| [:do :case]
+      (anafn
+        (reduce (fn [d action]
+                  (let [conf           (config)
+                        action-level   (-> conf action :level)
+                        action-enabled (-> conf action :enabled)]
+                    (if (and (not= action-level :case)
+                             action-enabled
+                             (empty? *reporting-level*))
+                      (do (swap! &state assoc-in
+                                 [:later-at-level action action-level]
+                                 true)
+                          (assoc-in d [:later-at-level action action-level]
+                                    true))
+                      d)))
+                &data
+                actions)))
+    f))
+
+(defn handle-at-level| [f]
+  (outside-in->>
+    (on-level| (anafn (and (= &position :after) (not= &level :case)))
+      (anafn
+        (let [levels (-> &state deref :later-at-level)]
+          (if (some #(-> levels % &level) actions)
+            (do
+              (doseq [action actions]
+                (when (-> levels action &level)
+                  (swap! &state dissoc-in [:later-at-level action &level])))
+              (binding [*reporting-level* (reduce #(if (-> levels %2 &level)
+                                                     (assoc %1 %2 &level)
+                                                     %1)
+                                                  *reporting-level*
+                                                  actions)]
+                (with-config {:execute-fn do-nothing}
+                  ((-> (config) :run-fn)  &state &level &ns &data))))
+            &data))))
+    f))
+
+(defn reprint-report-with-explanation| [f]
+  (outside-in->>
+    (on-level| [:explain :case]
+      (when| (and (seq *reporting-level*)
+                  (not= (or (-> &data :later-at-level :report)  :case)
+                        (or (-> &data :later-at-level :explain) :case)))
+        (with-context| {:report {:enabled true}}
+          (chain| (anafn (dissoc &data :reported))
+                  (report-via| :report)))))
+    f))
+
 (defn handling-reports-at-level| [f]
-  (let [mark-for-later|
-        (partial
-          on-level| [:do :case]
-          (anafn
-            (reduce (fn [d action]
-                      (let [action-level (-> (config) action :level)]
-                        (if (and (not= action-level :case)
-                                 (empty? *reporting-level*))
-                          (do (swap! &state assoc-in
-                                     [:later-at-level action action-level]
-                                     true)
-                              (assoc-in d [:later-at-level action action-level]
-                                        true))
-                          d)))
-                    &data
-                    actions)))
-
-        handle-at-level|
-        (partial
-          on-level| (anafn (and (= &position :after) (not= &level :case)))
-          (anafn
-            (let [levels (-> &state deref :later-at-level)]
-              (if (some #(-> levels % &level) actions)
-                (do
-                  (doseq [action actions]
-                    (when (-> levels action &level)
-                      (swap! &state dissoc-in [:later-at-level action &level])))
-                  (binding [*reporting-level* (reduce #(if (-> levels %2 &level)
-                                                         (assoc %1 %2 &level)
-                                                         %1)
-                                                      *reporting-level*
-                                                      actions)]
-                    (with-config {:execute-fn do-nothing}
-                      ((-> (config) :run-fn)  &state &level &ns &data))))
-                &data))))
-
-        stop-when-not-at-level|
-        (partial
-          stop-when|
-          (anafn (and (= [&position &level] [:do :case])
-                      (every?
-                        #(not (contains? (set [:case (*reporting-level* %)])
-                                         (-> (config) % :level)))
-                        actions))))]
-    (outside-in->>
-      mark-for-later|
-      stop-when-not-at-level|
-      handle-at-level|
-      f)))
+  (outside-in->>
+    mark-for-later|
+    stop-when-not-at-level|
+    handle-at-level|
+    reprint-report-with-explanation|
+    f))
 
 ;; --- SILENT MODE
 (defn handling-silent-mode| [f]
@@ -347,23 +380,20 @@
 
 (defn display-stats [state position level ns data]
   (with-context {:test-level :stats}
-    (let [conf   (config)
-          counts (:counts @state)
-          ks     (keep (-> counts keys set) (-> conf :stats :for))];; keep order
-      (when-let [sep (-> conf :separator)]      (print sep))
+    (let [counts (:counts @state)
+          ks     (keep (-> counts keys set)
+                       (-> (config) :stats :for))] ;; preserve order
+      (when-let [sep (with-context {:position :before} (-> (config) :separator))]
+        (print sep))
       (doseq [k ks
               :let [cnt   (get counts k 0)
                     last? (= k (last ks))]
               :when (> cnt 0)]
         (print (str  cnt  " "  (pluralize (name k) cnt)  (if last? "." ", "))))
-      (when-let [sep (-> conf :post-separator)] (print sep))
+      (when-let [sep (with-context {:position :after} (-> (config) :separator))]
+        (print sep))
       (swap! state dissoc :counts)))
   data)
-
-(defn chain| [f g]
-  (fn [& args]
-    (let [result (apply f args)]
-      (apply g (concat (butlast args) [result])))))
 
 (defn handling-stats-at-stats-level| [f]
   (outside-in->>
@@ -371,7 +401,7 @@
       (when| (and (-> (config) :stats :enabled)
                   (not (-> &data :stats-counted)))
         (marking-as| :stats-counted
-                     increment-stats)))
+          increment-stats)))
     (chain| f
             (on-level|
               (anafn (and (-> (config) :stats :enabled)

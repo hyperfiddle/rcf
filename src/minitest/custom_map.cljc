@@ -1,6 +1,8 @@
 (ns minitest.custom-map
-  (:require [net.cgrand.macrovich :as    macros]
-            [minitest.utils       :refer [slice]]))
+  (:require [net.cgrand.macrovich           :as    macros]
+            [minitest.utils                 :refer [slice]])
+  #?(:cljs
+      (:require-macros [minitest.custom-map :refer [mcall]])))
 
 (declare empty* get* assoc* dissoc* keys* with-meta* meta*)
 

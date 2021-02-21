@@ -24,9 +24,11 @@
                        :WHEN {:status {:success {:level :suite}
                                        :failure {:level :ns}
                                        :error   {:level :case}}}}
-   :explain           {:enabled     false
-                       :level       :ns
-                       :WHEN {:status {:success {:level :case}}}}
+   :explain           {:enabled     true
+                       :level       :suite
+                       :WHEN {:status {:success {:level :suite}
+                                       :failure {:level :ns}
+                                       :error   {:level :case}}}}
    :stats             {:enabled     true
                        :level       :suite
                        :for         [:success :failure :error]}

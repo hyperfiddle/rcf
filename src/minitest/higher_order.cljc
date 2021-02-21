@@ -50,11 +50,18 @@
        ([      ~'&state ~'&position ~'&level ~'&ns ~'&data]
         ~@body)))
 
-  (defn     apply|        [f]      #(apply f %))
   (defmacro when|         [expr f] `(anaph| #(if ~expr (apply ~f %&) ~'&data)))
   (defmacro with-config|  [ctx  f] `(anaph| #(with-config  ~ctx (apply ~f %&))))
   (defmacro with-context| [ctx  f] `(anaph| #(with-context ~ctx (apply ~f %&))))
   (defmacro outside-in->> [& frms] `(->> ~@(reverse frms))))
+
+(defn apply| [f]
+  #(apply f %))
+
+(defn chain| [f g]
+  (fn [& args]
+    (let [result (apply f args)]
+      (apply g (concat (butlast args) [result])))))
 
 ;; For cljs
 (declare on-level|)

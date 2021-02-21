@@ -183,16 +183,19 @@
 
   (defmacro tests [& body]
     (when-not (-> (config/config) :elide-tests)
-      `(config/with-context {:exec-mode
-                             (if (currently-loading?) :on-load :on-eval)}
+      `(config/with-context {:exec-mode (if (currently-loading?)
+                                          :on-load :on-eval)}
          (let [c#     (config/config)
                ns#    (current-ns-name)
                block# ~(parse-tests body)]
            (if (currently-loading?)
              (when (or (:store-tests c#)
                        (:run-tests   c#)) (process-after-load! ns# [block#]))
-             (when     (:run-tests   c#)  (run-execute-report! :block
-                                                               ns#  block#))))
+             (config/with-config {:report    {:level   :case}
+                                  :explain   {:level   :case}
+                                  :stats     {:enabled false}}
+               (when   (:run-tests   c#)  (run-execute-report! :block
+                                                               ns#  block#)))))
          nil))))
 
 (defn- config-kw? [x]

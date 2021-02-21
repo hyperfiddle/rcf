@@ -1,9 +1,7 @@
 (ns minitest.utils
   (:require [net.cgrand.macrovich        :as    macros]
             [clojure.walk                :refer [postwalk]]
-            [camel-snake-kebab.core      :refer [->kebab-case]])
- #?(:cljs
-     (:require-macros [minitest.utils :refer [mcall]])))
+            [camel-snake-kebab.core      :refer [->kebab-case]]))
 
 (def ->|               #(apply comp (reverse %&)))
 (def call              #(apply %1 %&))
