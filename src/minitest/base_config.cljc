@@ -42,7 +42,7 @@
                        :show-result false
                        :silent      false}
    :announce-fn       (at-runtime (deref (resolve 'minitest.higher-order/do-nothing)))
-   :announce-nb-tests true
+   :announce-nb-tests false ;; TODO
 
    :bindings {:WHEN {:test-level
                      {:suite {:WHEN {:lang {:clj {#'*e (at-runtime (or *e nil))
@@ -110,8 +110,7 @@
                          :dev         run-on-load
                          :quiet-dev   [:dev, silent-success]}
             :status     {:success     {:logo                  "✅"
-                                       :WHEN {:location
-                                              {:effect {:logo "[Effect] "}}}}
+                                       :WHEN {:location {:effect {:logo "[Effect] "}}}}
                          :failure     {:logo                  "❌"}
                          :error       {:logo                  "🔥"
                                        :WHEN {:location
@@ -126,7 +125,7 @@
                                                                  :WHEN {:dots {true {:WHEN {:report-level {:case {:separator "|"
                                                                                                                   :WHEN {:last-in-level {true {:separator "\n"}}}}}}}}}}}}}
                          ;; TODO: fix bug in minitest.reporter/separate-levels|
-                         :case        {:WHEN {:position {:after {:WHEN {:dots {true {:WHEN {:report-level {:suite {:separator "\n"
-                                                                                                                   :WHEN {:test-level {:case {:separator false}}}}}}}}}}}}}
+                         ; :case        {:WHEN {:position {:after {:WHEN {:dots {true {:WHEN {:report-level {:suite {:separator "\n"
+                         ;                                                                                           :WHEN {:test-level {:case {:separator false}}}}}}}}}}}}}
                          :stats       {:WHEN {:position {:before {:separator "   "}
                                                          :after {:separator "\n"}}}}}})})

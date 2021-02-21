@@ -99,6 +99,17 @@
     (binding [*out* (-> (config) :out)]
       (f state position level ns data))))
 
+(defn filter-data [pred level data]
+  (case level
+    :suite (->> data
+                (map (fn [[k v]]  [k (filter-data pred :ns v)]))
+                (filter (->| second seq))
+                (into {}))
+    :ns    (->> data
+                (filter (partial filter-data pred :block))
+                (filter seq))
+    :block (filter pred data)))
+
 (defn map-data [pred level data]
   (case level
     :suite (->> data
@@ -185,6 +196,9 @@
       (and (-> data :type   (= :effect))
            (-> data :status (= :error)))))
 
+(defn bold [s]
+  (str "\033[1m" s "\033[0m"))
+
 (defn explain-case [state position level ns data]
   (if (not (explainable? data))
     data
@@ -209,7 +223,7 @@
                                 (-> data :tested :val pprint-str))
                        left-n (count
                                 (str logo " " (pprint-str left)))
-                       prompt (str "Actual: ")
+                       prompt (str (bold "   Actual: "))
                        s      (str prompt v)]
                    (if-not (ugly? s)
                      (print s)
@@ -304,7 +318,7 @@
   (outside-in->>
     (on-level| (anafn (and (= &position :after) (not= &level :case)))
       (anafn
-        (let [levels (-> &state deref :later-at-level)]
+        (let [levels      (-> &state deref :later-at-level)]
           (if (some #(-> levels % &level) actions)
             (do
               (doseq [action actions]
@@ -317,7 +331,20 @@
                                                   actions)]
                 (with-context {:report-level &level}
                   (with-config {:execute-fn do-nothing}
-                    ((-> (config) :run-fn)  &state &level &ns &data)))))
+                    ((-> (config) :run-fn)  &state &level &ns
+                     (filter-data
+                       (fn [d]
+                         (with-context {:status   (:status   d)
+                                        :location (:location d)}
+                           (some
+                             (fn [action]
+                               (let [actioned (keyword (str (name action) "ed"))]
+                                 (and (-> d :later-at-level action &level)
+                                      (-> d action :enabled)
+                                      (-> d actioned not)
+                                      false)))
+                             actions)))
+                       &level &data))))))
             &data))))
     f))
 
@@ -380,20 +407,22 @@
 (defn handling-stats-at-level| [f]
   (outside-in->>
     (on-level| [:do :case]
-      (when| (and (-> (config) :stats :enabled)
-                  (not (-> &data :stats-counted)))
+      (when| (and (not (-> &data :stats-counted))
+                  (-> &data :run)
+                  (-> &data :type (= :expectation))
+                  (-> (config) :stats :enabled))
         (marking-as| :stats-counted
           increment-stats)))
     (chain| f
-            (on-level|
-              (anafn (and (-> (config) :stats :enabled)
-                          (= [&position &level]
-                             [:after (-> (config) :stats :level)])))
+            (on-level| (anafn (and (= [&position &level]
+                                      [:after (-> (config) :stats :level)])
+                                   (-> (config) :stats :enabled)))
               display-stats))))
 
 ;; --- DOTS MODE
 (defn report-case-as-dot [state position level ns data]
-  (print (-> (config) :logo))
+  (when (-> data :location (= :expectation))
+    (print (-> (config) :logo)))
   data)
 
 (defn handling-dots-mode| [f]
@@ -420,7 +449,7 @@
       (let [tst-cnt (->> data vals (apply concat) (apply concat)
                          (filter (->| :type #{:expectation}))
                          count)]
-        (println "--" tst-cnt (-> "test" (pluralize tst-cnt)) "in total")))))
+        (println "--" tst-cnt (-> "test" (pluralize tst-cnt)) "in total" level)))))
 
 (defn announce-ns [state position level ns data]
   (when (= position :before)
