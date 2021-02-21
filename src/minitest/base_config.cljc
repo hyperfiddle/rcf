@@ -18,23 +18,31 @@
    :term-width        120
    :error-depth       12
    :silent            false
-   :dots              false
-
+   :dots              true
    :report            {:enabled     true
-                       :WHEN {:status {:success {:level :suite}
-                                       :failure {:level :ns}
-                                       :error   {:level :case}}}}
+                       :level       :case}
    :explain           {:enabled     true
-                       :level       :suite
-                       :WHEN {:status {:success {:level :suite}
-                                       :failure {:level :ns}
-                                       :error   {:level :case}}}}
+                       :level       :case
+                       :WHEN {:dots {true {:WHEN {:status {:error   {:level :suite}
+                                                           :failure {:level :suite}}}}}}}
+   ;; Try this.
+   ; :report            {:enabled     true
+   ;                     :WHEN {:status {:success {:level :suite}
+   ;                                     :failure {:level :ns}
+   ;                                     :error   {:level :case}}}}
+   ; :explain           {:enabled     true
+   ;                     :level       :suite
+   ;                     :WHEN {:status {:success {:level :suite}
+   ;                                     :failure {:level :ns}
+   ;                                     :error   {:level :case}}}}
    :stats             {:enabled     true
                        :level       :suite
                        :for         [:success :failure :error]}
    :effects           {:show-form   false
                        :show-result false
                        :silent      false}
+   :announce-fn       (at-runtime (deref (resolve 'minitest.higher-order/do-nothing)))
+   :announce-nb-tests true
 
    :bindings {:WHEN {:test-level
                      {:suite {:WHEN {:lang {:clj {#'*e (at-runtime (or *e nil))
@@ -80,8 +88,9 @@
           :test-level     :minitest/not-set!  ;; #{:suite :ns :block :case}
           :test-position  :minitest/not-set!  ;; #{:before :after :do}
           :status         :minitest/not-set!  ;; #{:success :failure :error}
-          :refreshing     false               ;; #{true false}
-          :location       :minitest/not-set!} ;; #{:expectation :effect}
+          :location       :minitest/not-set!  ;; #{:expectation :effect}
+          :report-action  :minitest/not-set!  ;; #{:report :explain}
+          :report-level   :case}              ;; #{:suite :ns :block :case}
    :WHEN (let [silent-success
                {:WHEN {:status    {:success {:silent    true}}}}
                run-on-load
@@ -107,8 +116,17 @@
                          :error       {:logo                  "🔥"
                                        :WHEN {:location
                                               {:effect {:logo "😱[Effect] "}}}}}
-            :test-level {:ns          {:WHEN {:position {:after {:separator "\n"}}}}
-                         :block       {:WHEN {:position {:after {:separator "\n"}}}}
-                         :stats       {:WHEN {:position {:before {:separator "  "
-                                                                  :WHEN {:dots {true {:separator ""}}}}
+            :test-level {:suite       {:announce-fn (at-runtime (deref (resolve 'minitest.reporter/announce-suite)))}
+                         :ns          {:announce-fn (at-runtime (deref (resolve 'minitest.reporter/announce-ns)))
+                                       :WHEN {:position {:after {:separator "\n"}}
+                                              :dots {true  {:WHEN {:report-level {:suite {:WHEN {:position {:before {:announce-fn (fn [s p l n d]
+                                                                                                                                    (println "-- Problems in" n))}
+                                                                                                            :after  {:announce-fn (at-runtime (deref (resolve 'minitest.higher-order/do-nothing)))}}}}}}}}}}
+                         :block       {:WHEN {:position {:after {:separator "\n"
+                                                                 :WHEN {:dots {true {:WHEN {:report-level {:case {:separator "|"
+                                                                                                                  :WHEN {:last-in-level {true {:separator "\n"}}}}}}}}}}}}}
+                         ;; TODO: fix bug in minitest.reporter/separate-levels|
+                         :case        {:WHEN {:position {:after {:WHEN {:dots {true {:WHEN {:report-level {:suite {:separator "\n"
+                                                                                                                   :WHEN {:test-level {:case {:separator false}}}}}}}}}}}}}
+                         :stats       {:WHEN {:position {:before {:separator "   "}
                                                          :after {:separator "\n"}}}}}})})

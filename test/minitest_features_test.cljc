@@ -1,7 +1,8 @@
 (ns minitest-features-test
-  {:minitest/config {:error-depth 0
-                     :effects {:show-form   true
-                               :show-result true}
+  {:minitest/config {:dots        false
+                     :error-depth 0
+                     :effects     {:show-form   true
+                                   :show-result true}
                      :WHEN {:test-level {:block {:post-separator "\n\n"}}}}}
   (:require [minitest #?@(:clj  [:refer        [tests]]
                           :cljs [:refer-macros [tests]])]))

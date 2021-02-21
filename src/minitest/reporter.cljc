@@ -4,8 +4,10 @@
                                               :refer        [pprint]]
             [minitest.higher-order #?@(:clj  [:refer        [on-level|
                                                              on-config|
+                                                             on-context|
                                                              apply|
                                                              chain|
+                                                             do-nothing
                                                              outside-in->>
                                                              anafn
                                                              anaph|
@@ -13,8 +15,10 @@
                                                              with-context|]]
                                        :cljs [:refer        [on-level|
                                                              on-config|
+                                                             on-context|
                                                              apply|
-                                                             chain|]
+                                                             chain|
+                                                             do-nothing]
                                               :refer-macros [outside-in->>
                                                              anafn
                                                              anaph|
@@ -108,54 +112,36 @@
 
 (def befores (atom {}))
 
+;; TODO: only print before separators if somethings eventually gets printed.
+;; Strategy: figure that out in [:before :suite] (i.e. anything runs).
+;; See mark-for-later| which stores this info in the :later-at-level
+;; field in &data, but at the [:do :case] level.
 (defn separating-levels| [f]
   (fn [state position level ns data]
     (when (= position :before)
       (when (not= level :case)
         (swap! befores update level conj
-               (map-data :reported level data)))
+               (map-data (juxt :reported :explained) level data)))
       (when-let [sep (-> (config) :separator)]
         (print sep)))
 
     (let [new-data (f state position level ns data)
           sep      (when (and (= position :after)
-                              (or (= level :case)
-                                  (not= (-> befores deref level peek)
-                                        (map-data :reported level data))))
+                              (or (if (= level :case)
+                                    true
+                                    #_(some #(and (= (-> data :later-at-level %)
+                                                   (*reporting-level* %))
+                                                (-> (config) % :enabled))
+                                          actions)
+                                    (not= (-> befores deref level peek)
+                                          (map-data (juxt :reported :explained)
+                                                    level data)))))
                      (-> (config) :separator))]
       (try (do (when sep  (print sep))
                new-data)
         (finally
           (when (and sep (not= level :case))
             (swap! befores update level pop)))))))
-
-(defn announce-suite [state position level ns data]
-  (let [ns->tests data
-        ns-cnt    (count ns->tests)
-        ts-cnt    (->> ns->tests vals (apply concat) (apply concat)
-                       (filter (->| :type #{:expectation}))
-                       count)]
-    (newline)
-    (once
-      state [:announced-suite]
-      (println
-        "-- Running minitest on"
-        ns-cnt (-> "namespace" (pluralize ns-cnt))
-        (str \( ts-cnt \space (-> "test" (pluralize ts-cnt)) \)))))
-  data)
-
-(defn announce-ns [state position level ns data]
-  (let [tests  data
-        tst-cnt (->> tests (apply concat)
-                    (filter (->| :type #{:expectation}))
-                    count)]
-    (println "---- Testing" ns
-             (str "(" tst-cnt \space
-                  ;; TODO: replace with once.
-                  (once-else state [:announced-nss ns] "" "more ")
-                  (-> "test" (pluralize tst-cnt))
-                  ")")))
-  data)
 
 (defn report-expectation [report]
   (let [status   (:status report)
@@ -232,10 +218,6 @@
       (macros/case :clj (flush-outputs))
       data)))
 
-(defn do-nothing
-  ([s l n d]    d)
-  ([s p l n d]  d))
-
 (macros/deftime
   (defmacro <-| [& body] `(fn [& args#] ~@body)))
 
@@ -253,15 +235,15 @@
                            (anaph|
                              (->| (when| (and (-> (config) action :enabled)
                                               (-> &data actioned not))
-                                    (marking-as| actioned (report-via| action)))
+                                    (with-context| {:report-action action}
+                                      (marking-as| actioned
+                                        (report-via| action))))
                                   #(concat [&state &position &level &ns]
                                            [%])))))
         report+explain (->|         (do| :report)
                             (apply| (do| :explain))
                             last)]
     (outside-in->>
-      (on-level| [:before  :suite] announce-suite)
-      (on-level| [:before  :ns]    announce-ns)
       (on-level| [:after   :case]  (report-via| :do))
       (on-level| [:do      :case]  report+explain)
       (on-level| [:report  :case]  report-case)
@@ -288,9 +270,8 @@
               (let [conf (config)]
                 (seq (filter
                        #(or (not (-> conf % :enabled))
-                            (not (contains?
-                                   (set [:case (*reporting-level* %)])
-                                   (-> conf % :level))))
+                            (not (contains? (set [:case (*reporting-level* %)])
+                                            (-> conf % :level))))
                        actions))))]
         (with-config (->> (for [a disabled-actions]
                             [a {:enabled false}])
@@ -319,7 +300,7 @@
                 actions)))
     f))
 
-(defn handle-at-level| [f]
+(defn run-reports-at-level| [f]
   (outside-in->>
     (on-level| (anafn (and (= &position :after) (not= &level :case)))
       (anafn
@@ -334,8 +315,9 @@
                                                      %1)
                                                   *reporting-level*
                                                   actions)]
-                (with-config {:execute-fn do-nothing}
-                  ((-> (config) :run-fn)  &state &level &ns &data))))
+                (with-context {:report-level &level}
+                  (with-config {:execute-fn do-nothing}
+                    ((-> (config) :run-fn)  &state &level &ns &data)))))
             &data))))
     f))
 
@@ -354,7 +336,7 @@
   (outside-in->>
     mark-for-later|
     stop-when-not-at-level|
-    handle-at-level|
+    run-reports-at-level|
     reprint-report-with-explanation|
     f))
 
@@ -395,7 +377,7 @@
       (swap! state dissoc :counts)))
   data)
 
-(defn handling-stats-at-stats-level| [f]
+(defn handling-stats-at-level| [f]
   (outside-in->>
     (on-level| [:do :case]
       (when| (and (-> (config) :stats :enabled)
@@ -414,21 +396,54 @@
   (print (-> (config) :logo))
   data)
 
-(defn handling-dots-mode| [continue]
-  (let [handle| #(on-config| {:dots true}
-                   (when| (-> &data %1 not)
-                     (marking-as| %1 %2)))]
-    (outside-in->>
-      (on-level| [:report  :case] (handle| :reported  report-case-as-dot))
-      (on-level| [:explain :case] (handle| :explained explain-case))
-      continue)))
+(defn handling-dots-mode| [f]
+  (outside-in->>
+    (on-level|  [:report :case] (on-config| {:dots true}
+                                  (on-context| {:report-action :report}
+                                    (when| (-> &data :reported not)
+                                      (marking-as| :reported
+                                                   report-case-as-dot)))))
+    (stop-when| (anafn (and (= &position :report)
+                            (-> (context) :report-action (= :report))
+                            (-> (config) :dots))))
+    f))
+
+;; --- ANNOUNCE LEVEL
+(defn announce-suite [state position level ns data]
+  (let [ns-cnt (count data)]
+    (newline)
+    (when (= position :before)
+      (println "-- Running minitest on"
+               ns-cnt (-> "namespace" (pluralize ns-cnt))))
+    (when (and (= position :after)
+               (-> (config) :announce-nb-tests))
+      (let [tst-cnt (->> data vals (apply concat) (apply concat)
+                         (filter (->| :type #{:expectation}))
+                         count)]
+        (println "--" tst-cnt (-> "test" (pluralize tst-cnt)) "in total")))))
+
+(defn announce-ns [state position level ns data]
+  (when (= position :before)
+    (println "---- Testing" ns))
+  (when (and (= position :after)
+             (-> (config) :announce-nb-tests))
+    (let [tst-cnt (->> data (apply concat)
+                       (filter (->| :type #{:expectation}))
+                       count)]
+      (println "----" tst-cnt (-> "test" (pluralize tst-cnt)) "in" ns))))
+
+(defn announcing-level| [f]
+  (chain| (anafn ((-> (config) :announce-fn) &state &position &level &ns &data)
+                 &data)
+          f))
 
 ;; --- Main entry point
 (def report
   (outside-in->> binding-test-output|
-                 handling-stats-at-stats-level|
-                 handling-silent-mode|
-                 handling-dots-mode|
                  separating-levels|
                  handling-reports-at-level|
+                 handling-stats-at-level|
+                 handling-silent-mode|
+                 handling-dots-mode|
+                 announcing-level|
                  base-report))

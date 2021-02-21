@@ -63,6 +63,10 @@
     (let [result (apply f args)]
       (apply g (concat (butlast args) [result])))))
 
+(defn do-nothing
+  ([s l n d]    d)
+  ([s p l n d]  d))
+
 ;; For cljs
 (declare on-level|)
 (declare on-context|)
