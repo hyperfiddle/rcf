@@ -1,6 +1,5 @@
 (ns minitest.custom-map
-  (:require [net.cgrand.macrovich           :as    macros]
-            [minitest.utils                 :refer [slice]])
+  (:require [net.cgrand.macrovich           :as    macros])
   #?(:cljs
       (:require-macros [minitest.custom-map :refer [mcall]])))
 

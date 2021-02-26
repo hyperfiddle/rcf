@@ -1,5 +1,5 @@
 (ns minitest.poney
-  {:minitest/config {}}
+  {:minitest/config {:dots true}}
   (:require
    #?(:clj  [clojure.pprint    :refer [pprint]]
       :cljs [cljs.pprint       :refer [pprint]])
@@ -9,31 +9,10 @@
   #?(:cljs (:require-macros [net.cgrand.macrovich :as macros]
                             [minitest :refer [tests]])))
 
-(defn entry-point []
-  (println "NODEJS ENTRY POINT"))
+(tests 1 := 1
+       2 := 0)
 
-; (tests
-;   (println "a side effect")
-;   (inc 1) := 2
-;   (inc 2) := 3
-;   [*1 *2 *3] := [3 2 nil]
-;   (/ 1 0) := 1
-;   0       := 1
-;   1       := 1)
+(tests 3 := 3
+       (tests 4 := 0))
 
-; ; (test!)
-
-(tests
-  (inc 3) := 4
-  [1 4]   := [1 _]
-  {1 :a}  := {1 _}
-  (print "A test effect !")
-  #{1}    := #{_})
-
-(tests
-  1 := 1)
-
-(tests
-  1 := 2
-  1 := 1
-  3 := 2)
+(tests 5 := 0)

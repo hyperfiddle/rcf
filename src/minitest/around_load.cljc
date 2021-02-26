@@ -2,6 +2,7 @@
   (:require
     #?(:clj [cljs.analyzer.api          :as           ana])
     #?(:clj [cljs.compiler              :as           cljsc])
+    #?(:clj [cljs.repl])
     #?(:clj [robert.hooke               :refer        [add-hook]])
             [net.cgrand.macrovich       :as           macros]
     #?(:clj [minitest.utils             :refer        [->|]])

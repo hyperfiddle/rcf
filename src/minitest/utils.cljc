@@ -44,65 +44,28 @@
       m)
     (dissoc m k)))
 
-;; Taken from:
-;; https://github.com/TristeFigure/shuriken/blob/master/src/shuriken/sequential.clj
-(defn slice
-  "Slice a seq using a delimiter predicate. There are two options:
-  ```
-  - :include-delimiter  false | :left | :right
-                          whether to include the delimiter and where
-  - :include-empty      true | false
-                          whether to create empty seqs between
-                          successive delimiters
-  ```
+(defn bold [s]
+  (str "\033[1m" s "\033[0m"))
 
-  ```clojure
-  (let [coll [1 1 0 1 0 0 1 1]]
-    ;; the default
-    (slice zero? coll) ;; by default, :include-delimiter false,
-                                      :include-empty     false
-    => ((1 1) (1) (1 1))
+(defn meta-macroexpand [form]
+  (let [ex (if-let [m (meta form)]
+             (vary-meta  (macroexpand-1 form)  #(merge m %))
+             form)]
+    (if (identical? ex form)
+      form
+      (meta-macroexpand ex))))
 
-    (slice zero? coll :include-empty true)
-    => ((1 1) (1) () (1 1))
+;; TODO: keep ?
+(def ^:dynamic *top-levels* {})
 
-    (slice zero? coll :include-delimiter :left)
-    => ((1 1) (0 1) (0 1 1))
+(macros/deftime
+  (defmacro tracking-top-level
+    ([expr]    `(tracking-top-level ~(gensym "tracking-top-level-id-") ~expr))
+    ([id expr] `(let [~'&top-level-id ~id]
+                  (binding [*top-levels* (update *top-levels* ~'&top-level-id
+                                                 (fnil inc -1))]
+                    ~expr))))
 
-    (slice zero? coll :include-delimiter :right)
-    => ((1 1 0) (1 0) (1 1))
-
-    (slice zero? coll :include-delimiter :right :include-empty true)
-    => ((1 1 0) (1 0) (0) (1 1))
-    )
-  ```"
-  [delimiter? coll & {:keys [include-delimiter include-empty]
-                      :or {include-delimiter false
-                           include-empty     false}}]
-  (let [not-delimiter? (complement delimiter?)
-        [before-first-delim from-first-delim] (split-with not-delimiter? coll)
-        result
-        (loop [xs from-first-delim
-               acc []]
-          (if (empty? xs)
-            acc
-            (let [delim (first xs)
-                  [after-delim next-slice] (split-with not-delimiter?
-                                                       (rest xs))]
-              (recur
-                next-slice
-                (if (and (not include-empty)
-                         (empty? after-delim))
-                  acc
-                  (let [current-slice (case include-delimiter
-                                        (nil false) after-delim
-                                        :left (cons delim after-delim)
-                                        :right (concat after-delim
-                                                       (take 1 next-slice)))]
-                    (conj acc current-slice)))))))]
-    (seq (if (empty? before-first-delim)
-           result
-           (cons (if (= include-delimiter :right)
-                   (concat before-first-delim (take 1 from-first-delim))
-                   before-first-delim)
-                 result)))))
+  (defmacro top-level?
+    ([]   `(top-level? ~'&top-level-id))
+    ([id] `(zero? (*top-levels* ~id)))))

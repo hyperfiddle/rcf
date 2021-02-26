@@ -10,8 +10,10 @@
             [minitest.ns                       :as    ns
              #?@(:cljs [:include-macros true])]
             [minitest.base-config              :refer [base-config]]
-            [minitest.runner                   :refer [run]]
-            [minitest.executor                 :refer [execute-clj execute-cljs]]
+            [minitest.runner                   :refer [run
+                                                       *running-inner-tests*]]
+            [minitest.executor                 :refer [execute-clj
+                                                       execute-cljs]]
             [minitest.reporter                 :refer [report]]
             [minitest.orchestrator             :refer [orchestrate
                                                        run-execute-report!]]
@@ -21,12 +23,14 @@
                                                        as-thunk
                                                        as-wildcard-thunk
                                                        ->|
+                                                       meta-macroexpand
                                                        current-ns-name
                                                        defalias]]
                                  :cljs [       :refer [as-form
                                                        as-thunk
                                                        as-wildcard-thunk
-                                                       ->|]
+                                                       ->|
+                                                       meta-macroexpand]
                                         :refer-macros [current-ns-name
                                                        defalias]])]
             [minitest.around-load   #?@(:clj  [:refer [apply-clj-patches
@@ -163,9 +167,13 @@
              (fn [[type x]]
                (case type
                  :effect
-                 {:type     :effect
-                  :form     (-> x as-form)
-                  :thunk    (-> x as-thunk)}
+                 (let [xpd (meta-macroexpand x)]
+                   {:type          :effect
+                    :form          (-> x as-form)
+                    :macroexpanded (with-meta (-> xpd as-form)
+                                     (meta xpd))
+                    :thunk         (with-meta (-> xpd as-thunk)
+                                     (meta xpd))})
 
                  :expectation
                  (let [[op m] x]
@@ -173,30 +181,42 @@
                          {:type     :expectation
                           :op       op
                           :tested
-                          {:form    (-> m :tested as-form)
-                           :thunk   (-> m :tested as-thunk)}}
+                          (let [xpd (meta-macroexpand (-> m :tested))]
+                            {:form          (-> m :tested as-form)
+                             :macroexpanded (-> xpd as-form)
+                             :thunk         (-> xpd as-thunk)})}
                          (when (= op :=)
                            {:expected
-                            {:form  (-> m :expected as-form)
-                             :thunk (-> m :expected as-wildcard-thunk)}}))
+                            (let [xpd (meta-macroexpand (-> m :expected))]
+                              {:form          (-> m :expected as-form)
+                               :macroexpanded (-> xpd as-form)
+                               :thunk         (-> xpd as-wildcard-thunk)})}))
                        ))))))))
+
+  (defn- handle-as-inner-test [form]
+    (with-meta form
+      {:report {:enabled false}}))
 
   (defmacro tests [& body]
     (when-not (-> (config/config) :elide-tests)
-      `(config/with-context {:exec-mode (if (currently-loading?)
-                                          :on-load :on-eval)}
-         (let [c#     (config/config)
-               ns#    (current-ns-name)
-               block# ~(parse-tests body)]
-           (if (currently-loading?)
-             (when (or (:store-tests c#)
-                       (:run-tests   c#)) (process-after-load! ns# [block#]))
-             (config/with-config {:report    {:level   :case}
-                                  :explain   {:level   :case}
-                                  :stats     {:enabled false}}
-               (when   (:run-tests   c#)  (run-execute-report! :block
-                                                               ns#  block#)))))
-         nil))))
+      (handle-as-inner-test
+        `(config/with-context {:exec-mode
+                               (if (or *running-inner-tests*
+                                       (currently-loading?))
+                                 :on-load :on-eval)}
+           (let [c#     (config/config)
+                 ns#    (current-ns-name)
+                 block# ~(parse-tests body)]
+             (if (-> (config/context) :exec-mode (= :on-load))
+               (when (or (:store-tests c#)
+                         (:run-tests   c#))
+                 (process-after-load! ns# [block#]))
+               (config/with-config {:report    {:level   :case}
+                                    :explain   {:level   :case}
+                                    :stats     {:enabled false}}
+                 (when   (:run-tests   c#)
+                   (run-execute-report! :block ns# block#)))))
+           nil)))))
 
 (defn- config-kw? [x]
   (and (keyword? x)
@@ -227,7 +247,7 @@
                                             (partial apply excludor))
                                        (ns/find-test-namespaces))
                   ns->tests          (select-keys @*tests* nss)]
-              (macros/case :clj (doto (run! require nss)))
+              (macros/case :clj (run! require nss))
               (if (empty? ns->tests)
                 :no-test
                 (config/with-config (into {} (map vec conf))

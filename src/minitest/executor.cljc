@@ -55,7 +55,7 @@
               '~ns-name
               ~(let [a assoc-in  u update-in  d data]
                  (-> d
-                     (u [:tested   :form]    #(do `(quote ~%)))
+                     (u [:tested   :form]    #(do `(quote ~%)))  ;; TODO: use as-form ?
                      (u [:expected :form]    #(do `(quote ~%)))
                      (a [:tested   :thunk]   (-> d :tested   :form as-thunk))
                      (a [:expected :thunk]   (-> d :expected :form as-thunk)))

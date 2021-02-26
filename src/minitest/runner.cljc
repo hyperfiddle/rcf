@@ -1,13 +1,23 @@
 (ns minitest.runner
-  (:require [clojure.pprint             :refer        [pprint]]
-            [net.cgrand.macrovich       :as           macros]
-            [minitest.config #?@(:clj  [:refer        [config
-                                                       with-context]]
-                                 :cljs [:refer        [config]
-                                        :refer-macros [with-context]])]
-            [minitest.utils             :refer        [call]]
-            [minitest.config            :refer        [config]]
-            [minitest.walk              :refer        [coprewalk]])
+  (:require [clojure.pprint                   :refer        [pprint]]
+            [net.cgrand.macrovich             :as           macros]
+            [minitest.around-load             :refer        [*tests-to-process*
+                                                             *tests*]]
+            [minitest.config       #?@(:clj  [:refer        [config
+                                                             with-context
+                                                             with-config]]
+                                       :cljs [:refer        [config]
+                                              :refer-macros [with-context
+                                                             with-config]])]
+            [minitest.higher-order #?@(:clj  [:refer        [instead-of-level|
+                                                             outside-in->>
+                                                             anafn]]
+                                       :cljs [:refer        [instead-of-level|]
+                                              :refer-macros [outside-in->>
+                                                             anafn]])]
+            [minitest.utils                   :refer        [call]]
+            [minitest.config                  :refer        [config]]
+            [minitest.walk                    :refer        [coprewalk]])
   #?(:cljs
       (:require-macros [minitest.runner :refer        [managing-exs]])))
 
@@ -35,6 +45,7 @@
   (assert (-> test :run not))
   (let [result (managing-exs (!1-2-3 (call thunk)))]
     (merge
+      test
       {:type     :effect
        :ns       ns
        :form     form
@@ -62,6 +73,7 @@
     [testedv   (delay (managing-exs (!1-2-3 (-> test :tested   :thunk call))))
      expectedv (delay (managing-exs         (-> test :expected :thunk call)))]
     (merge
+      test
       {:type  :expectation
        :ns     ns
        :op     (:op test)
@@ -142,32 +154,71 @@
     :effect      (run-effect!      ns test)
     :expectation (run-expectation! ns test)))
 
-(defn run [state level ns data]
-  (let [conf        (config)
-        execute     (-> conf :execute-fn)
-        orchestrate (-> conf :orchestrate-fn)
-        orch        (fn [first? last? s l & [n d]]
-                      (with-context {:first-in-level first?
-                                     :last-in-level  last?}
-                        (when d
-                          [n (orchestrate s l n d)])))
-        process-all
-        (fn [s l n d]
-          (doall
-            (concat
-              (                rest (orch true  false s l n      (-> d first)))
-              (doall (mapcat #(rest (orch false false s l n  %)) (-> d rest butlast)))
-              (                rest (orch false true  s l n      (-> d rest last)))
-              )))]
-    (case level
-      :suite
-      (let [d (seq data)]
-        (->>
-          (concat
-            [(apply             orch true  false state :ns    (-> d first))]
-            (doall (map #(apply orch true  false state :ns %) (-> d rest butlast)))
-            [(apply             orch true  false state :ns    (-> d rest last))])
-          (into {})))
-      :ns     (process-all state     :block ns data)
-      :block  (process-all state     :case  ns data)
-      :case   (execute     state :do :case  ns data))))
+(defn orch [first? last? s l & [n d]]
+  (with-context {:first-in-level first?
+                 :last-in-level  last?}
+    (when d
+      [n ((-> (config) :orchestrate-fn) s l n d)])))
+
+(defn process-all [s l n d]
+  (if (= l :ns)
+    (let [d (seq d)]
+      (->>
+        (concat
+          [(apply             orch true  false s l    (-> d first))]
+          (doall (map #(apply orch false false s l %) (-> d rest butlast)))
+          [(apply             orch false true  s l    (-> d rest last))])
+        (into {})))
+    (doall
+      (concat
+        (                rest (orch true  false s l n      (-> d first)))
+        (doall (mapcat #(rest (orch false false s l n  %)) (-> d rest butlast)))
+        (                rest (orch false true  s l n      (-> d rest last)))))))
+
+(def level-below
+  {:suite :ns
+   :ns    :block
+   :block :case})
+
+(defn base-run [state level ns data]
+  (let [c (config)]
+    (if (= level :case)
+      ((-> c :execute-fn)   state :do :case  ns data)
+      (process-all state (level-below level) ns data))))
+
+(def ^:dynamic *running-inner-tests* false)
+
+(defn orchestrate-inner-tests| [f]
+  (outside-in->>
+    (instead-of-level| :case
+      (anafn
+        (binding [*tests*            (atom {})
+                  *tests-to-process* (atom {})]
+          (let [result (binding [*running-inner-tests* true]
+                         (with-context {:run-tests false}
+                           (f &state &level &ns &data)))]
+            (if-let [tests (-> *tests-to-process* deref (get &ns))]
+              (with-meta
+                (concat [result]
+                        (process-all &state :case &ns (-> tests first)))
+                {:minitest/inner-tests true})
+              result)))))
+    f))
+
+(defn handling-inner-tests-blocks| [f]
+  (outside-in->>
+    (instead-of-level| [:block]
+      (anafn
+        (with-config
+          {:orchestrate-fn (orchestrate-inner-tests|
+                             (-> (config) :orchestrate-fn))}
+          (->> (f &state &level &ns &data)
+               (mapcat #(if (-> % meta :minitest/inner-tests)
+                          % [%]))
+               doall))))
+    f))
+
+(def run
+  (outside-in->>
+    handling-inner-tests-blocks|
+    base-run))

@@ -68,7 +68,8 @@
     (let [handle-before (with-context|
                           {:position :before}
                           (handling-case-config|
-                            (->| :form meta)
+                            #(merge (-> % :form          meta)
+                                    (-> % :macroexpanded meta))
                             (or handle-before (fn [s l n d]
                                                 (&report  s :before l n d)
                                                 (&execute s :before l n d)))))
@@ -79,8 +80,9 @@
                            :status     (if (= &level :case)
                                          (:status   &data) :minitest/not-set!)}
                           (handling-case-config|
-                            (->| meta :minitest/config
-                                 (partial merge (-> data :form meta)))
+                            #(merge (-> % :form          meta)
+                                    (-> % :macroexpanded meta)
+                                    (-> % meta           :minitest/config))
                             (or handle-after  (fn [s l n d]
                                                 (&execute s :after l n d)
                                                 (&report  s :after l n d)))))]

@@ -72,15 +72,23 @@
 (declare on-context|)
 (declare on-config|)
 
-(def-on-fn on-level|   position-level (cond
-                                        (set? position-level)
-                                        ( position-level [&position &level])
-                                        (fn? position-level)
-                                        ( position-level &state &position &level
-                                                         &ns &data)
-                                        :else
-                                        ( or (= position-level [&position &level])
-                                             (= position-level &position))))
+(defn match-level?| [position-level]
+  (anafn
+    (cond (set? position-level) (or (position-level [&position &level])
+                                    (position-level &level)
+                                    (position-level [&level])
+                                    (position-level &position)
+                                    (position-level [&position]))
+          (fn? position-level)  (position-level &state &position
+                                                &level &ns &data)
+          :else                 (or (= position-level [&position &level])
+                                    (= position-level &level)
+                                    (= position-level [&level])
+                                    (= position-level &position)
+                                    (= position-level [&position])))))
+
+(def-on-fn on-level|   position-level ((match-level?| position-level)
+                                       &state &position &level &ns &data))
 (def-on-fn on-context| expected-ctx   (= expected-ctx
                                          (select-keys (context)
                                                       (keys expected-ctx))))
@@ -88,3 +96,16 @@
                                          (select-keys (config)
                                                       (keys expected-cfg))))
 
+(defn continue-when| [pred continue]
+  (fn [& args]
+    (if (apply pred       args)
+      (apply   continue   args)
+      (apply   do-nothing args))))
+
+(defn stop-when| [pred continue]
+  (continue-when| (complement pred) continue))
+
+(defn instead-of-level| [level action continue]
+  (outside-in->> (on-level| level action)
+                 (stop-when| (match-level?| level))
+                 continue))

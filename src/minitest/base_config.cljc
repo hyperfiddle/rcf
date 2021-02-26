@@ -1,6 +1,7 @@
 (ns minitest.base-config
   (:require [minitest.custom-map #?@(:clj  [:refer        [at-runtime]]
-                                     :cljs [:refer-macros [at-runtime]])]))
+                                     :cljs [:refer-macros [at-runtime]])]
+            [minitest.utils                 :refer        [bold]]))
 
 
 (def base-config
@@ -109,12 +110,11 @@
                          :ci          [:cli]
                          :dev         run-on-load
                          :quiet-dev   [:dev, silent-success]}
-            :status     {:success     {:logo                  "✅"
-                                       :WHEN {:location {:effect {:logo "[Effect] "}}}}
-                         :failure     {:logo                  "❌"}
-                         :error       {:logo                  "🔥"
-                                       :WHEN {:location
-                                              {:effect {:logo "😱[Effect] "}}}}}
+            :status     {:success     {:logo                            "✅"
+                                       :WHEN {:location {:effect {:logo (bold "[Effect] ")}}}}
+                         :failure     {:logo                            "❌"}
+                         :error       {:logo                            "🔥"
+                                       :WHEN {:location {:effect {:logo (bold "😱 [Effect] ")}}}}}
             :test-level {:suite       {:announce-fn (at-runtime (deref (resolve 'minitest.reporter/announce-suite)))}
                          :ns          {:announce-fn (at-runtime (deref (resolve 'minitest.reporter/announce-ns)))
                                        :WHEN {:position {:after {:separator "\n"}}

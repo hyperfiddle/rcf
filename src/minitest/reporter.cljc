@@ -7,6 +7,7 @@
                                                              on-context|
                                                              apply|
                                                              chain|
+                                                             stop-when|
                                                              do-nothing
                                                              outside-in->>
                                                              anafn
@@ -30,7 +31,8 @@
                                        :cljs [:refer        [config context]
                                               :refer-macros [with-context
                                                              with-config]])]
-            [minitest.utils                   :refer        [call ->| dissoc-in]]
+            [minitest.utils                   :refer        [call ->| dissoc-in
+                                                             bold]]
             [clojure.repl                     :refer        [pst]]
             [net.cgrand.macrovich             :as           macros])
   #?(:cljs
@@ -196,9 +198,6 @@
       (and (-> data :type   (= :effect))
            (-> data :status (= :error)))))
 
-(defn bold [s]
-  (str "\033[1m" s "\033[0m"))
-
 (defn explain-case [state position level ns data]
   (if (not (explainable? data))
     data
@@ -264,18 +263,9 @@
       (on-level| [:explain :case]  explain-case))))
 
 ;; --- LEVEL CONTROL
-(defn continue-when| [pred continue]
-  (fn [& args]
-    (if (apply pred       args)
-      (apply   continue   args)
-      (apply   do-nothing args))))
-
-(defn stop-when| [pred continue]
-  (continue-when| (complement pred) continue))
-
 (def ^:dynamic *reporting-level* {})
 
-(defn stop-when-not-at-level| [f]
+(defn stop-when-not-at-report-level| [f]
   (anaph|
     (fn [& args]
       (if-let
@@ -314,7 +304,7 @@
                 actions)))
     f))
 
-(defn run-reports-at-level| [f]
+(defn run-reports-at-report-level| [f]
   (outside-in->>
     (on-level| (anafn (and (= &position :after) (not= &level :case)))
       (anafn
@@ -359,11 +349,11 @@
                   (report-via| :report)))))
     f))
 
-(defn handling-reports-at-level| [f]
+(defn handling-reports-at-report-level| [f]
   (outside-in->>
     mark-for-later|
-    stop-when-not-at-level|
-    run-reports-at-level|
+    stop-when-not-at-report-level|
+    run-reports-at-report-level|
     reprint-report-with-explanation|
     f))
 
@@ -404,7 +394,7 @@
       (swap! state dissoc :counts)))
   data)
 
-(defn handling-stats-at-level| [f]
+(defn handling-stats-at-stats-level| [f]
   (outside-in->>
     (on-level| [:do :case]
       (when| (and (not (-> &data :stats-counted))
@@ -415,7 +405,7 @@
           increment-stats)))
     (chain| f
             (on-level| (anafn (and (= [&position &level]
-                                      [:after (-> (config) :stats :level)])
+                                      [:after    (-> (config) :stats :level)])
                                    (-> (config) :stats :enabled)))
               display-stats))))
 
@@ -470,8 +460,8 @@
 (def report
   (outside-in->> binding-test-output|
                  separating-levels|
-                 handling-reports-at-level|
-                 handling-stats-at-level|
+                 handling-reports-at-report-level|
+                 handling-stats-at-stats-level|
                  handling-silent-mode|
                  handling-dots-mode|
                  announcing-level|
