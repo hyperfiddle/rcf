@@ -8,7 +8,9 @@
   net.cgrand/macrovich                {:mvn/version "0.2.1"}
   robert/hooke                        {:mvn/version "1.3.0"}
   applied-science/js-interop          {:mvn/version "0.2.7"}
-  camel-snake-kebab/camel-snake-kebab {:mvn/version "0.4.2"}}
+  camel-snake-kebab/camel-snake-kebab {:mvn/version "0.4.2"}
+  org.clojure/core.unify              {:mvn/version "0.5.7"}
+  lambdaisland/deep-diff2             {:mvn/version "2.0.108"}}
 
  :aliases
  {:test         {:extra-paths ["test" "test_resources"]}

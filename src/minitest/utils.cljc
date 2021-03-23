@@ -1,13 +1,24 @@
 (ns minitest.utils
-  (:require [net.cgrand.macrovich        :as    macros]
-            [clojure.walk                :refer [postwalk]]
-            [camel-snake-kebab.core      :refer [->kebab-case]]))
+  (:require [net.cgrand.macrovich         :as    macros]
+   #?(:clj  [cljs.analyzer                :as    ana])
+            [clojure.walk                 :refer [postwalk]]
+            [camel-snake-kebab.core       :refer [->kebab-case]]
+   #?(:cljs [minitest.with-bindings       :refer [with-bindings*]]))
+  #?(:cljs
+      (:require-macros [minitest.utils   :refer [env-case]])))
 
 (def ->|               #(apply comp (reverse %&)))
+(def not|              complement)
 (def call              #(apply %1 %&))
 (def as-form           #(do `'~%))
 (def as-thunk          #(do `(fn [] ~%)))
 (def as-wildcard-thunk #(do `(fn [] (let [~'_ '~'_] ~%))))
+
+(defn current-bindings []
+  (->> (macros/case
+         :clj  (get-thread-bindings)
+         :cljs (get-all-dyn-bindings))
+       (into {})))
 
 (macros/deftime
   (defmacro current-file []
@@ -44,16 +55,38 @@
       m)
     (dissoc m k)))
 
-(defn bold [s]
-  (str "\033[1m" s "\033[0m"))
+;; TODO: for cljs, see
+;; https://developer.mozilla.org/en-US/docs/Web/API/console#usage,
+;; section 'Styling console output'
+(defn emphasize [s]
+  (macros/case
+    :clj  (str "\033[1m" s "\033[0m")
+    :cljs (str/upper-case s)))
 
-(defn meta-macroexpand [form]
-  (let [ex (if-let [m (meta form)]
-             (vary-meta  (macroexpand-1 form)  #(merge m %))
-             form)]
-    (if (identical? ex form)
-      form
-      (meta-macroexpand ex))))
+(macros/deftime
+  (defmacro env-case [env & {:keys [cljs clj]}]
+    `(let [env# ~env]
+       (if (contains? env# '~'&env)
+          (if (:ns env#) ~cljs ~clj)
+          (if #?(:clj (:ns env#) :cljs true)
+            ~cljs
+            ~clj))))
+
+  (defn meta-macroexpand-1 [env form]
+    (env-case env
+              :clj  ((ns-resolve 'clojure.core 'macroexpand-1 )form)
+              :cljs (if (sequential? form)
+                      (ana/macroexpand-1* env form)
+                      form)))
+
+  (defn meta-macroexpand [env form]
+    (let [ex   (if-let [m (meta form)]
+                 (vary-meta (meta-macroexpand-1 env form)
+                            #(merge m %))
+                 (meta-macroexpand-1 env form))]
+      (if (identical? ex form)
+        form
+        (meta-macroexpand env ex)))))
 
 ;; TODO: keep ?
 (def ^:dynamic *top-levels* {})

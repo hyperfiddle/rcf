@@ -104,6 +104,16 @@
 (defaccessors config         *late-config*  :getter false)
 (defaccessors context        *context*      :getter false)
 
+(macros/deftime
+  (defmacro extending-config [cfg & body]
+    (let [ctx-k (-> (gensym "at-runtime-") keyword)]
+      `(with-config
+         {:CTX  {~ctx-k true}
+          :WHEN {~ctx-k {true (let [~'&config (with-context {~ctx-k false}
+                                                (config))] ;; TODO: use lay
+                                ~cfg)}}}
+         ~@body))))
+
 (defn- parse-WHEN-val [m x]
   (condp call x
     map?        x

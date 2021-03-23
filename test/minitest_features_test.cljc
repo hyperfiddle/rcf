@@ -1,41 +1,60 @@
 (ns minitest-features-test
-  {:minitest/config {:dots        false
-                     :error-depth 0
+  {:minitest/config {:error-depth 0
                      :effects     {:show-form   true
                                    :show-result true}
-                     :WHEN {:test-level {:block {:post-separator "\n\n"}}}}}
+                     :WHEN {:test-key   {true {:logo "✌️"}}
+                            :test-level {:block {:post-separator "\n\n"}}}}}
 
-  (:refer-clojure :exclude [println])
-  (:require [minitest        #?@(:clj  [:refer        [tests]]
+  (:refer-clojure                       :exclude      [println])
+  (:require [net.cgrand.macrovich       :as           macros]
+            [minitest        #?@(:clj  [:refer        [tests]]
                                  :cljs [:refer-macros [tests]])]
-            [net.cgrand.macrovich       :as           macros])
+            [minitest.config #?@(:clj  [:refer        [config
+                                                       with-config
+                                                       with-context]]
+                                 :cljs [:refer        [config]
+                                        :refer-macros [with-config
+                                                       with-context]])]
+            [minitest.unify  #?@(:clj  [:refer        [?]]
+                                 :cljs [:refer-macros [?]])])
   #?(:cljs
-      (:require-macros [minitest-features-test :refer [println one-macro
+      (:require-macros [minitest-features-test :refer [println
                                                        inner-test-macro]])))
 
 (defmacro println [& args]
   (with-meta `(clojure.core/println ~@args)
-    {:report {:enabled false}}))
+    {:effects {:show-form   false
+               :show-result false}}))
+
+(tests
+  (println "With a ':=' expectation...")
+  (println "... success")
+  (inc 1) := 2
+  (println "... failure")
+  (inc 0) := 2
+  (println "... error")
+  (throw (ex-info "intentionally-raised" {})) := 1)
+
+(tests
+  (println "With a ':?' expectation...")
+  (println "... success")
+  :? (zero? (inc -1))
+  (println "... failure")
+  :? (zero? (inc 0))
+  (println "... error")
+  :? (throw (ex-info "intentionally-raised" {})))
 
 (tests
   ;; Effects
   (println "This is an effect"))
 
 (tests
-  ;; Basic stuff
-  (println "This should be a success")
-  (inc 1) := 2
-  (println "This should be a failure")
-  (inc 0) := 2
-  (println "This should be an error")
-  (throw (ex-info "intentionally-raised" {})) := 1)
-
-(tests
   (println "*1, *2, *3 should be bound")
-  (inc 0)       ;; in effects
-  (inc *1) := 2 ;; as well as in assertions
+  (inc 0)
+  (inc *1) := 2
   (inc *2) := 2
-  (inc *3) := 2)
+  (inc *3) := 2
+  (inc *1) := 3)
 
 (tests
   (println "*e should be bound in effects")
@@ -89,4 +108,58 @@
   (println "... function call")
   ^{:report {:enabled false}} (inner-test-fn)
   (println "... inner inner test")
-  (tests (tests 4 := 4)))
+  (tests (tests 4 := 4))
+  (println "... in a let form")
+  ^{:effects {:show-form false :show-result false}}
+  (let [expected 2]
+    (tests (inc 1) := expected)))
+
+(tests
+  (println "case-level config for...")
+  :? ^{:logo "👍"} (true? true)
+  (println "... :? expectation")
+  ^{:logo "👍"} [2] := [2]
+  (println "...effect")
+  ^{:logo "👍"} (do :nothing))
+
+(def ^:dynamic *dyn-var* :root-val)
+
+(tests (println "behavior with dynamic vars..."))
+(tests (println "... when not bound")
+       *dyn-var* := :root-val)
+(binding [*dyn-var* :bound-val]
+  (tests (println "... when bound")
+         (println "...... outside tests blocks")
+         *dyn-var* := :bound-val))
+(tests (println   "...... inside tests blocks")
+       ^{:effects {:show-form false :show-result false}}
+       (binding [*dyn-var* :bound-val]
+         (tests *dyn-var* := :bound-val)))
+
+(tests (println "\nbehavior with config"))
+(with-config {:logo "👐"}
+  (tests (println "... outside tests blocks")
+         1 := 1))
+(tests (println   "... inside tests blocks")
+       ^{:effects {:show-form false :show-result false}}
+       (with-config {:logo "👐"}
+         (tests 2 := 2)))
+
+(tests (println "\nbehavior with context"))
+(with-context {:test-key true} ;; leads to {:logo "✌️"}
+  (tests (println "... outside tests blocks")
+         1 := 1))
+(tests (println   "... inside tests blocks")
+       ^{:effects {:show-form false :show-result false}}
+       (with-context {:test-key true}
+         (tests 2 := 2)))
+
+(tests
+  (println "Unification with (? _ _) ...")
+  (println "... success")
+  (? [0 1 2 2] [0 ?a ?b ?b])
+  (println "... failure")
+  (? [-1 1 2 3 4] [0 _ ?b ?b])
+  (println "... error")
+  (? [(throw (ex-info "intentionally-raised" {}))]
+     [_]))

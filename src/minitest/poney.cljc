@@ -1,18 +1,28 @@
 (ns minitest.poney
-  {:minitest/config {:dots true}}
+  {:minitest/config {:dots false}}
   (:require
-   #?(:clj  [clojure.pprint    :refer [pprint]]
-      :cljs [cljs.pprint       :refer [pprint]])
-   #?(:clj  [minitest          :refer [test! tests]]
-      :cljs [minitest          :refer [test!]]))
+   #?(:clj  [clojure.pprint          :refer        [pprint]]
+      :cljs [cljs.pprint             :refer        [pprint]])
+   #?(:clj  [minitest                :refer        [tests]]
+      :cljs [minitest                :refer-macros [tests]])
+   #?(:clj  [minitest.unify          :refer        [?]]
+      :cljs [minitest.unify          :refer-macros [?]])))
 
-  #?(:cljs (:require-macros [net.cgrand.macrovich :as macros]
-                            [minitest :refer [tests]])))
+(tests 0 := 0
+       (? [0 1 2 3] '[-1 ?a ?b ?b]))
 
-(tests 1 := 1
-       2 := 0)
+; (tests
+;   (tests 0 := 0)
+;   (let [x 1]
+;     (tests x := 1)))
 
-(tests 3 := 3
-       (tests 4 := 0))
+; (tests 0 := 0
+;        (tests 1 := 1))
 
-(tests 5 := 0)
+; (tests 1 := 1
+;        2 := 0)
+
+; (tests 3 := 3
+;        (tests 4 := 0))
+
+; (tests 5 := 0)

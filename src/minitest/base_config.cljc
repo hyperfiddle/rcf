@@ -1,7 +1,7 @@
 (ns minitest.base-config
   (:require [minitest.custom-map #?@(:clj  [:refer        [at-runtime]]
                                      :cljs [:refer-macros [at-runtime]])]
-            [minitest.utils                 :refer        [bold]]))
+            [minitest.utils                 :refer        [emphasize]]))
 
 
 (def base-config
@@ -19,7 +19,7 @@
    :term-width        120
    :error-depth       12
    :silent            false
-   :dots              true
+   :dots              false
    :report            {:enabled     true
                        :level       :case}
    :explain           {:enabled     true
@@ -57,7 +57,7 @@
                                                   #'*3 (at-runtime (or *3 nil))
                                                   }}}}}}}
    ;; Executor opts
-   :langs             [:clj]
+   :langs             [:clj :cljs]
 
    :run-fn            (at-runtime (deref (resolve 'minitest.runner/run)))
    :execute-fn        ::not-set! ;; Set in function of the :lang context.
@@ -111,10 +111,10 @@
                          :dev         run-on-load
                          :quiet-dev   [:dev, silent-success]}
             :status     {:success     {:logo                            "✅"
-                                       :WHEN {:location {:effect {:logo (bold "[Effect] ")}}}}
+                                       :WHEN {:location {:effect {:logo (emphasize "[Effect] ")}}}}
                          :failure     {:logo                            "❌"}
                          :error       {:logo                            "🔥"
-                                       :WHEN {:location {:effect {:logo (bold "😱 [Effect] ")}}}}}
+                                       :WHEN {:location {:effect {:logo (emphasize "😱 [Effect] ")}}}}}
             :test-level {:suite       {:announce-fn (at-runtime (deref (resolve 'minitest.reporter/announce-suite)))}
                          :ns          {:announce-fn (at-runtime (deref (resolve 'minitest.reporter/announce-ns)))
                                        :WHEN {:position {:after {:separator "\n"}}

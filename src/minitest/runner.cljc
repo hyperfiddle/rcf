@@ -142,12 +142,14 @@
         (assoc-in [:tested :val] testedv))))
 
 (defn run-expectation! [ns test]
-  (let [[expectedv wildcard?] (wildcard-expectation? test)
-        run                   (if wildcard?
-                                run-wildcard-expectation!
-                                run-simple-expectation!)]
-    (run ns (assoc-in test [:expected :thunk]
-                      (fn [] expectedv)))))
+  (if-let [x (wildcard-expectation? test)]
+    (let [[expectedv wildcard?] x
+          run                   (if wildcard?
+                                  run-wildcard-expectation!
+                                  run-simple-expectation!)]
+      (run ns (assoc-in test [:expected :thunk]
+                        (fn [] expectedv))))
+    (run-simple-expectation! ns test)))
 
 (defn run-test-and-yield-report! [ns {:keys [type op] :as test}]
   (case type
@@ -195,12 +197,31 @@
         (binding [*tests*            (atom {})
                   *tests-to-process* (atom {})]
           (let [result (binding [*running-inner-tests* true]
-                         (with-context {:run-tests false}
+                         ;; Doing this because when test blocks will be
+                         ;; discovered by running effects, the functions that
+                         ;; will be stored to support them will memorize the
+                         ;; config & context with clojure.core/bound-fn
+                         ;; (See minitest/parse-tests &
+                         ;; minitest.orchestrator/handling-case-config|).
+                         ;;
+                         ;; We have to tie the following, which allows us to
+                         ;; collect the inner tests without reporting them,
+                         ;; to a contextual value, so that we can actually
+                         ;; report those tests just a few lines below.
+                         ;; Otherwise they'll "remember" not to report
+                         ;; themselves.
+                         (with-config
+                           {:CTX  {::dry-run true}
+                            :WHEN {::dry-run {true {:run-tests   false
+                                                    :store-tests true
+                                                    :WHEN {:report-action {:explain {:report {:enabled false}}}}
+                                                    }}}}
                            (f &state &level &ns &data)))]
             (if-let [tests (-> *tests-to-process* deref (get &ns))]
               (with-meta
                 (concat [result]
-                        (process-all &state :case &ns (-> tests first)))
+                        (with-context {::dry-run false}
+                          (process-all &state :case &ns (-> tests first))))
                 {:minitest/inner-tests true})
               result)))))
     f))
@@ -212,10 +233,9 @@
         (with-config
           {:orchestrate-fn (orchestrate-inner-tests|
                              (-> (config) :orchestrate-fn))}
-          (->> (f &state &level &ns &data)
-               (mapcat #(if (-> % meta :minitest/inner-tests)
-                          % [%]))
-               doall))))
+          (doall (->> (f &state &level &ns &data)
+                      (mapcat #(if (-> % meta :minitest/inner-tests)
+                                 % [%])))))))
     f))
 
 (def run

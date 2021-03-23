@@ -19,6 +19,7 @@
                                                              on-context|
                                                              apply|
                                                              chain|
+                                                             stop-when|
                                                              do-nothing]
                                               :refer-macros [outside-in->>
                                                              anafn
@@ -32,7 +33,7 @@
                                               :refer-macros [with-context
                                                              with-config]])]
             [minitest.utils                   :refer        [call ->| dissoc-in
-                                                             bold]]
+                                                             emphasize]]
             [clojure.repl                     :refer        [pst]]
             [net.cgrand.macrovich             :as           macros])
   #?(:cljs
@@ -55,24 +56,6 @@
                      (->> (config) :term-width (* term-ratio)))))
 
 (defn pprint-str [x] (with-out-str (pprint x)))
-
-(defn- print-result [report logo left-ks right-ks]
-  (let [left  (get-in report left-ks)
-        right (get-in report right-ks)
-        s     (case (:op report)
-                := (str logo " " (pr-str left) " := " (pr-str right)  "\n")
-                :? (str logo " " (pr-str left) " ?"                   "\n"))]
-    ;; TODO
-    (if-not (ugly? s)
-      (print s)
-      (do
-        (printab logo (pprint-str left))
-        (newline)
-        (printab (str (apply  str  (repeat (+ 2 (count (str logo))) \space))
-                      (case (:op report) := ":= " :? "?"))
-                 (when (= := (:op report))
-                   (pprint-str right)))
-        (newline)))))
 
 (macros/deftime
   (defmacro ^:private once [state pth expr]
@@ -126,7 +109,7 @@
 (def befores (atom {}))
 
 ;; TODO: only print before separators if somethings eventually gets printed.
-;; Strategy: figure that out in [:before :suite] (i.e. anything runs).
+;; Strategy: figure that out in [:before :suite] (i.e. before anything runs).
 ;; See mark-for-later| which stores this info in the :later-at-level
 ;; field in &data, but at the [:do :case] level.
 (defn separating-levels| [f]
@@ -156,14 +139,29 @@
           (when (and sep (not= level :case))
             (swap! befores update level pop)))))))
 
+(defn print-result [report & {:keys [left right]
+                              ;; TODO: move to config
+                              :or {left  (get-in report [:tested   :form])
+                                   right (get-in report [:expected :val])}}]
+  (let [logo     (-> (config) :logo)
+        s     (if (-> report :op (= :?))
+                (str logo " " (pr-str left) " ?\n")
+                (str logo " "
+                     (pr-str left) " " (-> report :op) " " (pr-str right)
+                     "\n"))]
+    (if-not (ugly? s)
+      (print s)
+      (do
+        (printab logo (pprint-str left))
+        (newline)
+        (printab (str (apply  str  (repeat (+ 2 (count (str logo))) \space))
+                      (if (-> report :op (= :?)) "?" (-> report :op)))
+                 (when (= := (:op report))
+                   (pprint-str right)))
+        (newline)))))
+
 (defn report-expectation [report]
-  (let [status   (:status report)
-        logo     (-> (config) :logo)
-        left-ks  [:tested :form]
-        right-ks [:expected :val]
-        left     (get-in report left-ks)]
-    (print-result report logo left-ks right-ks))
-  report)
+  (doto report print-result))
 
 (defn announce-effect [data & {:keys [force printer] :or {printer println}}]
   ;; TODO: use lay for config
@@ -174,7 +172,8 @@
     data))
 
 (defn report-effect [data]
-  (if (and (-> (config) :effects :show-result))
+  (if (or (-> (config) :effects :show-result)
+          (-> data :status #{:error :failure}))
     (do (when-not (-> data :showed-form)
           (announce-effect data :force true :printer print))
         (println " ->" (:result data))
@@ -218,11 +217,9 @@
                    :cljs (pst (:error data)))
         :failure (let [v      (binding [*print-level* 10000
                                         pp/*print-pprint-dispatch*
-                                        pp/code-dispatch]
+                                        pp/code-dispatch] ;; TODO: Keep ?
                                 (-> data :tested :val pprint-str))
-                       left-n (count
-                                (str logo " " (pprint-str left)))
-                       prompt (str (bold "   Actual: "))
+                       prompt (str (emphasize "   Actual: "))
                        s      (str prompt v)]
                    (if-not (ugly? s)
                      (print s)
@@ -230,9 +227,6 @@
                          (newline)))))
       (macros/case :clj (flush-outputs))
       data)))
-
-(macros/deftime
-  (defmacro <-| [& body] `(fn [& args#] ~@body)))
 
 (defn marking-as| [k f]
   (fn [s p l n d]
@@ -338,7 +332,7 @@
             &data))))
     f))
 
-(defn reprint-report-with-explanation| [f]
+(defn reprint-reports-with-explanation| [f]
   (outside-in->>
     (on-level| [:explain :case]
       (when| (and (seq *reporting-level*)
@@ -346,7 +340,7 @@
                         (or (-> &data :later-at-level :explain) :case)))
         (with-context| {:report {:enabled true}}
           (chain| (anafn (dissoc &data :reported))
-                  (report-via| :report)))))
+                  (report-via| :report)))));; TODO: report-via doesn't mark as reported
     f))
 
 (defn handling-reports-at-report-level| [f]
@@ -354,7 +348,7 @@
     mark-for-later|
     stop-when-not-at-report-level|
     run-reports-at-report-level|
-    reprint-report-with-explanation|
+    reprint-reports-with-explanation|
     f))
 
 ;; --- SILENT MODE

@@ -1,47 +1,49 @@
 (ns minitest
   #?(:clj (:gen-class))
-  (:require [clojure.string                    :as    str]
-            [clojure.pprint                    :refer [pprint]]
-   #?(:clj  [clojure.spec.alpha                :as    s])
-   #?(:clj  [clojure.tools.namespace.repl      :refer [disable-reload!]])
-   #?(:clj  [clojure.repl                      :refer [source-fn]])
-   #?(:clj  [clojure.edn                       :as    edn])
-            [net.cgrand.macrovich              :as    macros]
-            [minitest.ns                       :as    ns
-             #?@(:cljs [:include-macros true])]
-            [minitest.base-config              :refer [base-config]]
-            [minitest.runner                   :refer [run
-                                                       *running-inner-tests*]]
-            [minitest.executor                 :refer [execute-clj
-                                                       execute-cljs]]
-            [minitest.reporter                 :refer [report]]
-            [minitest.orchestrator             :refer [orchestrate
-                                                       run-execute-report!]]
-            [minitest.config                   :as    config
-                        #?@(:cljs [:include-macros    true])]
-            [minitest.utils  #?@(:clj  [       :refer [as-form
-                                                       as-thunk
-                                                       as-wildcard-thunk
-                                                       ->|
-                                                       meta-macroexpand
-                                                       current-ns-name
-                                                       defalias]]
-                                 :cljs [       :refer [as-form
-                                                       as-thunk
-                                                       as-wildcard-thunk
-                                                       ->|
-                                                       meta-macroexpand]
-                                        :refer-macros [current-ns-name
-                                                       defalias]])]
-            [minitest.around-load   #?@(:clj  [:refer [apply-clj-patches
-                                                       store-or-run-tests!
-                                                       process-after-load!
-                                                       *tests*
-                                                       currently-loading?]]
-                                        :cljs [:refer [store-or-run-tests!
-                                                       process-after-load!
-                                                       *tests*]
-                                         :refer-macros [currently-loading?]])]))
+  (:require [clojure.string                    :as           str]
+            [clojure.pprint                    :refer        [pprint]]
+   #?(:clj  [clojure.spec.alpha                :as           s])
+   #?(:clj  [clojure.tools.namespace.repl      :refer        [disable-reload!]])
+   #?(:clj  [clojure.repl                      :refer        [source-fn]])
+   #?(:clj  [clojure.edn                       :as           edn])
+   #?(:clj  [clojure.core.unify                :refer        [unify]])
+            [net.cgrand.macrovich              :as           macros]
+            [minitest.ns                       :as           ns
+                             #?@(:cljs [       :include-macros true])]
+            [minitest.base-config              :refer        [base-config]]
+            [minitest.runner                   :refer        [run
+                                                              *running-inner-tests*]]
+            [minitest.executor                 :refer        [execute-clj
+                                                              execute-cljs]]
+            [minitest.reporter                 :refer        [report]]
+            [minitest.orchestrator             :refer        [orchestrate
+                                                              run-execute-report!]]
+            [minitest.config                   :as           config
+                             #?@(:cljs [       :include-macros true])]
+            [minitest.utils  #?@(:clj  [       :refer        [as-form
+                                                              as-thunk
+                                                              as-wildcard-thunk
+                                                              ->|
+                                                              current-bindings
+                                                              meta-macroexpand
+                                                              current-ns-name
+                                                              defalias]]
+                                 :cljs [       :refer        [as-form
+                                                              as-thunk
+                                                              as-wildcard-thunk
+                                                              ->|
+                                                              current-bindings]
+                                               :refer-macros [current-ns-name
+                                                               defalias]])]
+            [minitest.around-load   #?@(:clj  [:refer        [apply-clj-patches
+                                                              store-or-run-tests!
+                                                              process-after-load!
+                                                              *tests*
+                                                              currently-loading?]]
+                                        :cljs [:refer        [store-or-run-tests!
+                                                              process-after-load!
+                                                              *tests*]
+                                               :refer-macros [currently-loading?]])]))
 
 (macros/deftime (disable-reload!))
 (macros/deftime (macros/case :clj (apply-clj-patches)))
@@ -132,6 +134,25 @@
 ;; - [√] set-context!
 ;; - [√] namespaces as context
 
+(defn minitest-var? [var]
+  (when-let [s (some->> var meta :ns ns-name str)]
+    (and      (re-matches #"minitest.*" s)
+         (not (re-matches #"minitest.*-test" s)))))
+
+(defn case-config-bindings []
+  (->> [#'config/*early-config*
+        #'config/*late-config*
+        #'config/*context*]
+       (map (->| (juxt identity deref) vec))
+       (into {})))
+
+(defn case-bindings []
+  (let [config-var? (set (keys (case-config-bindings)))]
+    (->> (current-bindings)
+         (remove (->| key (some-fn config-var? minitest-var?
+                                   #{#'*1 #'*2 #'*3 #'*e})))
+         (into {}))))
+
 (macros/deftime
   ;; TODO: too much
   (defn conform! [spec value]
@@ -148,7 +169,7 @@
                                            pprint)))))))
       result))
 
-  (defn- parse-tests [block-body]
+  (defn- parse-tests [env block-body]
     (let [not-op? (complement #{:= :?})]
       (->> block-body
            (conform!
@@ -161,62 +182,62 @@
                                      :? (s/cat :op       #{:?}
                                                :tested not-op?)))))
            ;; Sample of what we are processing next:
-           ;; [[:effect 0]
+           ;; [[:effect '(do :something)]
            ;;  [:expectation [:= {:tested 1, :op :=, :expected 1}]]]
            (mapv
              (fn [[type x]]
                (case type
                  :effect
-                 (let [xpd (meta-macroexpand x)]
-                   {:type          :effect
-                    :form          (-> x as-form)
-                    :macroexpanded (with-meta (-> xpd as-form)
-                                     (meta xpd))
-                    :thunk         (with-meta (-> xpd as-thunk)
-                                     (meta xpd))})
+                 (let [xpd (meta-macroexpand env x)]
+                   {:type            :effect
+                    :form            (-> x as-form)
+                    :macroexpanded   (with-meta (-> xpd as-form)
+                                       (meta xpd))
+                    :thunk           (with-meta (-> xpd as-thunk)
+                                       (meta xpd))
+                    :bindings        `(case-bindings)
+                    :config-bindings `(case-config-bindings)})
 
                  :expectation
                  (let [[op m] x]
                    (-> (merge
-                         {:type     :expectation
-                          :op       op
+                         {:type            :expectation
+                          :op              op
+                          :bindings        `(case-bindings)
+                          :config-bindings `(case-config-bindings)
                           :tested
-                          (let [xpd (meta-macroexpand (-> m :tested))]
+                          (let [xpd  (meta-macroexpand env (-> m :tested))]
                             {:form          (-> m :tested as-form)
                              :macroexpanded (-> xpd as-form)
                              :thunk         (-> xpd as-thunk)})}
                          (when (= op :=)
                            {:expected
-                            (let [xpd (meta-macroexpand (-> m :expected))]
+                            (let [xpd (meta-macroexpand env (-> m :expected))]
                               {:form          (-> m :expected as-form)
                                :macroexpanded (-> xpd as-form)
                                :thunk         (-> xpd as-wildcard-thunk)})}))
                        ))))))))
 
-  (defn- handle-as-inner-test [form]
-    (with-meta form
-      {:report {:enabled false}}))
 
   (defmacro tests [& body]
     (when-not (-> (config/config) :elide-tests)
-      (handle-as-inner-test
-        `(config/with-context {:exec-mode
-                               (if (or *running-inner-tests*
-                                       (currently-loading?))
-                                 :on-load :on-eval)}
-           (let [c#     (config/config)
-                 ns#    (current-ns-name)
-                 block# ~(parse-tests body)]
-             (if (-> (config/context) :exec-mode (= :on-load))
-               (when (or (:store-tests c#)
-                         (:run-tests   c#))
-                 (process-after-load! ns# [block#]))
-               (config/with-config {:report    {:level   :case}
-                                    :explain   {:level   :case}
-                                    :stats     {:enabled false}}
-                 (when   (:run-tests   c#)
-                   (run-execute-report! :block ns# block#)))))
-           nil)))))
+      `(config/with-context {:exec-mode
+                             (if (or *running-inner-tests*
+                                     (currently-loading?))
+                               :on-load :on-eval)}
+         (let [c#     (config/config)
+               ns#    (current-ns-name)
+               block# ~(parse-tests &env body)]
+           (if (-> (config/context) :exec-mode (= :on-load))
+             (when (or (:store-tests c#)
+                       (:run-tests   c#))
+               (process-after-load! ns# [block#]))
+             (config/with-config {:report    {:level   :case}
+                                  :explain   {:level   :case}
+                                  :stats     {:enabled false}}
+               (when   (:run-tests   c#)
+                 (run-execute-report! :block ns# block#)))))
+         nil))))
 
 (defn- config-kw? [x]
   (and (keyword? x)

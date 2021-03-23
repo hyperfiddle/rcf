@@ -9,7 +9,9 @@
                                         :refer-macros [with-context
                                                        with-config]])])
   #?(:cljs (:require-macros
-             [minitest.higher-order     :refer        [def-on-fn]])))
+             [minitest.higher-order     :refer        [def-on-fn
+                                                       anafn
+                                                       outside-in->>]])))
 
 (macros/deftime
   (defmacro def-on-fn [name first-arg pred-expr]
@@ -50,10 +52,13 @@
        ([      ~'&state ~'&position ~'&level ~'&ns ~'&data]
         ~@body)))
 
-  (defmacro when|         [expr f] `(anaph| #(if ~expr (apply ~f %&) ~'&data)))
   (defmacro with-config|  [ctx  f] `(anaph| #(with-config  ~ctx (apply ~f %&))))
   (defmacro with-context| [ctx  f] `(anaph| #(with-context ~ctx (apply ~f %&))))
-  (defmacro outside-in->> [& frms] `(->> ~@(reverse frms))))
+  (defmacro outside-in->> [& frms] `(->> ~@(reverse frms)))
+  (defmacro when|            [e f] `(anaph| #(if ~e (apply ~f %&) ~'&data)))
+  (defmacro if|        [e f & [g]] `(anaph| #(if ~e
+                                               (apply ~f %&)
+                                               (apply (or ~g do-nothing) %&)))))
 
 (defn apply| [f]
   #(apply f %))
