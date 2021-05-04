@@ -10,13 +10,22 @@
             [minitest        #?@(:clj  [:refer        [tests]]
                                  :cljs [:refer-macros [tests]])]
             [minitest.config #?@(:clj  [:refer        [config
+                                                       context
                                                        with-config
                                                        with-context]]
-                                 :cljs [:refer        [config]
+                                 :cljs [:refer        [config
+                                                       context]
                                         :refer-macros [with-config
                                                        with-context]])]
-            [minitest.unify  #?@(:clj  [:refer        [?]]
-                                 :cljs [:refer-macros [?]])])
+            [minitest.unify  #?@(:clj  [:refer        [?] :reload true]
+                                 :cljs [:refer-macros [?] :reload true])]
+            [minitest.inner-tests :reload true]
+            [minitest.orchestrator :reload true]
+            [minitest.runner :reload true]
+            [minitest.executor :reload true]
+            [minitest.reporter :reload true]
+            [minitest.around-load :reload true]
+            [minitest :reload true]) ;; TODO: remove
   #?(:cljs
       (:require-macros [minitest-features-test :refer [println
                                                        inner-test-macro]])))
@@ -92,6 +101,7 @@
   (println "... as elements of sets")
   #{1 2} := #{_ 2})
 
+
 (macros/deftime
   (defmacro inner-test-macro []
     `(tests 2 := 2)))
@@ -106,18 +116,25 @@
   (println "... macroexpansion")
   (inner-test-macro)
   (println "... function call")
-  ^{:report {:enabled false}} (inner-test-fn)
+  (inner-test-fn)
   (println "... inner inner test")
   (tests (tests 4 := 4))
   (println "... in a let form")
-  ^{:effects {:show-form false :show-result false}}
   (let [expected 2]
-    (tests (inc 1) := expected)))
+    (tests (inc 1) := expected))
+  (println "... are reported coherently with surrounding effect output")
+  (tests (do (println "-- before")
+             (tests 0 := 0)
+             (with-config {:report {:level :block} :output {:level :block}}
+               (tests (println "... and plays well with report levels")
+                      100 := 100))
+             (println "-- after"))))
 
 (tests
-  (println "case-level config for...")
-  :? ^{:logo "👍"} (true? true)
+  (println "config via case meta for...")
   (println "... :? expectation")
+  :? ^{:logo "👍"} (true? true)
+  (println "... := expectation")
   ^{:logo "👍"} [2] := [2]
   (println "...effect")
   ^{:logo "👍"} (do :nothing))
@@ -132,7 +149,6 @@
          (println "...... outside tests blocks")
          *dyn-var* := :bound-val))
 (tests (println   "...... inside tests blocks")
-       ^{:effects {:show-form false :show-result false}}
        (binding [*dyn-var* :bound-val]
          (tests *dyn-var* := :bound-val)))
 
@@ -141,7 +157,6 @@
   (tests (println "... outside tests blocks")
          1 := 1))
 (tests (println   "... inside tests blocks")
-       ^{:effects {:show-form false :show-result false}}
        (with-config {:logo "👐"}
          (tests 2 := 2)))
 
@@ -150,7 +165,6 @@
   (tests (println "... outside tests blocks")
          1 := 1))
 (tests (println   "... inside tests blocks")
-       ^{:effects {:show-form false :show-result false}}
        (with-context {:test-key true}
          (tests 2 := 2)))
 
@@ -161,5 +175,5 @@
   (println "... failure")
   (? [-1 1 2 3 4] [0 _ ?b ?b])
   (println "... error")
-  (? [(throw (ex-info "intentionally-raised" {}))]
-     [_]))
+  (tests (? [(throw (ex-info "intentionally-raised" {}))]
+       [_])))

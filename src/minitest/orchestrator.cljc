@@ -1,21 +1,39 @@
 (ns minitest.orchestrator
   (:require [net.cgrand.macrovich             :as           macros]
-            [minitest.higher-order #?@(:clj  [:refer        [outside-in->>
-                                                             with-context|]]
-                                       :cljs [:refer-macros [outside-in->>
-                                                             with-context|]])]
+            [minitest.higher-order #?@(:clj  [:refer        [chain|
+                                                             with-bindings|
+                                                             outside-in->>
+                                                             with-context|
+                                                             anafn
+                                                             anaph|
+                                                             if|
+                                                             with-config|]]
+                                       :cljs [:refer        [chain|
+                                                             with-bindings|]
+                                              :refer-macros [outside-in->>
+                                                             with-context|
+                                                             anafn
+                                                             anaph|
+                                                             if|
+                                                             with-config|]])]
             [minitest.config       #?@(:clj  [:refer        [config
                                                              with-config]
                                               :as           config]
                                        :cljs [:refer        [config]
                                               :refer-macros [with-config]
                                               :as           config])]
-            [minitest.utils                   :refer        [->|]]
-   #?(:cljs [minitest.with-bindings           :refer        [with-bindings*]]))
+            [minitest.utils        #?@(:clj  [:refer        [->|
+                                                             with-out-str+result]]
+                                       :cljs [:refer        [->|]
+                                              :refer-macros [with-out-str+result]])]
+            [minitest.walk                    :refer        [copostwalk]]
+   #?(:cljs [minitest.with-bindings           :refer        [with-bindings*]
+                                              :refer-macros [with-bindings]]))
   #?(:cljs
       (:require-macros
         [minitest.orchestrator        :refer        [let-testing-fns
-                                                     ensuring-testing-state]])))
+                                                     ensuring-testing-state
+                                                     handling-case-execution-output]])))
 
 (def ^:dynamic ^:no-doc *testing-state* nil)
 
@@ -64,16 +82,61 @@
         f s l n d)
       (f s l n d))))
 
-(defn handling-case-config-bindings| [f]
-  (fn [s l n d]
-    (if (= l :case)
-      (with-bindings* (->> (for [[var val] (-> d :config-bindings)]
-                             [var (config/deep-merge @var val)])
-                           (into {}))
-        f s l n d)
-      (f s l n d))))
+(macros/deftime
+  (defmacro handling-case-execution-output [level & body]
+    ; `(do ~@body)
+    `(if (= ~level :case)
+       (let [[output# result#] (with-out-str+result
+                                 (do ~@body))]
+         (update result# :output str output#))
+       (do ~@body))))
 
-(defn handling-case-config| [fetch f]
+(defn handling-case-execution-output| [f]
+  (if| (= &level :case)
+    (anafn (let [[output result] (with-out-str+result (apply f &args))]
+             (update result :output str output)))
+    f))
+
+(defn get-case-config-bindings [data]
+  (->> (for [[var val] (-> data :config-bindings)
+             :let [varv @var]]
+         [var
+          (config/deep-merge varv val)
+
+          ;; TODO: for cljs
+          #_(config/deep-merge
+            @var
+            (first (copostwalk (fn [x surrounding]
+                                 [(if (map-entry? x)
+                                    (if (not= (val x) (val surrounding))
+                                      x
+                                      nil)
+                                    x)
+                                  surrounding])
+                               val
+                               (get config/*surrounding-config-bindings* var))))])
+       (into {})))
+
+(defn installing-config-bindings| [f]
+  (fn [s l n d]
+    (let [bindings-map (-> (config) :bindings)]
+      (if (seq bindings-map)
+        (with-bindings* bindings-map f s l n d)
+        (f s l n d)))))
+
+(defn binding-test-output| [f]
+  (fn [state level ns data]
+    (binding [*out* (-> (config) :out)]
+      (f state level ns data))))
+
+(defn handling-case-config-bindings| [f]
+  (if| (= &level :case)
+    (with-bindings| (get-case-config-bindings &data)
+      f)
+    f))
+
+;; TODO: remove
+(defn handling-meta-case-config| [fetch f]
   (fn [s l n d]
     (if (= l :case)
       (with-config (fetch d)
@@ -90,49 +153,45 @@
           fetch-case-config-after  #(-> (fetch-case-config-before %)
                                         (merge (-> % meta :minitest/config)))
           handle-before (with-context|
-                          {:position :before}
-                          (handling-case-bindings|
-                            (handling-case-config-bindings|
-                              (handling-case-config|
-                                fetch-case-config-before
-                                (or handle-before
-                                    (fn [s l n d]
-                                      (&report  s :before l n d)
-                                      (&execute s :before l n d)))))))
+                          {:position :before ;; TODO
+                           :test-position :before}
+                          (handling-meta-case-config|
+                            fetch-case-config-before
+                            (or handle-before
+                                #_(chain|
+                                  (anafn (&report &state :before &level &ns
+                                                  &data))
+                                  (handling-case-execution-output| &execute))
+                                ;; TODO: remove
+                                (fn [s l n d]
+                                    (let [dd (&report  s :before l n d)]
+                                      (handling-case-execution-output l
+                                        (&execute s :before l n dd)))))))
           handle-after  (with-context|
-                          {:position :after
-                           :location   (if (= &level :case)
-                                         (:location &data) :minitest/not-set!)
+                          {:position :after ;; TODO
+                           :test-position :after
+                           :test-type  (if (= &level :case)
+                                         (:type &data) :minitest/not-set!)
                            :status     (if (= &level :case)
                                          (:status   &data) :minitest/not-set!)}
-                          (handling-case-bindings|
-                            (handling-case-config-bindings|
-                              (handling-case-config|
-                                fetch-case-config-after
-                                (or handle-after
-                                    (fn [s l n d]
-                                      (&execute s :after l n d)
-                                      (&report  s :after l n d)))))))]
+                          (handling-meta-case-config|
+                            fetch-case-config-after
+                            (or handle-after
+                                (fn [s l n d]
+                                  (let [dd (handling-case-execution-output l
+                                             (&execute  s :after l n d))]
+                                    (&report s :after l n dd))))))]
       (handle-before       state level ns data)
-      (let [run-f    (handling-case-bindings|
-                       (handling-case-config-bindings|
-                         (handling-case-config|
-                           fetch-case-config-before
-                           &run)))
-            rpt-data (run-f state level ns data)]
+      (let [run-f    (handling-meta-case-config|
+                       fetch-case-config-before
+                       &run)
+            rpt-data (handling-case-execution-output level
+                       (run-f state level ns data))]
         (handle-after      state level ns rpt-data)))))
-
-(defn install-config-bindings| [f]
-  (fn [s l n d]
-    (let [bindings-map (-> (config) :bindings)]
-      (if (seq bindings-map)
-        (with-bindings* bindings-map f s l n d)
-        (f s l n d)))))
 
 (defn handling-fail-fast| [f]
   (fn [s l n d]
-    (if-not (= l :case)
-      (f s l n d)
+    (if (= l :case)
       (orchestrate-level
         s l n d
         :handle-after
@@ -142,19 +201,25 @@
               (if (and (:fail-fast conf)
                        (some-> d :status #{:error :failure}))
                 (fail-fast! s n d)
-                (do (&execute s :after l n d)
-                    (&report  s :after l n d))))))))))
+                (do (let [dd (handling-case-execution-output l
+                               (&execute s :after l n d))]
+                      (&report           s :after l n dd))))))))
+      (f s l n d))))
 
 (def orchestrate
   (outside-in->>
+    handling-case-bindings|
+    handling-case-config-bindings|
     (with-context|
       {:test-level &level
        :ns         &ns
        :lang       (macros/case  :clj :clj  :cljs :cljs)})
-    install-config-bindings|
+    installing-config-bindings|
+    binding-test-output|
     handling-fail-fast|
     orchestrate-level))
 
+;; TODO: get rid off
 (defn run-execute-report!
   ([level ns->tsts]
    (run-execute-report! level nil ns->tsts))

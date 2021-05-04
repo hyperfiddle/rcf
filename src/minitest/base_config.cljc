@@ -1,7 +1,8 @@
 (ns minitest.base-config
   (:require [minitest.custom-map #?@(:clj  [:refer        [at-runtime]]
                                      :cljs [:refer-macros [at-runtime]])]
-            [minitest.utils                 :refer        [emphasize]]))
+            [minitest.utils                 :refer        [call
+                                                           emphasize]]))
 
 
 (def base-config
@@ -20,10 +21,13 @@
    :error-depth       12
    :silent            false
    :dots              false
-   :report            {:enabled     true
-                       :level       :case}
-   :explain           {:enabled     true
-                       :level       :case
+   ;; TODO: clearer names for the actions
+   :output            {:enabled true
+                       :level   :case}
+   :report            {:enabled true
+                       :level   :case}
+   :explain           {:enabled true
+                       :level   :case
                        :WHEN {:dots {true {:WHEN {:status {:error   {:level :suite}
                                                            :failure {:level :suite}}}}}}}
    ;; Try this.
@@ -60,7 +64,7 @@
    :langs             [:clj :cljs]
 
    :run-fn            (at-runtime (deref (resolve 'minitest.runner/run)))
-   :execute-fn        ::not-set! ;; Set in function of the :lang context.
+   :execute-fn        (at-runtime (deref (resolve 'minitest.executor/execute)))
    :report-fn         (at-runtime (deref (resolve 'minitest.reporter/report)))
    :orchestrate-fn    (at-runtime (deref (resolve 'minitest.orchestrator/orchestrate)))
 
@@ -88,9 +92,9 @@
           :first-in-level :minitest/not-set!  ;; #{true false}
           :test-level     :minitest/not-set!  ;; #{:suite :ns :block :case}
           :test-position  :minitest/not-set!  ;; #{:before :after :do}
+          :test-type      :minitest/not-set!  ;; #{:expectation :effect}
           :status         :minitest/not-set!  ;; #{:success :failure :error}
-          :location       :minitest/not-set!  ;; #{:expectation :effect}
-          :report-action  :minitest/not-set!  ;; #{:report :explain}
+          :report-action  :minitest/not-set!  ;; #{:output :report :explain}
           :report-level   :case}              ;; #{:suite :ns :block :case}
    :WHEN (let [silent-success
                {:WHEN {:status    {:success {:silent    true}}}}
@@ -98,11 +102,11 @@
                {:WHEN {:exec-mode {:on-load {:run-tests true}}}}]
            ;; reads as:
            ;; when       is    then         is
-           {:lang       {:clj  {:execute-fn (at-runtime (deref (resolve 'minitest.executor/execute-clj)))}
-                         :cljs {:execute-fn (at-runtime (deref (resolve 'minitest.executor/execute-cljs)))}}
-            :exec-mode  {:on-load     {:store-tests    true
+           {:exec-mode  {:on-load     {:store-tests    true
                                        :run-tests      false}
                          :on-eval     {:store-tests    false
+                                       :run-tests      true}
+                         :inner-test  {:store-tests    false
                                        :run-tests      true}}
             :env        {:production  {:elide-tests    true}
                          :lib         {:elide-tests    false}
@@ -111,10 +115,10 @@
                          :dev         run-on-load
                          :quiet-dev   [:dev, silent-success]}
             :status     {:success     {:logo                            "✅"
-                                       :WHEN {:location {:effect {:logo (emphasize "[Effect] ")}}}}
+                                       :WHEN {:test-type {:effect {:logo (emphasize "[Effect] ")}}}}
                          :failure     {:logo                            "❌"}
                          :error       {:logo                            "🔥"
-                                       :WHEN {:location {:effect {:logo (emphasize "😱 [Effect] ")}}}}}
+                                       :WHEN {:test-type {:effect {:logo (emphasize "😱 [Effect] ")}}}}}
             :test-level {:suite       {:announce-fn (at-runtime (deref (resolve 'minitest.reporter/announce-suite)))}
                          :ns          {:announce-fn (at-runtime (deref (resolve 'minitest.reporter/announce-ns)))
                                        :WHEN {:position {:after {:separator "\n"}}

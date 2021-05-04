@@ -1,17 +1,18 @@
 (ns minitest.higher-order
   (:require [net.cgrand.macrovich       :as           macros]
-            [minitest.config #?@(:clj  [:refer        [context
-                                                       config
-                                                       with-context
-                                                       with-config]]
-                                 :cljs [:refer        [context
+            [minitest.utils             :refer        [->|]]
+            [minitest.config            :refer        [context
                                                        config]
-                                        :refer-macros [with-context
-                                                       with-config]])])
+                                        :as           config])
   #?(:cljs (:require-macros
              [minitest.higher-order     :refer        [def-on-fn
+                                                       def-config-binders
                                                        anafn
-                                                       outside-in->>]])))
+                                                       outside-in->>]]
+             [minitest.with-bindings    :refer        [with-bindings*]])))
+
+(def report-actions   [:output    :report   :explain])
+(def report-actioneds [:outputted :reported :explained])
 
 (macros/deftime
   (defmacro def-on-fn [name first-arg pred-expr]
@@ -39,21 +40,42 @@
   (defmacro anaph| [f]
     `(fn
        ([      ~'&state             ~'&level ~'&ns ~'&data]
-        (let           [~'&position nil]
+        (let           [~'&position nil
+                        ~'&args     [~'&state             ~'&level ~'&ns ~'&data]]
           (~f  ~'&state             ~'&level ~'&ns ~'&data)))
        ([      ~'&state ~'&position ~'&level ~'&ns ~'&data]
-        (~f    ~'&state ~'&position ~'&level ~'&ns ~'&data))))
+        (let           [~'&args     [~'&state ~'&position ~'&level ~'&ns ~'&data]]
+          (~f    ~'&state ~'&position ~'&level ~'&ns ~'&data)))))
 
   (defmacro anafn [& body]
     `(fn
        ([      ~'&state             ~'&level ~'&ns ~'&data]
-        (let     [~'&position nil]
+        (let     [~'&position nil
+                  ~'&args     [~'&state             ~'&level ~'&ns ~'&data]]
           ~@body))
        ([      ~'&state ~'&position ~'&level ~'&ns ~'&data]
-        ~@body)))
+        (let   [~'&args       [~'&state ~'&position ~'&level ~'&ns ~'&data]]
+          ~@body))))
 
-  (defmacro with-config|  [ctx  f] `(anaph| #(with-config  ~ctx (apply ~f %&))))
-  (defmacro with-context| [ctx  f] `(anaph| #(with-context ~ctx (apply ~f %&))))
+  (defmacro def-config-binders []
+    `(do ~@(for [w-wo     ['with 'without]
+                 name     ['config 'context]
+                 modifier [nil 'default 'forced]
+                 :let [full-name (str w-wo \-
+                                      modifier (when modifier \-)
+                                      name)]]
+             `(defmacro ~(symbol (str full-name "|"))
+                [arg# f#]
+                `(anaph| (fn [& ~'args#]
+                           (~'~(symbol "minitest.config" full-name)
+                                ~arg# (apply ~f# ~'args#))))))))
+
+  (def-config-binders)
+
+  (defn with-bindings| [m f]
+    (fn [& args]
+      (apply with-bindings* m f args)))
+
   (defmacro outside-in->> [& frms] `(->> ~@(reverse frms)))
   (defmacro when|            [e f] `(anaph| #(if ~e (apply ~f %&) ~'&data)))
   (defmacro if|        [e f & [g]] `(anaph| #(if ~e
@@ -63,10 +85,33 @@
 (defn apply| [f]
   #(apply f %))
 
-(defn chain| [f g]
-  (fn [& args]
-    (let [result (apply f args)]
-      (apply g (concat (butlast args) [result])))))
+(defn chain|
+  ([f g]
+   (fn [& args]
+     (let [result (apply f args)]
+       (apply g (concat (butlast args) [result])))))
+  ([f g & more]
+   (chain| f (apply chain| g more))))
+
+(def level-below
+  {:suite :ns
+   :ns    :block
+   :block :case})
+
+(def level-above
+  {:ns    :suite
+   :block :ns
+   :case  :block})
+
+(defn levels-below [l]
+  (->> (iterate level-below l)
+       (take-while identity)
+       rest))
+
+(defn levels-above [l]
+  (->> (iterate level-above l)
+       (take-while identity)
+       rest))
 
 (defn do-nothing
   ([s l n d]    d)
@@ -114,3 +159,10 @@
   (outside-in->> (on-level| level action)
                  (stop-when| (match-level?| level))
                  continue))
+
+(defn marking-as| [k f]
+  (anafn
+    (if (= &level :case)
+      (-> (apply f &args)
+          (assoc k true))
+      (apply f &args))))

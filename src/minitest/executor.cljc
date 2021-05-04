@@ -2,19 +2,37 @@
   (:require [net.cgrand.macrovich             :as           macros]
     #?(:clj [minitest.prepl                   :as           prepl])
     #?(:clj [minitest.utils                   :refer        [as-thunk]])
-            [minitest.higher-order #?@(:clj  [:refer        [on-level|
-                                                             outside-in->>]]
-                                       :cljs [:refer        [on-level|]
-                                              :refer-macros [outside-in->>]])]
+            [minitest.higher-order #?@(:clj  [:refer        [marking-as|
+                                                             on-level|
+                                                             do-nothing
+                                                             outside-in->>
+                                                             anafn
+                                                             when|
+                                                             if|]]
+                                       :cljs [:refer        [marking-as|
+                                                             on-level|
+                                                             do-nothing]
+                                              :refer-macros [outside-in->>
+                                                             anafn
+                                                             when|
+                                                             if|]])]
             [minitest.dbg          #?@(:clj  [:refer        [dbg]]
                                        :cljs [:refer-macros [dbg]])]
-            [minitest.runner                  :refer        [run-test-and-yield-report!]]))
+            [minitest.runner                  :refer        [run-test-and-yield-report!]]
+            [minitest.config                  :refer        [context]
+                                              :as            config]
+            [minitest.inner-tests             :refer        [executing-inner-tests|]])
+  #?@(:cljs
+       (:require-macros
+         [minitest.executor                   :refer        [capturing-inner-test-results]]
+         [minitest.with-bindings              :refer        [with-bindings]])))
 
 (def testing-repl (atom nil))
 
 (def execute-clj
-  (on-level| [:do :case] (fn [state position level ns data]
-                           (run-test-and-yield-report! ns data))))
+  (on-level| [:do :case] (when| (-> &data :executed not) ;; TODO: remove guard
+                           (fn [state position level ns data]
+                             (run-test-and-yield-report! ns data)))))
 
 (macros/deftime
   (defn- start-testing-repl! []
@@ -47,6 +65,7 @@
                   (dbg "REPL RESULT" res))))
   data)
 
+
 (defn run-case-in-cljs [state position level ns data]
   (macros/case
     :cljs (run-test-and-yield-report! ns-name data)
@@ -65,3 +84,15 @@
   (outside-in->> (on-level| [:before :suite] ensure-testing-repl)
                  (on-level| [:before :ns]    require-tested-ns-in-cljs)
                  (on-level| [:do     :case]  run-case-in-cljs)))
+
+(defn execute-for-lang [s p l n d]
+  (let [f (case (-> (context) :lang)
+            :clj  execute-clj
+            :cljs execute-cljs)]
+    (f s p l n d)))
+
+(def execute
+  (outside-in->>
+    executing-inner-tests|
+    (marking-as| :executed)
+    execute-for-lang))

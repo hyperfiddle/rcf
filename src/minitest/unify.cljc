@@ -10,8 +10,10 @@
                                                              context]
                                               :refer-macros [with-config
                                                              extending-config]])]
-            [minitest.custom-map   #?@(:clj  [:refer        [at-runtime]]
-                                       :cljs [:refer-macros [at-runtime]])]
+            [minitest.custom-map   #?@(:clj  [:refer        [func-map
+                                                             at-runtime]]
+                                       :cljs [:refer-macros [func-map
+                                                             at-runtime]])]
             [minitest.higher-order #?@(:clj  [:refer        [instead-of-level|
                                                              outside-in->>
                                                              anafn
@@ -63,12 +65,13 @@
   (let [ctx (context)]
     (doto d (-> (assoc :op :≈)
                 (print-result :left  (-> ctx :case-data :? :tested :form)
-                              :right (-> ctx :case-data :? :expected :val))))))
+                              :right (-> ctx :case-data :? :expected :form))))))
 
 (defn explain-? [s p l n d]
   (let [case-data           (-> (context) :case-data :?)
-        tested              (-> case-data :tested   :val)
-        expected            (-> case-data :expected :val)
+        _ (println case-data)
+        tested              (-> case-data :tested   :form)
+        expected            (-> case-data :expected :form)
         var-vals            (lvar-values tested expected)
         errors              (filter #(-> % second count (> 1)) var-vals)
         binds-no-op         (->> (for [v (lvars expected)]
@@ -89,20 +92,17 @@
           (println (str (if (= val first-val) "     • " "       ")
                         var ": " val)))))
     (when-not (unify tested lvars-disabled)
-      (println (emphasize    "   Other inequalities:"))
+      (println (emphasize    "   Inequalities:"))
       (print            "     • ")
       (diff/pretty-print (diff tested-with-lvars expected)))
     d))
 
 (macros/deftime
   (defmacro ? [tested expected]
-    `(let [tested#   ~tested
-           expected# ~(postwalk #(if  (lvar? %)  `(quote ~%)  %)
-                                expected)]
-       (extending-config
+    `(extending-config
          {:CTX       {:case-data
-                      {:? {:tested   {:val tested#   :form '~tested}
-                           :expected {:val expected# :form '~expected}}}}
+                      {:? {:tested   {:form '~tested}
+                           :expected {:form '~expected}}}}
           :report-fn (outside-in->>
                        (instead-of-level|
                          [:report  :case] report-?)
@@ -112,4 +112,5 @@
                                               explain-?
                                               (-> ~'&config :report-fn))))
                        (-> ~'&config :report-fn))}
-         (tests :? (unify tested# expected#))))))
+         (tests :? (unify ~tested ~(postwalk #(if  (lvar? %)  `(quote ~%)  %)
+                                       expected))))))

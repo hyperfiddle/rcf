@@ -1,27 +1,35 @@
 (ns minitest.around-load
   (:require
-    #?(:clj [cljs.analyzer.api          :as           ana])
-    #?(:clj [cljs.compiler              :as           cljsc])
+    #?(:clj [cljs.analyzer.api                :as           ana])
+    #?(:clj [cljs.compiler                    :as           cljsc])
     #?(:clj [cljs.repl])
-    #?(:clj [robert.hooke               :refer        [add-hook]])
-            [net.cgrand.macrovich       :as           macros]
-    #?(:clj [minitest.utils             :refer        [->|]])
-            [minitest.dbg    #?@(:clj  [:refer        [dbg]]
-                                 :cljs [:refer-macros [dbg]])]
-            [minitest.orchestrator      :refer        [run-execute-report!]]
-            [minitest.config #?@(:clj  [:refer        [config
-                                                       with-context]]
-                                 :cljs [:refer        [config]
-                                        :refer-macros [with-context]])])
+    #?(:clj [robert.hooke                     :refer        [add-hook]])
+            [net.cgrand.macrovich             :as           macros]
+    #?(:clj [minitest.utils                   :refer        [->|]])
+            [minitest.higher-order #?@(:clj  [:refer        [levels-above
+                                                             do-nothing
+                                                             if|]]
+                                       :cljs [:refer        [levels-above
+                                                             do-nothing]
+                                              :refer-macros [if|]])]
+            [minitest.dbg          #?@(:clj  [:refer        [dbg]]
+                                       :cljs [:refer-macros [dbg]])]
+            [minitest.orchestrator            :refer        [run-execute-report!]]
+            [minitest.config       #?@(:clj  [:refer        [config
+                                                             with-config
+                                                             with-context]]
+                                       :cljs [:refer        [config]
+                                              :refer-macros [with-config
+                                                             with-context]])])
   #?(:cljs
       (:require-macros
-        [minitest.around-load           :refer        [currently-loading?
-                                                       tests-to-process]])))
+        [minitest.around-load                 :refer        [currently-loading?
+                                                             tests-to-process]])))
 
-(def ^:dynamic          *tests*             (atom {}))
+(def ^:dynamic          *tests*             (atom nil))
 (def ^:dynamic ^:no-doc *currently-loading* false)
 (def ^:dynamic ^:no-doc *tested-ns*         nil)
-(def ^:dynamic ^:no-doc *tests-to-process*  nil)
+(def ^:dynamic ^:no-doc *tests-to-process*  (atom nil))
 
 (macros/deftime
   (defmacro currently-loading? []
@@ -33,31 +41,41 @@
   (defmacro tests-to-process []
     (macros/case
       :clj  `*tests-to-process*
-      :cljs `(when (cljs.core/exists? js/_MINITEST_TESTS_TO_PROCESS_)
-               js/_MINITEST_TESTS_TO_PROCESS_))))
+      :cljs `(when (cljs.core/exists? js/minitest._MINITEST_TESTS_TO_PROCESS_)
+               js/minitest._MINITEST_TESTS_TO_PROCESS_))))
 
-(defn clear-tests!        [a & nss]    (swap! a #(apply dissoc % nss)))
-(defn add-tests!          [a ns blocs] (swap! a update ns concat blocs))
-(defn store-tests!        [ns blocs]   (add-tests! *tests*            ns blocs))
-(defn process-after-load! [ns blocs]   (add-tests! (tests-to-process) ns blocs))
+(defn clear-tests!   [a & nss]    (swap! a #(apply dissoc % nss)))
+(defn add-tests!     [a ns blocs] (swap! a update ns concat blocs))
+(defn store-tests!   [ns blocs]   (add-tests! *tests*            ns blocs))
+(defn process-later! [ns blocs]   (add-tests! (tests-to-process) ns blocs))
 
-(defn store-or-run-tests! []
-  (assert (currently-loading?)) ;; TODO: remove ?
-  (try
-    (let [conf  (config)
-          tests @(tests-to-process)]
-      (when (:store-tests conf) (run! #(apply store-tests! %) tests))
-      (when (:run-tests   conf) (run-execute-report! :suite   tests)))
+(defn run-tests-at-level [l ns tests]
+  (case l
+    :suite (run-execute-report! l tests)
+    :ns    (run-execute-report! l ns (select-keys tests [ns]))
+    :block (run-execute-report! l ns (->> (get tests ns) (apply concat)))
+    :case  (doall (map (partial run-execute-report! l ns)
+                       (->> (get tests ns) (apply concat))))))
+
+(defn process-now! [l & [ns]]
+  (when-not (= l :suite)  (assert ns))
+  (try (let [conf   (config)
+             tests  @(tests-to-process)
+             grrr!  run-execute-report!]
+         (when (:store-tests conf)
+           (run! #(apply store-tests! %) tests))
+         (when (:run-tests conf)
+           (run-tests-at-level l ns tests)))
     (finally
       (reset! (tests-to-process) nil))))
 
-(defn ^:export store-or-run-tests-after-load! []
+(defn ^:export store-and-run-tests-after-load! []
   (let [conf (config)]
     (when (and (or (:store-tests conf) (:run-tests conf))
                (if (currently-loading?)
                  (> (count @(tests-to-process)) 0)
                  true))
-      (store-or-run-tests!))))
+      (process-now! :suite))))
 
 ;; Clojure
 (macros/deftime
@@ -73,10 +91,11 @@
                                 identity))
                         (into {}));; TODO: if the namespace isn't created ...
           ;; Assumption: load is always passed only one path.
+          _        (assert (= 1 (count paths)))
           pth      (first paths)
           ns       (-> pth path->ns str symbol)]
-      (when-not (= pth "/cljs/compiler")         (apply-cljs-patches))
-      (when-not (= pth "/shadow/build/compiler") (apply-shadow-patches))
+      (when-not (#{"/cljs/core" "/cljs/compiler"} pth) (apply-cljs-patches))
+      (when-not (#{"/shadow/build/compiler"} pth)      (apply-shadow-patches))
       ;; TODO: test whether requiring minitest before shadow works.
 
       (if (or cljs.repl/*repl-env* *executing-cljs*)
@@ -87,7 +106,7 @@
           (with-context {:exec-mode :on-load  :ns ns}
             (let [load-result (do (clear-tests! *tests* ns)
                                   (apply orig-load paths))]
-              (store-or-run-tests-after-load!)
+              (store-and-run-tests-after-load!)
               load-result))))))
 
   (defn- apply-patch-to-clojure-core-load []
@@ -123,17 +142,17 @@
             orig-tests     (gensym "original_MINITEST_TESTS_TO_PROCESS_")
             orig-currently (gensym "original_MINITEST_CURRENTLY_LOADING_")]
         (e "goog.require('minitest');")
-        (e "var _MINITEST_TESTS_TO_PROCESS_;") ;; TODO: keep ?
         (e "var _MINITEST_CURRENTLY_LOADING_;")
-        (e "const " orig-tests     " = _MINITEST_TESTS_TO_PROCESS_;")
+        (e "console.log('RAAAAAGE');")
+        (e "const " orig-tests     " = minitest._MINITEST_TESTS_TO_PROCESS_")
         (e "const " orig-currently " = _MINITEST_CURRENTLY_LOADING_;")
-        (e "var _MINITEST_TESTS_TO_PROCESS_ = cljs.core.atom.call(null,null);")
+        (e "minitest._MINITEST_TESTS_TO_PROCESS_ = cljs.core.atom.call(null,null);")
         (e "var _MINITEST_CURRENTLY_LOADING_ = true;")
 
         (e js)
 
-        (e (cljsc/munge `store-or-run-tests-after-load!) ".call(null, null);")
-        (e "var _MINITEST_TESTS_TO_PROCESS_  = " orig-tests     ";")
+        (e (cljsc/munge `store-and-run-tests-after-load!) ".call(null, null);")
+        (e "minitest._MINITEST_TESTS_TO_PROCESS_  = " orig-tests     ";")
         (e "var _MINITEST_CURRENTLY_LOADING_ = " orig-currently ";"))))
 
   (defn instrument-ast? [target-op {:keys [op name] :as _ast}]

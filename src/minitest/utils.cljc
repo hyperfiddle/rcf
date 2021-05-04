@@ -63,6 +63,31 @@
     :clj  (str "\033[1m" s "\033[0m")
     :cljs (str/upper-case s)))
 
+(def reduce1 @#'clojure.core/reduce1)
+
+(defn gen-uuid []
+  (macros/case
+    :clj  (str (java.util.UUID/randomUUID))
+    :cljs (random-uuid)))
+
+(defn merge-entries-with
+  "Like `merge-with` except that `f` is passed entries instead of values."
+  [f & maps]
+  (when (some identity maps)
+    (let [merge-entry (fn [m e]
+                        (let [k (key e)]
+                          (if (contains? m k)
+                            (assoc m k (f (find m k) e))
+                            (assoc m k (val e)))))
+          merge2 (fn [m1 m2]
+                   (reduce1 merge-entry (or m1 {}) (seq m2)))]
+      (reduce1 merge2 maps))))
+
+(defn minitest-var? [var]
+  (when-let [s (some->> var meta :ns ns-name str)]
+    (and      (re-matches #"minitest.*" s)
+         (not (re-matches #"minitest.*-test" s)))))
+
 (macros/deftime
   (defmacro env-case [env & {:keys [cljs clj]}]
     `(let [env# ~env]
@@ -86,19 +111,18 @@
                  (meta-macroexpand-1 env form))]
       (if (identical? ex form)
         form
-        (meta-macroexpand env ex)))))
+        (meta-macroexpand env ex))))
 
-;; TODO: keep ?
-(def ^:dynamic *top-levels* {})
+  (defmacro with-out-str+result [& body]
+    `(let [s# (new java.io.StringWriter)]
+       (binding [*out* s#]
+         (let [result# (do ~@body)]
+           [(str s#) result#])))))
 
-(macros/deftime
-  (defmacro tracking-top-level
-    ([expr]    `(tracking-top-level ~(gensym "tracking-top-level-id-") ~expr))
-    ([id expr] `(let [~'&top-level-id ~id]
-                  (binding [*top-levels* (update *top-levels* ~'&top-level-id
-                                                 (fnil inc -1))]
-                    ~expr))))
-
-  (defmacro top-level?
-    ([]   `(top-level? ~'&top-level-id))
-    ([id] `(zero? (*top-levels* ~id)))))
+;; Taken from from https://gist.github.com/danielpcox/c70a8aa2c36766200a95
+(defn dmerge "Simple deep-merge" [& maps]
+  (apply merge-with (fn [& args]
+                      (if (every? #(or (map? %) (nil? %)) args)
+                        (apply dmerge args)
+                        (last args)))
+         maps))

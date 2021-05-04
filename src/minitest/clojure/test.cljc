@@ -1,37 +1,37 @@
-; (ns minitest.clojure.test
-;   {:minitest/config {}}
-;   (:require   [clojure.test     #?@(:clj  [:as           test
-;                                            :refer        [is]]
-;                                     :cljs [:as           test
-;                                            :refer-macros [is]])]
-;               [clojure.pprint              :refer        [pprint]] ;; TODO: remove
-;     #?(:clj   [minitest                    :refer        [ns-config! config
-;                                                          tests with-config
-;                                                          with-context]]
-;        :cljs  [minitest                    :refer        [ns-config! config]
-;                                            :refer-macros [tests with-config
-;                                                           with-context]])
-;               [minitest.utils              :refer        [->| call]]
-;               [minitest.higher-order #?@(:clj  [:refer [on-level|
-;                                                         continue-when|
-;                                                         outside-in->>]]
-;                                          :cljs [:refer [on-level|
-;                                                         continue-when|]
-;                                                 :refer-macros [outside-in->>]])]))
+(ns minitest.clojure.test
+  {:minitest/config {}}
+  (:require   [clojure.test     #?@(:clj  [:as           test
+                                           :refer        [is]]
+                                    :cljs [:as           test
+                                           :refer-macros [is]])]
+              [clojure.pprint              :refer        [pprint]] ;; TODO: remove
+    #?(:clj   [minitest                    :refer        [config
+                                                          tests with-config
+                                                          with-context]]
+       :cljs  [minitest                    :refer        [ns-config! config]
+                                           :refer-macros [tests with-config
+                                                          with-context]])
+              [minitest.utils              :refer        [->| call]]
+              [minitest.higher-order #?@(:clj  [:refer [on-level|
+                                                        continue-when|
+                                                        outside-in->>]]
+                                         :cljs [:refer [on-level|
+                                                        continue-when|]
+                                                :refer-macros [outside-in->>]])]))
 
-; ; (ns-config! {:report-fn (outside-in->>
-; ;                           (on-level| [:do :report]
-; ;                             (fn [s p l n d]
-; ;                               (test/do-report
-; ;                                 {:type (case (:type d)
-; ;                                          :success :pass
-; ;                                          :error   :error
-; ;                                          :failure :fail)
-; ;                                  :expected (-> d :expected :form)
-; ;                                  :tested   (-> d :tested :thunk call)})))
-; ;                           (continue-when| (fn [s p l n d]
-; ;                                             (and (not= [p l] [:do :report]))))
-; ;                           (-> (config) :report-fn))})
+; (ns-config! {:report-fn (outside-in->>
+;                           (on-level| [:do :report]
+;                             (fn [s p l n d]
+;                               (test/do-report
+;                                 {:type (case (:type d)
+;                                          :success :pass
+;                                          :error   :error
+;                                          :failure :fail)
+;                                  :expected (-> d :expected :form)
+;                                  :tested   (-> d :tested :thunk call)})))
+;                           (continue-when| (fn [s p l n d]
+;                                             (and (not= [p l] [:do :report]))))
+;                           (-> (config) :report-fn))})
 
 ; (defn is->tests [[_is form [& _msg]]]
 ;   (if (and (sequential? form) (-> form first (= '=)))
@@ -53,6 +53,7 @@
 ;                           [form]))
 ;                       body))))
 
+(deftest test-something
+  (is (>= (inc 1) 2)))
 
-; (deftest test-something
-;   (is (>= (inc 1) 2)))
+

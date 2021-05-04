@@ -9,11 +9,31 @@
                           :cljs  [:refer        [test!]
                                   :refer-macros [tests]])]
             [minitest.config
-                      #?@(:clj   [:refer        [config context
-                                                 with-config with-context]]
-                          :cljs  [:refer        [config context]
-                                  :refer-macros [with-config with-context]])]
+                      #?@(:clj   [:refer        [deep-merge
+                                                 config
+                                                 forced-config
+                                                 context
+                                                 forced-context
+                                                 with-config
+                                                 with-forced-config
+                                                 with-context
+                                                 with-forced-context]]
+                          :cljs  [:refer        [deep-merge
+                                                 config
+                                                 forced-config
+                                                 context
+                                                 forced-context]
+                                  :refer-macros [with-config
+                                                 with-forced-config
+                                                 with-context
+                                                 with-forced-context]])]
             [minitest.utils       :refer        [->|]]
+            [minitest.runner :reload true]
+            [minitest.executor :reload true]
+            [minitest.reporter :reload true]
+            [minitest.orchestrator :reload true]
+            [minitest.config :reload true]
+            [minitest :reload true]
             ; [minitest-test-namespace]
             )
   #?(:clj  (:require [net.cgrand.macrovich :as macros])
@@ -110,38 +130,22 @@
               (is (= :abc (-> (config) :bindings (get #'*1))))
               (is (= @calls 2))))))))
   (testing "contextualisation"
-    (testing "CFG -> WHEN -> CFG"
-      (test-config (fn [v]  {:enabled v
-                             :WHEN {:enabled {true  {:x true}
-                                              false {:x false}}}})
-                   (fn [_v] (config))))
-    (testing "with-config -> WHEN -> CFG"
-      (test-config (fn [_v] {:WHEN {:enabled {true  {:x true}
-                                              false {:x false}}}})
-                   (fn [v]  (with-config {:enabled v} (config)))))
-    (testing "CFG -> CTX>WHEN -> CFG"
-      (test-config (fn [v]  {:enabled v
-                             :CTX {:WHEN {:enabled {true  {:x true}
-                                                    false {:x false}}}}})
-                   (fn [_v] (config))))
-    (testing "CTX -> WHEN -> CFG"
-      (test-config (fn [v]  {:CTX  {:enabled v}
-                             :WHEN {:enabled {true  {:x true}
-                                              false {:x false}}}})
-                   (fn [_v] (config))))
-    (testing "CTX -> CTX>WHEN -> CFG"
-      (test-config (fn [v]  {:CTX {:enabled v
-                                   :WHEN    {:enabled {true  {:x true}
-                                                       false {:x false}}}}})
-                   (fn [_v] (config))))
-    (testing "with-context -> WHEN -> CFG"
-      (test-config (fn [_v] {:WHEN {:enabled {true  {:x true}
-                                              false {:x false}}}})
-                   (fn [v]  (with-context {:enabled v} (config)))))
-    (testing "with-context -> CTX>WHEN -> CFG"
-      (test-config (fn [_v] {:CTX {:WHEN    {:enabled {true  {:x true}
-                                                       false {:x false}}}}})
-                   (fn [v]  (with-context {:enabled v} (config)))))
+    (let [base-cfg {:enabled {true  {:x true}
+                              false {:x false}}}]
+      (doseq [src      [:CFG :CTX :with-config :with-context]
+              dst      [:WHEN :CTX>WHEN]]
+        (testing (str (name src) " -> " (name dst) " -> CFG")
+          (test-config (fn [v] (deep-merge (when (= src :CFG) {:enabled v})
+                                           (when (= src :CTX) {:CTX {:enabled v}})
+                                           (case dst
+                                             :WHEN     {:WHEN base-cfg}
+                                             :CTX>WHEN {:CTX {:WHEN base-cfg}})))
+                       (fn [v] (cond (= src :with-config)
+                                     (with-config  {:enabled v} (config))
+                                     (= src :with-context)
+                                     (with-context {:enabled v} (config))
+                                     :else
+                                     (config)))))))
     (testing "with-context -> WHEN>WHEN -> CFG"
       (let [f (fn [_v]
                 {:WHEN {:optA {true  {:WHEN {:optB {true  {:x true}
@@ -159,6 +163,73 @@
                                     false {:x false}}}})
                    #(with-context {:optA %}
                       (config))))))
+
+(deftest test-forced-context
+  (let [test-it   #(do (is (= 1 (-> (forced-context) :a)))
+                       (is (= 1 (-> (context) :a))))
+        test-many #(do (test-it)
+                       (testing "overrides (with-context ...)"
+                         (with-context {:a 2}
+                           (test-it)))
+                       (testing "overrides (with-config {:FORCED-CTX {...}} ...)"
+                         (with-config {:FORCED-CTX {:a 2}}
+                           (test-it)))
+                       (doseq [src-ctx [:CTX :FORCED-CTX]
+                               dst-ctx [:CTX :FORCED-CTX]]
+                         (testing (str "overrides (with-config ["
+                                       (name src-ctx) " -> " (name dst-ctx)
+                                       "] ...)")
+                           (with-config {src-ctx {:enabled true}
+                                         :WHEN   {:enabled {true {dst-ctx {:a 2}}}}}
+                             (test-it)))))
+        test-all  #(do (test-many)
+                       (testing "wrapping (with-config {:FORCED-CTX ...} ...)"
+                         (with-config {:FORCED-CTX {:a 0}}
+                           (test-many)))
+                       (when %
+                         (testing "wrapping (with-forced-context ...)"
+                           (with-forced-context {:a 0}
+                             (test-many)))))]
+    (testing "(with-forced-context ...)"
+      (with-forced-context {:a 1}
+        (test-all true)))
+    (testing "(with-config {:FORCED-CTX {...}} ...)"
+      (with-config {:FORCED-CTX {:a 1}}
+        (test-all false)))))
+
+(deftest test-forced-config
+  (let [test-it   #(do (is (= 1 (get (forced-config) :a)))
+                       (is (= 1 (get (config)        :a))))
+        test-many #(do (test-it)
+                       (testing "overrides (with-config ...)"
+                         (with-config {:a 2}
+                           (test-it)))
+                       (testing "overrides (with-config {:FORCED ...} ...)"
+                         (with-config {:FORCED {:a 2}}
+                           (test-it)))
+                       (doseq [src-ctx [:CTX :FORCED-CTX]
+                               dst-ctx [:CTX :FORCED-CTX]]
+                         (testing (str "overrides (with-config ["
+                                       (name src-ctx) " -> " (name dst-ctx)
+                                       "] ...)")
+                           (with-config {src-ctx {:enabled true}
+                                         :WHEN   {:enabled {true {dst-ctx {:a 2}}}}}
+                             (test-it)))))
+        test-all  #(do (test-many)
+                       (testing "wrapping (with-config {:FORCED ...} ...)"
+                         (with-config {:FORCED {:a 0}}
+                           (test-many)))
+                       (when %
+                         (testing "wrapping (with-forced-context ...)"
+                           (with-forced-context {:a 0}
+                             (test-many)))))]
+
+    (testing "(with-forced-config ...)"
+      (with-forced-config {:a 1}
+        (test-all true)))
+    (testing "(with-config {:FORCED ...} ...)"
+      (with-config {:FORCED {:a 1}}
+        (test-all true)))))
 
 ; ; - [√] A "bug". We don't want to have to order the tests any differently
 ; ;       than the rest of the code; i.e. tests are run after the code has

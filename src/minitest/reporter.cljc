@@ -1,8 +1,12 @@
+
 (ns minitest.reporter
   (:require [clojure.string                   :as           str]
             [clojure.pprint                   :as           pp
                                               :refer        [pprint]]
-            [minitest.higher-order #?@(:clj  [:refer        [on-level|
+            [minitest.higher-order #?@(:clj  [:refer        [report-actions
+                                                             report-actioneds
+                                                             marking-as|
+                                                             on-level|
                                                              on-config|
                                                              on-context|
                                                              apply|
@@ -14,7 +18,8 @@
                                                              anaph|
                                                              when|
                                                              with-context|]]
-                                       :cljs [:refer        [on-level|
+                                       :cljs [:refer        [marking-as|
+                                                             on-level|
                                                              on-config|
                                                              on-context|
                                                              apply|
@@ -32,6 +37,7 @@
                                        :cljs [:refer        [config context]
                                               :refer-macros [with-context
                                                              with-config]])]
+            [minitest.inner-tests             :refer        [reporting-inner-tests|]]
             [minitest.utils                   :refer        [call ->| dissoc-in
                                                              emphasize]]
             [clojure.repl                     :refer        [pst]]
@@ -79,11 +85,7 @@
                "s")
              ""))))
 
-(defn binding-test-output| [f]
-  (fn [state position level ns data]
-    (binding [*out* (-> (config) :out)]
-      (f state position level ns data))))
-
+;; TODO: move to higher-level
 (defn filter-data [pred level data]
   (case level
     :suite (->> data
@@ -104,8 +106,6 @@
                 (map (partial map-data pred :block)))
     :block (map pred data)))
 
-(def actions [:report :explain])
-
 (def befores (atom {}))
 
 ;; TODO: only print before separators if somethings eventually gets printed.
@@ -117,23 +117,23 @@
     (when (= position :before)
       (when (not= level :case)
         (swap! befores update level conj
-               (map-data (juxt :reported :explained) level data)))
+               (map-data (apply juxt report-actioneds) level data)))
       (when-let [sep (-> (config) :separator)]
         (print sep)))
 
     (let [new-data (f state position level ns data)
           sep      (when (and (= position :after)
-                              (or (if (= level :case)
-                                    true
-                                    #_(some #(and (= (-> data :later-at-level %)
-                                                   (*reporting-level* %))
-                                                (-> (config) % :enabled))
-                                          actions)
-                                    (not= (-> befores deref level peek)
-                                          (map-data (juxt :reported :explained)
-                                                    level data)))))
+                              (if (= level :case)
+                                true
+                                #_(some #(and (= (-> data :later-at-level %)
+                                                 (*reporting-level* %))
+                                              (-> (config) % :enabled))
+                                        report-actions)
+                                (not= (-> befores deref level peek)
+                                      (map-data (apply juxt report-actioneds)
+                                                level data))))
                      (-> (config) :separator))]
-      (try (do (when sep  (print sep))
+      (try (do (when sep (print sep))
                new-data)
         (finally
           (when (and sep (not= level :case))
@@ -173,7 +173,7 @@
 
 (defn report-effect [data]
   (if (or (-> (config) :effects :show-result)
-          (-> data :status #{:error :failure}))
+          (-> data :status #{:error :failure})) ;; TODO: remove :failure
     (do (when-not (-> data :showed-form)
           (announce-effect data :force true :printer print))
         (println " ->" (:result data))
@@ -185,10 +185,16 @@
          (.flush *out*)
          (.flush *err*)))
 
+(defn output-case [state position level ns data]
+  (when-let [o (-> data :output)]
+    (print o))
+  data)
+
 (defn report-case [state position level ns data]
   (let [new-data (case (:type data)
                    :effect      (report-effect      data)
-                   :expectation (report-expectation data))]
+                   :expectation (report-expectation data)
+                   :inner-test  data)]
     (macros/case :clj (flush-outputs))
     new-data))
 
@@ -201,7 +207,6 @@
   (if (not (explainable? data))
     data
     (let [status   (:status   data)
-          location (:location data)
           conf     (config)
           logo     (-> conf :logo)
           left-ks  [:tested :form]
@@ -228,33 +233,35 @@
       (macros/case :clj (flush-outputs))
       data)))
 
-(defn marking-as| [k f]
-  (fn [s p l n d]
-    (-> (f s p l n d)
-        (assoc k true))))
-
 (defn report-via| [pos]
-  (fn [s _ l n d]  ((:report-fn (config)) s pos l n d)))
+  (fn [s _ l n d]
+    ((:report-fn (config)) s pos l n d)))
+
+(let [m (zipmap report-actions report-actioneds)]
+  (defn actioned [action]
+    (get m action)))
+
+(defn do| [action]
+  (let [actioned (actioned action)]
+    (anaph|
+      (->| (when| (and (-> (config) action :enabled)
+                       (-> &data actioned not))
+             (with-context| {:report-action action}
+               (marking-as| actioned
+                 (report-via| action))))
+           #(concat [&state &position &level &ns]
+                    [%])))))
 
 (def base-report
-  (let [do|            (fn [action]
-                         (let [actioned (keyword (str (name action) "ed"))]
-                           (anaph|
-                             (->| (when| (and (-> (config) action :enabled)
-                                              (-> &data actioned not))
-                                    (with-context| {:report-action action}
-                                      (marking-as| actioned
-                                        (report-via| action))))
-                                  #(concat [&state &position &level &ns]
-                                           [%])))))
-        report+explain (->|         (do| :report)
-                            (apply| (do| :explain))
-                            last)]
-    (outside-in->>
-      (on-level| [:after   :case]  (report-via| :do))
-      (on-level| [:do      :case]  report+explain)
-      (on-level| [:report  :case]  report-case)
-      (on-level| [:explain :case]  explain-case))))
+  (outside-in->>
+    (on-level| [:after   :case]  (report-via| :do))
+    (on-level| [:do      :case]  (->|         (do| :output)
+                                      (apply| (do| :report))
+                                      (apply| (do| :explain))
+                                      last))
+    (on-level| [:output  :case]  output-case)
+    (on-level| [:report  :case]  report-case)
+    (on-level| [:explain :case]  explain-case)))
 
 ;; --- LEVEL CONTROL
 (def ^:dynamic *reporting-level* {})
@@ -270,7 +277,7 @@
                        #(or (not (-> conf % :enabled))
                             (not (contains? (set [:case (*reporting-level* %)])
                                             (-> conf % :level))))
-                       actions))))]
+                       report-actions))))]
         (with-config (->> (for [a disabled-actions]
                             [a {:enabled false}])
                           (into {}))
@@ -282,7 +289,7 @@
     (on-level| [:do :case]
       (anafn
         (reduce (fn [d action]
-                  (let [conf           (config)
+                  (let [conf           (config) ;; TODO: move to a let above
                         action-level   (-> conf action :level)
                         action-enabled (-> conf action :enabled)]
                     (if (and (not= action-level :case)
@@ -295,39 +302,39 @@
                                     true))
                       d)))
                 &data
-                actions)))
+                report-actions)))
     f))
 
 (defn run-reports-at-report-level| [f]
   (outside-in->>
     (on-level| (anafn (and (= &position :after) (not= &level :case)))
       (anafn
-        (let [levels      (-> &state deref :later-at-level)]
-          (if (some #(-> levels % &level) actions)
+        (let [levels (-> &state deref :later-at-level)]
+          (if (some #(-> levels % &level) report-actions)
             (do
-              (doseq [action actions]
+              (doseq [action report-actions]
                 (when (-> levels action &level)
                   (swap! &state dissoc-in [:later-at-level action &level])))
               (binding [*reporting-level* (reduce #(if (-> levels %2 &level)
                                                      (assoc %1 %2 &level)
                                                      %1)
                                                   *reporting-level*
-                                                  actions)]
+                                                  report-actions)]
                 (with-context {:report-level &level}
                   (with-config {:execute-fn do-nothing}
                     ((-> (config) :run-fn)  &state &level &ns
                      (filter-data
                        (fn [d]
-                         (with-context {:status   (:status   d)
-                                        :location (:location d)}
-                           (some
-                             (fn [action]
-                               (let [actioned (keyword (str (name action) "ed"))]
-                                 (and (-> d :later-at-level action &level)
-                                      (-> d action :enabled)
-                                      (-> d actioned not)
-                                      false)))
-                             actions)))
+                         (with-context {:status    (:status d) ;; TODO: case config ?
+                                        :test-type (:type   d)} ;; TODO: useful? add test-position?
+                           (let [cfg (config)]
+                             (some
+                               (fn [action]
+                                 (let [actioned (actioned action)]
+                                   (and (-> cfg action :enabled)
+                                        (-> d :later-at-level action &level)
+                                        (-> d actioned not))))
+                               report-actions))))
                        &level &data))))))
             &data))))
     f))
@@ -392,7 +399,7 @@
   (outside-in->>
     (on-level| [:do :case]
       (when| (and (not (-> &data :stats-counted))
-                  (-> &data :run)
+                  (-> &data :executed)
                   (-> &data :type (= :expectation))
                   (-> (config) :stats :enabled))
         (marking-as| :stats-counted
@@ -405,7 +412,7 @@
 
 ;; --- DOTS MODE
 (defn report-case-as-dot [state position level ns data]
-  (when (-> data :location (= :expectation))
+  (when (-> data :type (= :expectation))
     (print (-> (config) :logo)))
   data)
 
@@ -452,10 +459,11 @@
 
 ;; --- Main entry point
 (def report
-  (outside-in->> binding-test-output|
+  (outside-in->> reporting-inner-tests|
                  separating-levels|
                  handling-reports-at-report-level|
                  handling-stats-at-stats-level|
+
                  handling-silent-mode|
                  handling-dots-mode|
                  announcing-level|

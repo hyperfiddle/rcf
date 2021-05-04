@@ -1,25 +1,63 @@
 (ns minitest.runner
   (:require [clojure.pprint                   :refer        [pprint]]
+            [clojure.string                   :as           str]
             [net.cgrand.macrovich             :as           macros]
-            [minitest.around-load             :refer        [*tests-to-process*
-                                                             *tests*]]
             [minitest.config       #?@(:clj  [:refer        [config
+                                                             blank-config
+                                                             current-config-bindings
+                                                             *surrounding-config-bindings*
                                                              with-context
-                                                             with-config]]
-                                       :cljs [:refer        [config]
+                                                             with-forced-context
+                                                             with-config
+                                                             with-forced-config
+                                                             without-forced-config
+                                                             extending-config]]
+                                       :cljs [:refer        [config
+                                                             blank-config
+                                                             current-config-bindings
+                                                             *surrounding-config-bindings*]
                                               :refer-macros [with-context
-                                                             with-config]])]
-            [minitest.higher-order #?@(:clj  [:refer        [instead-of-level|
+                                                             with-forced-context
+                                                             with-config
+                                                             with-forced-config
+                                                             without-forced-config
+                                                             extending-config]])]
+            [minitest.higher-order #?@(:clj  [:refer        [level-below
+                                                             do-nothing
+                                                             instead-of-level|
+                                                             if|
+                                                             when|
+                                                             with-context|
+                                                             on-level|
+                                                             apply|
+                                                             chain|
                                                              outside-in->>
-                                                             anafn]]
-                                       :cljs [:refer        [instead-of-level|]
+                                                             anafn
+                                                             without-context|
+                                                             without-forced-config|]]
+                                       :cljs [:refer        [do-nothing
+                                                             instead-of-level|
+                                                             if|
+                                                             when|
+                                                             with-context|
+                                                             on-level|
+                                                             apply|
+                                                             chain|]
                                               :refer-macros [outside-in->>
-                                                             anafn]])]
-            [minitest.utils                   :refer        [call]]
+                                                             anafn
+                                                             without-context|
+                                                             without-forced-config|]])]
+            [minitest.utils        #?@(:clj  [:refer        [call
+                                                             gen-uuid
+                                                             with-out-str+result]]
+                                       :cljs [:refer        [call
+                                                             gen-uuid]
+                                              :refer-macros [with-out-str+result]])]
             [minitest.config                  :refer        [config]]
             [minitest.walk                    :refer        [coprewalk]])
   #?(:cljs
-      (:require-macros [minitest.runner :refer        [managing-exs]])))
+      (:require-macros [minitest.runner       :refer        [managing-exs
+                                                             capturing-inner-test-results]])))
 
 ; TODO?
 ; [2021-01-07 20:54:54.775 - WARNING] :shadow.cljs.devtools.server.reload-classpath/macro-reload-ex - {:ns-sym hyperfiddle.hfql20}
@@ -42,15 +80,17 @@
   x)
 
 (defn- run-effect! [ns {:keys [thunk form] :as test}]
-  (assert (-> test :run not))
-  (let [result (managing-exs (!1-2-3 (call thunk)))]
+  (let [; [output result] (with-out-str+result ;; TODO: remove
+        ;                   (managing-exs (!1-2-3 (call thunk))))
+        result (managing-exs (!1-2-3 (call thunk)))
+        ]
     (merge
       test
       {:type     :effect
        :ns       ns
        :form     form
-       :location :effect
-       :run      true}
+       ; :output   output
+       }
       (if (managed-ex? result)
         {:status :error
          :error  (ex result)}
@@ -68,10 +108,18 @@
 
 
 (defn- run-simple-expectation! [ns test]
-  (assert (-> test :run not))
   (let
-    [testedv   (delay (managing-exs (!1-2-3 (-> test :tested   :thunk call))))
-     expectedv (delay (managing-exs         (-> test :expected :thunk call)))]
+    [
+     testedv   (delay (managing-exs (!1-2-3 (-> test :tested   :thunk call))))
+     expectedv (delay (managing-exs (do     (-> test :expected :thunk call))))
+     ; [out-t testedv]
+     ; (with-out-str+result
+     ;   (delay (managing-exs (!1-2-3 (-> test :tested   :thunk call)))))
+     ; [out-e expectedv]
+     ; (with-out-str+result
+     ;   (delay (managing-exs (do     (-> test :expected :thunk call)))))
+     ; output (str out-t out-e)
+     ]
     (merge
       test
       {:type  :expectation
@@ -80,8 +128,8 @@
        :tested (merge {:form (-> test :tested :form)}
                       (when-not (managed-ex? @testedv)
                         {:val @testedv}))
-       :location :expectation
-       :run      :true}
+       ; :output output
+       }
       (when (= (:op test) :=)
         {:expected (merge {:form (-> test :expected :form)}
                           (when-not (managed-ex? @expectedv)
@@ -177,68 +225,8 @@
         (doall (mapcat #(rest (orch false false s l n  %)) (-> d rest butlast)))
         (                rest (orch false true  s l n      (-> d rest last)))))))
 
-(def level-below
-  {:suite :ns
-   :ns    :block
-   :block :case})
-
-(defn base-run [state level ns data]
+(defn run [state level ns data]
   (let [c (config)]
     (if (= level :case)
       ((-> c :execute-fn)   state :do :case  ns data)
       (process-all state (level-below level) ns data))))
-
-(def ^:dynamic *running-inner-tests* false)
-
-(defn orchestrate-inner-tests| [f]
-  (outside-in->>
-    (instead-of-level| :case
-      (anafn
-        (binding [*tests*            (atom {})
-                  *tests-to-process* (atom {})]
-          (let [result (binding [*running-inner-tests* true]
-                         ;; Doing this because when test blocks will be
-                         ;; discovered by running effects, the functions that
-                         ;; will be stored to support them will memorize the
-                         ;; config & context with clojure.core/bound-fn
-                         ;; (See minitest/parse-tests &
-                         ;; minitest.orchestrator/handling-case-config|).
-                         ;;
-                         ;; We have to tie the following, which allows us to
-                         ;; collect the inner tests without reporting them,
-                         ;; to a contextual value, so that we can actually
-                         ;; report those tests just a few lines below.
-                         ;; Otherwise they'll "remember" not to report
-                         ;; themselves.
-                         (with-config
-                           {:CTX  {::dry-run true}
-                            :WHEN {::dry-run {true {:run-tests   false
-                                                    :store-tests true
-                                                    :WHEN {:report-action {:explain {:report {:enabled false}}}}
-                                                    }}}}
-                           (f &state &level &ns &data)))]
-            (if-let [tests (-> *tests-to-process* deref (get &ns))]
-              (with-meta
-                (concat [result]
-                        (with-context {::dry-run false}
-                          (process-all &state :case &ns (-> tests first))))
-                {:minitest/inner-tests true})
-              result)))))
-    f))
-
-(defn handling-inner-tests-blocks| [f]
-  (outside-in->>
-    (instead-of-level| [:block]
-      (anafn
-        (with-config
-          {:orchestrate-fn (orchestrate-inner-tests|
-                             (-> (config) :orchestrate-fn))}
-          (doall (->> (f &state &level &ns &data)
-                      (mapcat #(if (-> % meta :minitest/inner-tests)
-                                 % [%])))))))
-    f))
-
-(def run
-  (outside-in->>
-    handling-inner-tests-blocks|
-    base-run))
