@@ -4,25 +4,21 @@
             [minitest.around-load             :refer        [*tests-to-process*]]
             [minitest.orchestrator            :refer        [run-execute-report!]]
             [minitest.higher-order #?@(:clj  [:refer        [report-actioneds
-                                                             on-level|
                                                              stop-when|
                                                              chain|
                                                              do-nothing
                                                              outside-in->>
                                                              anafn
                                                              when|
-                                                             if|
-                                                             instead-of-level|]]
+                                                             if|]]
                                        :cljs [:refer        [report-actioneds
-                                                             on-level|
                                                              stop-when|
                                                              chain|
                                                              do-nothing]
                                               :refer-macros [outside-in->>
                                                              anafn
                                                              when|
-                                                             if|
-                                                             instead-of-level|]])]
+                                                             if|]])]
             [minitest.config       #?@(:clj  [:refer        [config
                                                              context
                                                              with-context]
@@ -36,7 +32,9 @@
                                                              with-out-str+result]]
                                        :cljs [:refer        [gen-uuid
                                                              dmerge]
-                                              :refer-macros [with-out-str+result]])]))
+                                              :refer-macros [with-out-str+result]])])
+  #?(:cljs
+      (:require-macros [minitest.inner-tests  :refer        [capturing-inner-test-results]])))
 
 (def ^:dynamic *inner-test-results* nil)
 
@@ -58,10 +56,14 @@
 (defn executing-inner-tests| [f]
   (let [gen-inner-id        (anafn (let [id (str "minitest/inner-test-"
                                                  (gen-uuid))]
-                                     (binding [*out* *upper-out*]
+                                     (binding [#?(:clj  *out*
+                                                  :cljs cljs.core/*print-fn*)
+                                               *upper-out*]
                                        (println id))
                                      (assoc &data :inner-id id)))
-        binding-upper-out| #(anafn (binding [*upper-out* *out*]
+        binding-upper-out| #(anafn (binding [*upper-out*
+                                             #?(:clj  *out*
+                                                :cljs cljs.core/*print-fn*)]
                                      (apply % &args)))
         execute-inners      (anafn
                               (let [[result inner-tests]
@@ -99,12 +101,15 @@
       (anafn
         (let [[inners printed]
               (reduce (fn [[acc-results acc-output] test]
-                        (let [o       (new java.io.StringWriter)
+                        (let [s       #?(:clj  (new java.io.StringWriter)
+                                         :cljs (new goog.string/StringBuffer))
+                              o       #?(:clj  s
+                                         :cljs #(.append s %))
                               result  (binding [config/*forced-config*
                                                 {:execute-fn do-nothing ;; TODO: remove ?
-                                                 :out        o}]
+                                                 :print-to   o}]
                                         (run-execute-report! :case &ns test))
-                              printed (str o)]
+                              printed (str s)]
                           [(conj acc-results result)
                            (if (-> &data :inner-outputted)
                              (str acc-output printed)

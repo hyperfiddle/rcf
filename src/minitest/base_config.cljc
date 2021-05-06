@@ -12,7 +12,7 @@
   See `(source base-config)`."
   {:dirs              ["src" "test"] ;; TODO: use clojure.java.classpath/classpath
    :elide-tests       false
-   :out               *out*
+   :print-to          #?(:clj *out* :cljs cljs.core/*print-fn*)
    ;; Runner opts
    :fail-fast         false
    :break-on-failure  false ;; TODO

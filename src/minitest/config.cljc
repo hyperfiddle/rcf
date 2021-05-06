@@ -13,14 +13,12 @@
                                              minitest-var?
                                              current-bindings]]
             [minitest.custom-map     :refer [func-map filtered-map]])
-  #?(:cljs (:require-macros
-             [minitest.config        :refer [file-config defaccessors memo]]
-             [minitest.with-bindings :refer [with-bindings]])))
+  #?(:cljs
+      (:require-macros
+        [minitest.config             :refer [get-file-config defaccessors memo]]
+        [minitest.with-bindings      :refer [with-bindings]])))
 
-(declare config context)
-
-;; TODO: assert config keys.
-;; TODO: config should be lazy
+(declare config context with-config with-context)
 
 (macros/deftime
   ;; TODO: clarify where the config file should be
@@ -30,13 +28,8 @@
             f)
           (io/resource "minitest.edn"))))
 
-  ;; TODO: it does not eval/resolve symbols -> hence can't place function and
-  ;; other vars in file configs
-  (defmacro ^:private file-config []
-    ;; TODO: remove case and use cljs version for both
-    (macros/case
-      :clj  `(some-> (config-file) slurp edn/read-string)
-      :cljs `(quote ~(some-> (config-file) slurp edn/read-string)))))
+  (defmacro ^:private get-file-config []
+    (some-> (config-file) slurp edn/read-string)))
 
 (def #_once config-memo (atom {}))
 
@@ -102,24 +95,24 @@
                                    [~var-name ~(if (-> var-name resolve
                                                        reverse-merging-vars)
                                                  `(deep-merge
-                                                   (~'clojure.core/unquote ~'m#)
-                                                   ~var-name)
+                                                    (~'clojure.core/unquote ~'m#)
+                                                    ~var-name)
                                                  `(deep-merge
                                                     ~var-name
                                                     (~'clojure.core/unquote ~'m#)))]
                                    (~'clojure.core/unquote-splicing
                                      ~'body#))))))
            ~(when unbinder `(macros/deftime
-                             (defmacro ~unbinder-name [~'ks# & ~'body#]
-                               (r/syntax-quote
-                                 (binding
-                                   [~var-name (dissoc-in
-                                                ~var-name
-                                                (~'clojure.core/unquote ~'ks#))]
-                                   (~'clojure.core/unquote-splicing
-                                     ~'body#))))))))))
+                              (defmacro ~unbinder-name [~'ks# & ~'body#]
+                                (r/syntax-quote
+                                  (binding
+                                    [~var-name (dissoc-in
+                                                 ~var-name
+                                                 (~'clojure.core/unquote ~'ks#))]
+                                    (~'clojure.core/unquote-splicing
+                                      ~'body#))))))))))
 
-(def           file-config      (file-config))
+(def           file-config      (get-file-config))
 (def ^:dynamic *early-config*   nil)
 (def ^:dynamic *late-config*    nil)
 (def ^:dynamic *early-context*  nil)

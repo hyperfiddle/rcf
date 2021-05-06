@@ -5,23 +5,15 @@
                                                              outside-in->>
                                                              with-context|
                                                              anafn
-                                                             anaph|
-                                                             if|
-                                                             with-config|]]
+                                                             if|]]
                                        :cljs [:refer        [chain|
                                                              with-bindings|]
                                               :refer-macros [outside-in->>
                                                              with-context|
                                                              anafn
-                                                             anaph|
-                                                             if|
-                                                             with-config|]])]
-            [minitest.config       #?@(:clj  [:refer        [config
-                                                             with-config]
+                                                             if|]])]
+            [minitest.config                  :refer        [config]
                                               :as           config]
-                                       :cljs [:refer        [config]
-                                              :refer-macros [with-config]
-                                              :as           config])]
             [minitest.utils        #?@(:clj  [:refer        [->|
                                                              with-out-str+result]]
                                        :cljs [:refer        [->|]
@@ -45,7 +37,9 @@
   (flush)
   (throw (ex-info
            (str "Test " (name (:status rpt)) ":\n"
-                (with-config {:out *out*}
+                (config/with-config {:print-to ;; TODO: keep ?
+                                     #?(:clj  *out*
+                                        :cljs cljs.core/*print-fn*)}
                   (let [report-fn (-> (config) :report-fn)]
                     (with-out-str
                       (report-fn state :after :case ns rpt)))))
@@ -118,16 +112,17 @@
        (into {})))
 
 (defn installing-config-bindings| [f]
-  (fn [s l n d]
+  (anafn
     (let [bindings-map (-> (config) :bindings)]
       (if (seq bindings-map)
-        (with-bindings* bindings-map f s l n d)
-        (f s l n d)))))
+        (apply with-bindings* bindings-map f &args)
+        (apply f &args)))))
 
 (defn binding-test-output| [f]
-  (fn [state level ns data]
-    (binding [*out* (-> (config) :out)]
-      (f state level ns data))))
+  (anafn
+    (binding [#?(:clj *out* :cljs cljs.core/*print-fn*)
+              (-> (config) :print-to)]
+      (apply f &args))))
 
 (defn handling-case-config-bindings| [f]
   (if| (= &level :case)
@@ -139,7 +134,7 @@
 (defn handling-meta-case-config| [fetch f]
   (fn [s l n d]
     (if (= l :case)
-      (with-config (fetch d)
+      (config/with-config (fetch d)
         (f s l n d))
       (f s l n d))))
 

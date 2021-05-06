@@ -1,9 +1,11 @@
 (ns minitest.utils
   (:require [net.cgrand.macrovich         :as    macros]
    #?(:clj  [cljs.analyzer                :as    ana])
+   #?(:cljs [clojure.string               :as    str])
             [clojure.walk                 :refer [postwalk]]
             [camel-snake-kebab.core       :refer [->kebab-case]]
-   #?(:cljs [minitest.with-bindings       :refer [with-bindings*]]))
+   #?(:cljs [minitest.with-bindings       :refer [with-bindings*
+                                                  get-all-dyn-bindings]]))
   #?(:cljs
       (:require-macros [minitest.utils   :refer [env-case]])))
 
@@ -63,7 +65,10 @@
     :clj  (str "\033[1m" s "\033[0m")
     :cljs (str/upper-case s)))
 
-(def reduce1 @#'clojure.core/reduce1)
+(def reduce1
+  (macros/case
+    :clj  @#'clojure.core/reduce1
+    :cljs reduce))
 
 (defn gen-uuid []
   (macros/case
@@ -114,10 +119,16 @@
         (meta-macroexpand env ex))))
 
   (defmacro with-out-str+result [& body]
-    `(let [s# (new java.io.StringWriter)]
-       (binding [*out* s#]
-         (let [result# (do ~@body)]
-           [(str s#) result#])))))
+    (macros/case
+      :clj  `(let [s# (java.io.StringWriter.)]
+               (binding [*out* s#]
+                 (let [result# (do ~@body)]
+                   [(str s#) result#])))
+      :cljs `(let [s# (goog.string/StringBuffer.)]
+               (binding [cljs.core/*print-newline* true
+                         cljs.core/*print-fn*      (fn [x#] (.append s# x#))]
+                 (let [result# ~@body]
+                   [(str s#) result#]))))))
 
 ;; Taken from from https://gist.github.com/danielpcox/c70a8aa2c36766200a95
 (defn dmerge "Simple deep-merge" [& maps]

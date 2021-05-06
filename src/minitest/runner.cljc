@@ -2,62 +2,18 @@
   (:require [clojure.pprint                   :refer        [pprint]]
             [clojure.string                   :as           str]
             [net.cgrand.macrovich             :as           macros]
-            [minitest.config       #?@(:clj  [:refer        [config
-                                                             blank-config
-                                                             current-config-bindings
-                                                             *surrounding-config-bindings*
-                                                             with-context
-                                                             with-forced-context
-                                                             with-config
-                                                             with-forced-config
-                                                             without-forced-config
-                                                             extending-config]]
-                                       :cljs [:refer        [config
-                                                             blank-config
-                                                             current-config-bindings
-                                                             *surrounding-config-bindings*]
-                                              :refer-macros [with-context
-                                                             with-forced-context
-                                                             with-config
-                                                             with-forced-config
-                                                             without-forced-config
-                                                             extending-config]])]
-            [minitest.higher-order #?@(:clj  [:refer        [level-below
-                                                             do-nothing
-                                                             instead-of-level|
-                                                             if|
-                                                             when|
-                                                             with-context|
-                                                             on-level|
-                                                             apply|
-                                                             chain|
-                                                             outside-in->>
-                                                             anafn
-                                                             without-context|
-                                                             without-forced-config|]]
-                                       :cljs [:refer        [do-nothing
-                                                             instead-of-level|
-                                                             if|
-                                                             when|
-                                                             with-context|
-                                                             on-level|
-                                                             apply|
-                                                             chain|]
-                                              :refer-macros [outside-in->>
-                                                             anafn
-                                                             without-context|
-                                                             without-forced-config|]])]
+            [minitest.config                  :refer        [config]
+                                              :as           config]
+            [minitest.higher-order            :refer        [level-below]]
             [minitest.utils        #?@(:clj  [:refer        [call
                                                              gen-uuid
                                                              with-out-str+result]]
                                        :cljs [:refer        [call
                                                              gen-uuid]
                                               :refer-macros [with-out-str+result]])]
-            [minitest.config                  :refer        [config]]
             [minitest.walk                    :refer        [coprewalk]])
   #?(:cljs
-      (:require-macros [minitest.runner       :refer        [managing-exs
-                                                             capturing-inner-test-results]])))
+      (:require-macros [minitest.runner       :refer        [managing-exs]])))
 
 ; TODO?
 ; [2021-01-07 20:54:54.775 - WARNING] :shadow.cljs.devtools.server.reload-classpath/macro-reload-ex - {:ns-sym hyperfiddle.hfql20}
@@ -80,17 +36,12 @@
   x)
 
 (defn- run-effect! [ns {:keys [thunk form] :as test}]
-  (let [; [output result] (with-out-str+result ;; TODO: remove
-        ;                   (managing-exs (!1-2-3 (call thunk))))
-        result (managing-exs (!1-2-3 (call thunk)))
-        ]
+  (let [result (managing-exs (!1-2-3 (call thunk)))]
     (merge
       test
       {:type     :effect
        :ns       ns
-       :form     form
-       ; :output   output
-       }
+       :form     form}
       (if (managed-ex? result)
         {:status :error
          :error  (ex result)}
@@ -111,15 +62,7 @@
   (let
     [
      testedv   (delay (managing-exs (!1-2-3 (-> test :tested   :thunk call))))
-     expectedv (delay (managing-exs (do     (-> test :expected :thunk call))))
-     ; [out-t testedv]
-     ; (with-out-str+result
-     ;   (delay (managing-exs (!1-2-3 (-> test :tested   :thunk call)))))
-     ; [out-e expectedv]
-     ; (with-out-str+result
-     ;   (delay (managing-exs (do     (-> test :expected :thunk call)))))
-     ; output (str out-t out-e)
-     ]
+     expectedv (delay (managing-exs (do     (-> test :expected :thunk call))))]
     (merge
       test
       {:type  :expectation
@@ -127,9 +70,7 @@
        :op     (:op test)
        :tested (merge {:form (-> test :tested :form)}
                       (when-not (managed-ex? @testedv)
-                        {:val @testedv}))
-       ; :output output
-       }
+                        {:val @testedv}))}
       (when (= (:op test) :=)
         {:expected (merge {:form (-> test :expected :form)}
                           (when-not (managed-ex? @expectedv)
@@ -205,8 +146,8 @@
     :expectation (run-expectation! ns test)))
 
 (defn orch [first? last? s l & [n d]]
-  (with-context {:first-in-level first?
-                 :last-in-level  last?}
+  (config/with-context {:first-in-level first?
+                        :last-in-level  last?}
     (when d
       [n ((-> (config) :orchestrate-fn) s l n d)])))
 

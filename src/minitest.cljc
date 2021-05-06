@@ -6,7 +6,6 @@
    #?(:clj  [clojure.tools.namespace.repl      :refer        [disable-reload!]])
    #?(:clj  [clojure.repl                      :refer        [source-fn]])
    #?(:clj  [clojure.edn                       :as           edn])
-   #?(:clj  [clojure.core.unify                :refer        [unify]])
             [net.cgrand.macrovich              :as           macros]
             [minitest.ns                       :as           ns
                              #?@(:cljs [       :include-macros true])]
@@ -57,6 +56,8 @@
 ;; (cljs/build "test" {:main 'minitest-test :output-to "compiled.js" :output-dir "out" :optimizations :simple :target :nodejs})
 ;;
 ;; (require 'shadow.cljs.devtools.server) (shadow.cljs.devtools.server/start!) (require '[shadow.cljs.devtools.api :as shadow]) (shadow/watch :browser-support)
+;;
+;; (require '[cljs.repl :as repl]) (require '[cljs.repl.browser :as browser]) (repl/repl (browser/repl))
 
 
 ;; -- Explorations
@@ -65,6 +66,7 @@
 
 ;; TODO: *load-test*
 ;; See:  https://github.com/clojure/clojurescript/blob/5e88d3383e0f950c4de410d3d6ee11769f3714f4/src/main/clojure/cljs/analyzer.cljc#L61
+
 
 
 ;; DONE

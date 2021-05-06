@@ -6,7 +6,6 @@
   {:target           :browser
    :devtools         {:hud                   #{:progress :errors}}
    :modules          {:main                  {:entries [minitest
-                                                        minitest.poney
                                                         minitest-features-test]}}
    :compiler-options {:infer-externs         :auto
                       :js-options            {:variable-renaming :off}

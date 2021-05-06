@@ -3,13 +3,13 @@
             [minitest.utils             :refer        [->|]]
             [minitest.config            :refer        [context
                                                        config]
-                                        :as           config])
+                                        :as           config]
+   #?(:cljs [minitest.with-bindings     :refer        [with-bindings*]]))
   #?(:cljs (:require-macros
              [minitest.higher-order     :refer        [def-on-fn
                                                        def-config-binders
                                                        anafn
-                                                       outside-in->>]]
-             [minitest.with-bindings    :refer        [with-bindings*]])))
+                                                       outside-in->>]])))
 
 (def report-actions   [:output    :report   :explain])
 (def report-actioneds [:outputted :reported :explained])
@@ -72,15 +72,15 @@
 
   (def-config-binders)
 
-  (defn with-bindings| [m f]
-    (fn [& args]
-      (apply with-bindings* m f args)))
-
   (defmacro outside-in->> [& frms] `(->> ~@(reverse frms)))
   (defmacro when|            [e f] `(anaph| #(if ~e (apply ~f %&) ~'&data)))
   (defmacro if|        [e f & [g]] `(anaph| #(if ~e
                                                (apply ~f %&)
                                                (apply (or ~g do-nothing) %&)))))
+
+(defn with-bindings| [m f]
+  (fn [& args]
+    (apply with-bindings* m f args)))
 
 (defn apply| [f]
   #(apply f %))

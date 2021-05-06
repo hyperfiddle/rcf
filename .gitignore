@@ -5,5 +5,6 @@
 .rebel_readline_history
 .idea
 minitest.iml
-public
+public/
 nodejs-target/
+out/

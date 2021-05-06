@@ -17,15 +17,15 @@
                                                        context]
                                         :refer-macros [with-config
                                                        with-context]])]
-            [minitest.unify  #?@(:clj  [:refer        [?] :reload true]
-                                 :cljs [:refer-macros [?] :reload true])]
-            [minitest.inner-tests :reload true]
-            [minitest.orchestrator :reload true]
-            [minitest.runner :reload true]
-            [minitest.executor :reload true]
-            [minitest.reporter :reload true]
-            [minitest.around-load :reload true]
-            [minitest :reload true]) ;; TODO: remove
+            [minitest.unify  #?@(:clj  [:refer        [?]]
+                                 :cljs [:refer-macros [?]])]
+            #?@(:clj [[minitest.inner-tests :reload true]
+                      [minitest.orchestrator :reload true]
+                      [minitest.runner :reload true]
+                      [minitest.executor :reload true]
+                      [minitest.reporter :reload true]
+                      [minitest.around-load :reload true]])
+            )
   #?(:cljs
       (:require-macros [minitest-features-test :refer [println
                                                        inner-test-macro]])))

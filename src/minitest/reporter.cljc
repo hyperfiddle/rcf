@@ -18,7 +18,9 @@
                                                              anaph|
                                                              when|
                                                              with-context|]]
-                                       :cljs [:refer        [marking-as|
+                                       :cljs [:refer        [report-actions
+                                                             report-actioneds
+                                                             marking-as|
                                                              on-level|
                                                              on-config|
                                                              on-context|
@@ -31,12 +33,8 @@
                                                              anaph|
                                                              when|
                                                              with-context|]])]
-            [minitest.config       #?@(:clj  [:refer        [config context
-                                                             with-context
-                                                             with-config]]
-                                       :cljs [:refer        [config context]
-                                              :refer-macros [with-context
-                                                             with-config]])]
+            [minitest.config                  :refer        [config context]
+                                              :as           config]
             [minitest.inner-tests             :refer        [reporting-inner-tests|]]
             [minitest.utils                   :refer        [call ->| dissoc-in
                                                              emphasize]]
@@ -278,9 +276,9 @@
                             (not (contains? (set [:case (*reporting-level* %)])
                                             (-> conf % :level))))
                        report-actions))))]
-        (with-config (->> (for [a disabled-actions]
-                            [a {:enabled false}])
-                          (into {}))
+        (config/with-config (->> (for [a disabled-actions]
+                                   [a {:enabled false}])
+                                 (into {}))
           (apply f args))
         (apply f args)))))
 
@@ -320,13 +318,13 @@
                                                      %1)
                                                   *reporting-level*
                                                   report-actions)]
-                (with-context {:report-level &level}
-                  (with-config {:execute-fn do-nothing}
+                (config/with-context {:report-level &level}
+                  (config/with-config {:execute-fn do-nothing}
                     ((-> (config) :run-fn)  &state &level &ns
                      (filter-data
                        (fn [d]
-                         (with-context {:status    (:status d) ;; TODO: case config ?
-                                        :test-type (:type   d)} ;; TODO: useful? add test-position?
+                         (config/with-context {:status    (:status d) ;; TODO: case config ?
+                                               :test-type (:type   d)} ;; TODO: useful? add test-position?
                            (let [cfg (config)]
                              (some
                                (fn [action]
@@ -379,18 +377,20 @@
   data)
 
 (defn display-stats [state position level ns data]
-  (with-context {:test-level :stats}
+  (config/with-context {:test-level :stats}
     (let [counts (:counts @state)
           ks     (keep (-> counts keys set)
                        (-> (config) :stats :for))] ;; preserve order
-      (when-let [sep (with-context {:position :before} (-> (config) :separator))]
+      (when-let [sep (config/with-context {:position :before}
+                       (-> (config) :separator))]
         (print sep))
       (doseq [k ks
               :let [cnt   (get counts k 0)
                     last? (= k (last ks))]
               :when (> cnt 0)]
         (print (str  cnt  " "  (pluralize (name k) cnt)  (if last? "." ", "))))
-      (when-let [sep (with-context {:position :after} (-> (config) :separator))]
+      (when-let [sep (config/with-context {:position :after}
+                       (-> (config) :separator))]
         (print sep))
       (swap! state dissoc :counts)))
   data)

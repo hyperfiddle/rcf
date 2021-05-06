@@ -22,10 +22,9 @@
             [minitest.config                  :refer        [context]
                                               :as            config]
             [minitest.inner-tests             :refer        [executing-inner-tests|]])
-  #?@(:cljs
-       (:require-macros
-         [minitest.executor                   :refer        [capturing-inner-test-results]]
-         [minitest.with-bindings              :refer        [with-bindings]])))
+  #?(:cljs
+      (:require-macros
+        [minitest.with-bindings               :refer        [with-bindings]])))
 
 (def testing-repl (atom nil))
 

@@ -35,14 +35,16 @@
   (defmacro currently-loading? []
     (macros/case
       :clj  `*currently-loading*
-      :cljs `(when (cljs.core/exists? js/_MINITEST_CURRENTLY_LOADING_)
-               js/_MINITEST_CURRENTLY_LOADING_)))
+      :cljs `(if (cljs.core/exists? js/_MINITEST_CURRENTLY_LOADING_)
+               js/_MINITEST_CURRENTLY_LOADING_
+               *currently-loading*)))
 
   (defmacro tests-to-process []
     (macros/case
       :clj  `*tests-to-process*
-      :cljs `(when (cljs.core/exists? js/minitest._MINITEST_TESTS_TO_PROCESS_)
-               js/minitest._MINITEST_TESTS_TO_PROCESS_))))
+      :cljs `(if (cljs.core/exists? js/_MINITEST_TESTS_TO_PROCESS_)
+               js/_MINITEST_TESTS_TO_PROCESS_
+               *tests-to-process*))))
 
 (defn clear-tests!   [a & nss]    (swap! a #(apply dissoc % nss)))
 (defn add-tests!     [a ns blocs] (swap! a update ns concat blocs))
@@ -141,18 +143,17 @@
       (let [e              cljsc/emitln
             orig-tests     (gensym "original_MINITEST_TESTS_TO_PROCESS_")
             orig-currently (gensym "original_MINITEST_CURRENTLY_LOADING_")]
-        (e "goog.require('minitest');")
         (e "var _MINITEST_CURRENTLY_LOADING_;")
-        (e "console.log('RAAAAAGE');")
-        (e "const " orig-tests     " = minitest._MINITEST_TESTS_TO_PROCESS_")
+        (e "var _MINITEST_TESTS_TO_PROCESS_;")
+        (e "const " orig-tests     " = _MINITEST_TESTS_TO_PROCESS_")
         (e "const " orig-currently " = _MINITEST_CURRENTLY_LOADING_;")
-        (e "minitest._MINITEST_TESTS_TO_PROCESS_ = cljs.core.atom.call(null,null);")
+        (e "_MINITEST_TESTS_TO_PROCESS_ = cljs.core.atom.call(null,null);")
         (e "var _MINITEST_CURRENTLY_LOADING_ = true;")
 
         (e js)
 
         (e (cljsc/munge `store-and-run-tests-after-load!) ".call(null, null);")
-        (e "minitest._MINITEST_TESTS_TO_PROCESS_  = " orig-tests     ";")
+        ; (e "_MINITEST_TESTS_TO_PROCESS_  = " orig-tests     ";")
         (e "var _MINITEST_CURRENTLY_LOADING_ = " orig-currently ";"))))
 
   (defn instrument-ast? [target-op {:keys [op name] :as _ast}]

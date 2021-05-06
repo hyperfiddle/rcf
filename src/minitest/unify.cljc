@@ -29,9 +29,9 @@
             [minitest.walk                    :refer        [copostwalk]]
             [minitest              #?@(:clj  [:refer        [tests]]
                                        :cljs [:refer-macros [tests]])]
-            [clojure.core.unify               :refer        [unify lvar?]]
             [lambdaisland.deep-diff2          :refer        [diff]
-                                              :as           diff]))
+                                              :as           diff]
+            [minitest.clojure.core.unify      :refer        [unify lvar?]]))
 
 (defn lvars [coll]
   (->> coll
@@ -94,7 +94,8 @@
     (when-not (unify tested lvars-disabled)
       (println (emphasize    "   Inequalities:"))
       (print            "     • ")
-      (diff/pretty-print (diff tested-with-lvars expected)))
+      (diff/pretty-print (diff tested-with-lvars expected)
+                         #?(:cljs (diff/printer {:print-color false}))))
     d))
 
 (macros/deftime
