@@ -16,14 +16,10 @@
                                                              at-runtime]])]
             [minitest.higher-order #?@(:clj  [:refer        [instead-of-level|
                                                              outside-in->>
-                                                             anafn
-                                                             if|
-                                                             anaph|]]
+                                                             if|]]
                                        :cljs [:refer        [instead-of-level|]
                                               :refer-macros [outside-in->>
-                                                             anafn
-                                                             if|
-                                                             anaph|]])]
+                                                             if|]])]
             [minitest.reporter                :refer        [print-result]]
             [minitest.utils                   :refer        [->| not| emphasize]]
             [minitest.walk                    :refer        [copostwalk]]
@@ -108,10 +104,9 @@
                        (instead-of-level|
                          [:report  :case] report-?)
                        (instead-of-level|
-                         [:explain :case] (anaph|
-                                            (if| (-> ~'&data :status (= :failure))
-                                              explain-?
-                                              (-> ~'&config :report-fn))))
+                         [:explain :case] (if| (-> ~'&data :status (= :failure))
+                                            explain-?
+                                            (-> ~'&config :report-fn)))
                        (-> ~'&config :report-fn))}
          (tests :? (unify ~tested ~(postwalk #(if  (lvar? %)  `(quote ~%)  %)
                                        expected))))))

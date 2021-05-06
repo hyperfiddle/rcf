@@ -8,7 +8,7 @@
   #?(:cljs (:require-macros
              [minitest.higher-order     :refer        [def-on-fn
                                                        def-config-binders
-                                                       anafn
+                                                       minifn
                                                        outside-in->>]])))
 
 (def report-actions   [:output    :report   :explain])
@@ -37,7 +37,7 @@
                         (~continue-sym ~@args)
                         ~'&data)))))))))
 
-  (defmacro anaph| [f]
+  (defmacro mini| [f]
     `(fn
        ([      ~'&state             ~'&level ~'&ns ~'&data]
         (let           [~'&position nil
@@ -47,7 +47,7 @@
         (let           [~'&args     [~'&state ~'&position ~'&level ~'&ns ~'&data]]
           (~f    ~'&state ~'&position ~'&level ~'&ns ~'&data)))))
 
-  (defmacro anafn [& body]
+  (defmacro minifn [& body]
     `(fn
        ([      ~'&state             ~'&level ~'&ns ~'&data]
         (let     [~'&position nil
@@ -66,15 +66,15 @@
                                       name)]]
              `(defmacro ~(symbol (str full-name "|"))
                 [arg# f#]
-                `(anaph| (fn [& ~'args#]
+                `(mini| (fn [& ~'args#]
                            (~'~(symbol "minitest.config" full-name)
                                 ~arg# (apply ~f# ~'args#))))))))
 
   (def-config-binders)
 
   (defmacro outside-in->> [& frms] `(->> ~@(reverse frms)))
-  (defmacro when|            [e f] `(anaph| #(if ~e (apply ~f %&) ~'&data)))
-  (defmacro if|        [e f & [g]] `(anaph| #(if ~e
+  (defmacro when|            [e f] `(mini| #(if ~e (apply ~f %&) ~'&data)))
+  (defmacro if|        [e f & [g]] `(mini| #(if ~e
                                                (apply ~f %&)
                                                (apply (or ~g do-nothing) %&)))))
 
@@ -123,7 +123,7 @@
 (declare on-config|)
 
 (defn match-level?| [position-level]
-  (anafn
+  (minifn
     (cond (set? position-level) (or (position-level [&position &level])
                                     (position-level &level)
                                     (position-level [&level])
@@ -161,7 +161,7 @@
                  continue))
 
 (defn marking-as| [k f]
-  (anafn
+  (minifn
     (if (= &level :case)
       (-> (apply f &args)
           (assoc k true))

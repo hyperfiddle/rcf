@@ -4,13 +4,13 @@
                                                              with-bindings|
                                                              outside-in->>
                                                              with-context|
-                                                             anafn
+                                                             minifn
                                                              if|]]
                                        :cljs [:refer        [chain|
                                                              with-bindings|]
                                               :refer-macros [outside-in->>
                                                              with-context|
-                                                             anafn
+                                                             minifn
                                                              if|]])]
             [minitest.config                  :refer        [config]
                                               :as           config]
@@ -87,7 +87,7 @@
 
 (defn handling-case-execution-output| [f]
   (if| (= &level :case)
-    (anafn (let [[output result] (with-out-str+result (apply f &args))]
+    (minifn (let [[output result] (with-out-str+result (apply f &args))]
              (update result :output str output)))
     f))
 
@@ -112,14 +112,14 @@
        (into {})))
 
 (defn installing-config-bindings| [f]
-  (anafn
+  (minifn
     (let [bindings-map (-> (config) :bindings)]
       (if (seq bindings-map)
         (apply with-bindings* bindings-map f &args)
         (apply f &args)))))
 
 (defn binding-test-output| [f]
-  (anafn
+  (minifn
     (binding [#?(:clj *out* :cljs cljs.core/*print-fn*)
               (-> (config) :print-to)]
       (apply f &args))))
@@ -154,8 +154,8 @@
                             fetch-case-config-before
                             (or handle-before
                                 #_(chain|
-                                  (anafn (&report &state :before &level &ns
-                                                  &data))
+                                    (minifn (&report &state :before &level &ns
+                                                     &data))
                                   (handling-case-execution-output| &execute))
                                 ;; TODO: remove
                                 (fn [s l n d]

@@ -4,18 +4,12 @@
     #?(:clj [minitest.utils                   :refer        [as-thunk]])
             [minitest.higher-order #?@(:clj  [:refer        [marking-as|
                                                              on-level|
-                                                             do-nothing
                                                              outside-in->>
-                                                             anafn
-                                                             when|
-                                                             if|]]
+                                                             when|]]
                                        :cljs [:refer        [marking-as|
-                                                             on-level|
-                                                             do-nothing]
+                                                             on-level|]
                                               :refer-macros [outside-in->>
-                                                             anafn
-                                                             when|
-                                                             if|]])]
+                                                             when|]])]
             [minitest.dbg          #?@(:clj  [:refer        [dbg]]
                                        :cljs [:refer-macros [dbg]])]
             [minitest.runner                  :refer        [run-test-and-yield-report!]]

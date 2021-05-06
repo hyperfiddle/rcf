@@ -8,7 +8,7 @@
                                                              chain|
                                                              do-nothing
                                                              outside-in->>
-                                                             anafn
+                                                             minifn
                                                              when|
                                                              if|]]
                                        :cljs [:refer        [report-actioneds
@@ -16,7 +16,7 @@
                                                              chain|
                                                              do-nothing]
                                               :refer-macros [outside-in->>
-                                                             anafn
+                                                             minifn
                                                              when|
                                                              if|]])]
             [minitest.config       #?@(:clj  [:refer        [config
@@ -54,18 +54,18 @@
 (def ^:dynamic *prevent-report* false)
 
 (defn executing-inner-tests| [f]
-  (let [gen-inner-id        (anafn (let [id (str "minitest/inner-test-"
-                                                 (gen-uuid))]
-                                     (binding [#?(:clj  *out*
-                                                  :cljs cljs.core/*print-fn*)
-                                               *upper-out*]
-                                       (println id))
-                                     (assoc &data :inner-id id)))
-        binding-upper-out| #(anafn (binding [*upper-out*
-                                             #?(:clj  *out*
-                                                :cljs cljs.core/*print-fn*)]
-                                     (apply % &args)))
-        execute-inners      (anafn
+  (let [gen-inner-id        (minifn (let [id (str "minitest/inner-test-"
+                                                  (gen-uuid))]
+                                      (binding [#?(:clj  *out*
+                                                        :cljs cljs.core/*print-fn*)
+                                                *upper-out*]
+                                        (println id))
+                                      (assoc &data :inner-id id)))
+        binding-upper-out| #(minifn (binding [*upper-out*
+                                              #?(:clj  *out*
+                                                      :cljs cljs.core/*print-fn*)]
+                                      (apply % &args)))
+        execute-inners      (minifn
                               (let [[result inner-tests]
                                     (capturing-inner-test-results
                                       (let [result
@@ -95,10 +95,10 @@
 
 (defn reporting-inner-tests| [f]
   (outside-in->>
-    (stop-when| (anafn *prevent-report*))
+    (stop-when| (minifn *prevent-report*))
     (if| (= [&position &level (-> &data :type)]
             [:do       :case  :inner-tests])
-      (anafn
+      (minifn
         (let [[inners printed]
               (reduce (fn [[acc-results acc-output] test]
                         (let [s       #?(:clj  (new java.io.StringWriter)
