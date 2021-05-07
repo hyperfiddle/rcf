@@ -21,25 +21,29 @@
    :error-depth       12
    :silent            false
    :dots              false
-   ;; TODO: clearer names for the actions
-   :output            {:enabled true
-                       :level   :case}
-   :report            {:enabled true
-                       :level   :case}
-   :explain           {:enabled true
+
+   :actions {:order   [:output :report :explain]
+             :output  {:enabled true
                        :level   :case
+                       :fn      (at-runtime (deref (resolve 'minitest.reporter/output-case)))}
+             :report  {:enabled true
+                       :level   :case
+                       :fn      (at-runtime (deref (resolve 'minitest.reporter/report-case)))}
+             :explain {:enabled true
+                       :level   :case
+                       :fn      (at-runtime (deref (resolve 'minitest.reporter/explain-case)))
                        :WHEN {:dots {true {:WHEN {:status {:error   {:level :suite}
-                                                           :failure {:level :suite}}}}}}}
+                                                           :failure {:level :suite}}}}}}}}
    ;; Try this.
-   ; :report            {:enabled     true
-   ;                     :WHEN {:status {:success {:level :suite}
-   ;                                     :failure {:level :ns}
-   ;                                     :error   {:level :case}}}}
-   ; :explain           {:enabled     true
-   ;                     :level       :suite
-   ;                     :WHEN {:status {:success {:level :suite}
-   ;                                     :failure {:level :ns}
-   ;                                     :error   {:level :case}}}}
+   ; :actions {:report            {:enabled     true
+   ;                               :WHEN {:status {:success {:level :suite}
+   ;                                               :failure {:level :ns}
+   ;                                               :error   {:level :case}}}}
+   ;           :explain           {:enabled     true
+   ;                               :level       :suite
+   ;                               :WHEN {:status {:success {:level :suite}
+   ;                                               :failure {:level :ns}
+   ;                                               :error   {:level :case}}}}}
    :stats             {:enabled     true
                        :level       :suite
                        :for         [:success :failure :error]}

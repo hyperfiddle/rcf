@@ -125,7 +125,8 @@
   (println "... are reported coherently with surrounding effect output")
   (tests (do (println "-- before")
              (tests 0 := 0)
-             (with-config {:report {:level :block} :output {:level :block}}
+             (with-config {:actions {:report {:level :block}
+                                     :output {:level :block}}}
                (tests (println "... and plays well with report levels")
                       100 := 100))
              (println "-- after"))))

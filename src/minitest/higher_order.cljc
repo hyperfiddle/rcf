@@ -11,8 +11,8 @@
                                                        minifn
                                                        outside-in->>]])))
 
-(def report-actions   [:output    :report   :explain])
-(def report-actioneds [:outputted :reported :explained])
+(defn report-actions []
+  (-> (config) :actions (dissoc :order)))
 
 (macros/deftime
   (defmacro def-on-fn [name first-arg pred-expr]

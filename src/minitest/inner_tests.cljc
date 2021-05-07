@@ -3,7 +3,7 @@
             [clojure.string                   :as           str]
             [minitest.around-load             :refer        [*tests-to-process*]]
             [minitest.orchestrator            :refer        [run-execute-report!]]
-            [minitest.higher-order #?@(:clj  [:refer        [report-actioneds
+            [minitest.higher-order #?@(:clj  [:refer        [report-actions
                                                              stop-when|
                                                              chain|
                                                              do-nothing
@@ -11,7 +11,7 @@
                                                              minifn
                                                              when|
                                                              if|]]
-                                       :cljs [:refer        [report-actioneds
+                                       :cljs [:refer        [report-actions
                                                              stop-when|
                                                              chain|
                                                              do-nothing]
@@ -111,21 +111,22 @@
                                         (run-execute-report! :case &ns test))
                               printed (str s)]
                           [(conj acc-results result)
-                           (if (-> &data :inner-outputted)
+                           (if (-> &data :did-output-inner)
                              (str acc-output printed)
                              (str/replace acc-output
                                           (str (:inner-id test) "\n")
                                           printed))]))
-                      [[] (if (-> &data :inner-outputted)
+                      [[] (if (-> &data :did-output-inner)
                             ""
                             (-> &data :output))]
                       (-> &data :inner-tests))]
           (print printed)
           (merge &data
-                 {:inner-outputted true
-                  :inner-tests     inners
-                  :later-at-level  (apply dmerge (map :later-at-level inners))}
-                 (->> (for [actioned report-actioneds]
-                        [actioned  (every? actioned inners)])
+                 {:did-output-inner true
+                  :inner-tests      inners
+                  :later-at-level   (apply dmerge (map :later-at-level inners))}
+                 (->> (for [action (keys (report-actions))]
+                        (let [did-action (->> action name (str "did-") keyword)]
+                          [did-action  (every? did-action inners)]))
                       (into {}))))))
     f))

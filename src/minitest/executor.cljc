@@ -23,7 +23,7 @@
 (def testing-repl (atom nil))
 
 (def execute-clj
-  (on-level| [:do :case] (when| (-> &data :executed not) ;; TODO: remove guard
+  (on-level| [:do :case] (when| (-> &data :executed not) ;; TODO: remove guard ?
                            (fn [state position level ns data]
                              (run-test-and-yield-report! ns data)))))
 
