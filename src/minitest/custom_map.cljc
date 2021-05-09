@@ -9,22 +9,27 @@
   (macros/case
     :clj  (reify
             clojure.lang.IMapEntry
-            (key            [_]   k)
-            (val            [_]   (.valAt m k))
+            (key      [_]   k)
+            (val      [_]   (.valAt m k))
             java.util.Map$Entry
-            (getKey         [_]   k)
-            (getValue       [_]   (.valAt m k))
+            (getKey   [_]   k)
+            (getValue [_]   (.valAt m k))
             clojure.lang.ISeq
-            (seq            [x]   (list (.key x) (.val x)))
-            (first          [x]   (.first (.seq x)))
-            (next           [x]   (.next  (.seq x)))
+            (seq      [x]   (list (.key x) (.val x)))
+            (first    [x]   (.first (.seq x)))
+            (next     [x]   (.next  (.seq x)))
             clojure.lang.IPersistentCollection
-            (equiv          [x y] (=  (.seq x)  (if (seqable? y) (.seq y) y))))
+            (equiv    [x y] (=  (.seq x)  (if (seqable? y) (.seq y) y))))
 
     :cljs (reify
             IMapEntry
-            (-key      [_] k)
-            (-val      [_] (.valAt ^ILookup m k)))))
+            (-key     [_]   k)
+            (-val     [_]   (get m k))
+            ISeqable
+            (-seq     [x]   (list k (get m k)))
+            ISeq
+            (-first   [x]   (first (seq x)))
+            (-rest    [x]   (rest  (seq x))))))
 
 (deftype CustomMap [m type fns]
   #?(:clj clojure.lang.MapEquivalence)

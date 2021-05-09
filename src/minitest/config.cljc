@@ -6,7 +6,8 @@
             [clojure.walk            :refer [prewalk postwalk]]
             [net.cgrand.macrovich    :as    macros]
             [minitest.base-config    :refer [base-config]]
-            [minitest.utils          :refer [call
+            [minitest.utils          :refer [current-ns-name
+                                             call
                                              ->|
                                              dissoc-in
                                              merge-entries-with
@@ -17,7 +18,8 @@
   #?(:cljs
       (:require-macros
         [minitest.config             :refer [get-file-config defaccessors memo]]
-        [minitest.with-bindings      :refer [with-bindings]])))
+        [minitest.with-bindings      :refer [with-bindings]]
+        [minitest.utils              :refer [set-var!]])))
 
 (declare config context with-config with-context)
 
@@ -81,11 +83,11 @@
                              ([k# v# & {:as more#}]
                               (~setter-name (assoc more# k# v#)))
                              ([m#]
-                              (set-var! #'~var-name (deep-merge ~var-name m#))
+                              (set-var! ~var-name (deep-merge ~var-name m#))
                               nil)))
            ~(when clearer `(defn ~clearer-name
                              ([]
-                              (set-var! #'~var-name nil)
+                              (set-var! ~var-name nil)
                               nil)))
            ~(when binder  `(macros/deftime
                              (defmacro ~binder-name [~'m# & ~'body#]
@@ -147,19 +149,19 @@
     `(recur (-> (context) :ns) ~@body)))
 
 (defn ns-config
-  ([]     (ns-config    (or (-> (context) :ns) (ns-name *ns*))))
+  ([]     (ns-config    (or (-> (context) :ns) (current-ns-name))))
   ([ns]   (deep-merge   (-> ns find-ns meta :minitest/config) (get (ns-configs) ns))))
 (defn ns-context
-  ([]     (ns-context   (or (-> (context) :ns) (ns-name *ns*))))
+  ([]     (ns-context   (or (-> (context) :ns) (current-ns-name))))
   ([ns]   (deep-merge   (-> ns find-ns meta :minitest/context) (get (ns-contexts) ns))))
 (defn ns-config!
-  ([m]    (ns-config!   (or (-> (context) :ns) (ns-name *ns*))  m))
+  ([m]    (ns-config!   (or (-> (context) :ns) (current-ns-name))  m))
   ([ns m] (ns-configs!  {ns m})))
 (defn ns-context!
-  ([m]    (ns-context!  (or (-> (context) :ns) (ns-name *ns*))  m))
+  ([m]    (ns-context!  (or (-> (context) :ns) (current-ns-name))  m))
   ([ns m] (ns-contexts! {ns m})))
 (defn clear-ns-config!
-  ([]     (clear-ns-config!  (or (-> (context) :ns) (ns-name *ns*))))
+  ([]     (clear-ns-config!  (or (-> (context) :ns) (current-ns-name))))
   ([ns]   (ns-configs!       (dissoc (ns-configs) ns))))
 (defn clear-ns-context!
   ([]     (clear-ns-context! (-> (context) :ns)))
@@ -229,7 +231,7 @@
   (let [srcs     [base-config
                   file-config
                   *early-config*
-                  (ns-config (or (-> (context {}) :ns) (ns-name *ns*)))
+                  (ns-config (or (-> (context {}) :ns) (current-ns-name)))
                   *late-config*
                   *forced-config*]
         ;; deep-merging 2 at a time to better benefit from memoization

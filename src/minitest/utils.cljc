@@ -138,8 +138,11 @@
                         (last args)))
          maps))
 
-(defn set-var! [var val]
-  (assert (.isDynamic var))
-  (if (thread-bound? var)
-    (.set var val)
-    (alter-var-root var (constantly val))))
+(macros/deftime
+  (defmacro set-var! [var-name val]
+    (macros/case
+      :clj  (do (assert (.isDynamic (resolve var-name)))
+                `(if (thread-bound? #'~var-name)
+                   (set! ~var-name ~val)
+                   (alter-var-root #'~var-name (constantly ~val))))
+      :cljs `(set! ~var-name ~val))))
