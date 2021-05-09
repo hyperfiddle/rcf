@@ -11,7 +11,8 @@
                                              dissoc-in
                                              merge-entries-with
                                              minitest-var?
-                                             current-bindings]]
+                                             current-bindings
+                                             set-var!]]
             [minitest.custom-map     :refer [func-map filtered-map]])
   #?(:cljs
       (:require-macros
@@ -50,16 +51,17 @@
 
 (defn deep-merge [& maps]
   (memo [:deep-merge] maps
-        (reduce (partial ;; TODO: move the memoization here and don't use reduce in config ?
-                         merge-entries-with
-                         (fn [[k x] [_ y]]
-                           (let [reverse-k? (contains? reverse-merging-keys k)
-                                 mergeable? (every? #(or (map? %) (nil? %))
-                                                    [x y])]
-                             (cond (and mergeable? reverse-k?) (deep-merge y x)
-                                   (and mergeable?)            (deep-merge x y)
-                                   reverse-k?                  x
-                                   :else                       y))))
+        (reduce (partial
+                  ;; TODO: move the memoization here and don't use reduce in config ?
+                  merge-entries-with
+                  (fn [[k x] [_ y]]
+                    (let [reverse-k? (contains? reverse-merging-keys k)
+                          mergeable? (every? #(or (map? %) (nil? %))
+                                             [x y])]
+                      (cond (and mergeable? reverse-k?) (deep-merge y x)
+                            (and mergeable?)            (deep-merge x y)
+                            reverse-k?                  x
+                            :else                       y))))
                 maps)))
 
 (macros/deftime
@@ -71,22 +73,19 @@
           setter-name   (symbol (str             name "!"))
           clearer-name  (symbol (str "clear-"    name "!"))
           binder-name   (symbol (str "with-"     name))
-          unbinder-name (symbol (str "without-"  name))]
+          ;; Bad idea: only dissoc the var at hand and not the end config map.
+          ; unbinder-name (symbol (str "without-"  name))
+          ]
       `(do ~(when getter  `(defn ~getter-name [] ~var-name))
            ~(when setter  `(defn ~setter-name
                              ([k# v# & {:as more#}]
                               (~setter-name (assoc more# k# v#)))
                              ([m#]
-                              (macros/case
-                                :clj  (alter-var-root #'~var-name merge m#)
-                                :cljs (set! ~var-name (merge ~var-name m#)))
+                              (set-var! #'~var-name (deep-merge ~var-name m#))
                               nil)))
            ~(when clearer `(defn ~clearer-name
                              ([]
-                              (macros/case
-                                :clj  (alter-var-root #'~var-name
-                                                      (constantly nil))
-                                :cljs (set! ~var-name nil))
+                              (set-var! #'~var-name nil)
                               nil)))
            ~(when binder  `(macros/deftime
                              (defmacro ~binder-name [~'m# & ~'body#]
@@ -102,15 +101,16 @@
                                                     (~'clojure.core/unquote ~'m#)))]
                                    (~'clojure.core/unquote-splicing
                                      ~'body#))))))
-           ~(when unbinder `(macros/deftime
-                              (defmacro ~unbinder-name [~'ks# & ~'body#]
-                                (r/syntax-quote
-                                  (binding
-                                    [~var-name (dissoc-in
-                                                 ~var-name
-                                                 (~'clojure.core/unquote ~'ks#))]
-                                    (~'clojure.core/unquote-splicing
-                                      ~'body#))))))))))
+           ; ~(when unbinder `(macros/deftime
+           ;                    (defmacro ~unbinder-name [~'ks# & ~'body#]
+           ;                      (r/syntax-quote
+           ;                        (binding
+           ;                          [~var-name (dissoc-in
+           ;                                       ~var-name
+           ;                                       (~'clojure.core/unquote ~'ks#))]
+           ;                          (~'clojure.core/unquote-splicing
+           ;                            ~'body#))))))
+           ))))
 
 (def           file-config      (get-file-config))
 (def ^:dynamic *early-config*   nil)
@@ -119,22 +119,59 @@
 (def ^:dynamic *late-context*   nil)
 (def ^:dynamic *forced-config*  nil)
 (def ^:dynamic *forced-context* nil)
+(def ^:dynamic *ns-configs*     nil)
+(def ^:dynamic *ns-contexts*    nil)
 
-(defaccessors default-config  *early-config*   :getter false)
-(defaccessors config          *late-config*    :getter false)
-(defaccessors forced-config   *forced-config*  :getter false)
+(defaccessors default-config  *early-config* :getter false)
+(defaccessors         config   *late-config* :getter false)
+(defaccessors  forced-config *forced-config* :getter false)
+(defaccessors     ns-configs *ns-configs*)
+
+(defaccessors default-context  *early-context* :getter false)
+(defaccessors         context   *late-context* :getter false)
+(defaccessors  forced-context *forced-context* :getter false)
+(defaccessors     ns-contexts    *ns-contexts*)
+
 (defn default-config  [] (deep-merge (:DEFAULT (config :finalize false))
                                      *early-config*))
 (defn forced-config   [] (deep-merge (:FORCED  (config :finalize false))
                                      *forced-config*))
 
-(defaccessors default-context *early-context*  :getter false)
-(defaccessors context         *late-context*   :getter false)
-(defaccessors forced-context  *forced-context* :getter false)
 (defn default-context [] (deep-merge (:DEFAULT-CTX (config :finalize false))
                                      *early-context*))
 (defn forced-context  [] (deep-merge (:FORCED-CTX  (config :finalize false))
                                      *forced-context*))
+
+(macros/deftime
+  (defmacro ^:private rec [& body]
+    `(recur (-> (context) :ns) ~@body)))
+
+(defn ns-config
+  ([]     (ns-config    (or (-> (context) :ns) (ns-name *ns*))))
+  ([ns]   (deep-merge   (-> ns find-ns meta :minitest/config) (get (ns-configs) ns))))
+(defn ns-context
+  ([]     (ns-context   (or (-> (context) :ns) (ns-name *ns*))))
+  ([ns]   (deep-merge   (-> ns find-ns meta :minitest/context) (get (ns-contexts) ns))))
+(defn ns-config!
+  ([m]    (ns-config!   (or (-> (context) :ns) (ns-name *ns*))  m))
+  ([ns m] (ns-configs!  {ns m})))
+(defn ns-context!
+  ([m]    (ns-context!  (or (-> (context) :ns) (ns-name *ns*))  m))
+  ([ns m] (ns-contexts! {ns m})))
+(defn clear-ns-config!
+  ([]     (clear-ns-config!  (or (-> (context) :ns) (ns-name *ns*))))
+  ([ns]   (ns-configs!       (dissoc (ns-configs) ns))))
+(defn clear-ns-context!
+  ([]     (clear-ns-context! (-> (context) :ns)))
+  ([ns]   (ns-contexts!      (dissoc (ns-contexts) ns))))
+(macros/deftime
+  (defmacro with-ns-config  [ns m & body] (with-ns-configs  {~ns ~m} ~@body))
+  (defmacro with-ns-context [ns m & body] (with-ns-contexts {~ns ~m} ~@body)))
+
+
+
+
+
 
 (macros/deftime
   ;; Ditto
@@ -180,10 +217,6 @@
                    new-form
                    (contextualize new-form ctx)))))))))
 
-
-(defn- ns-config []
-  (some-> (context {}) :ns find-ns meta :minitest/config))
-
 (defn context [& [default-ctx]]
   (let [cfg (delay (config :finalize false))] ;; TODO: use lay
     (deep-merge *early-context*
@@ -193,8 +226,11 @@
                 *forced-context*)))
 
 (defn  config [& {:keys [finalize] :or {finalize true}}]
-  (let [srcs     [base-config file-config
-                  *early-config* (ns-config) *late-config*
+  (let [srcs     [base-config
+                  file-config
+                  *early-config*
+                  (ns-config (or (-> (context {}) :ns) (ns-name *ns*)))
+                  *late-config*
                   *forced-config*]
         ;; deep-merging 2 at a time to better benefit from memoization
         merged   (reduce deep-merge srcs)

@@ -137,3 +137,9 @@
                         (apply dmerge args)
                         (last args)))
          maps))
+
+(defn set-var! [var val]
+  (assert (.isDynamic var))
+  (if (thread-bound? var)
+    (.set var val)
+    (alter-var-root var (constantly val))))
