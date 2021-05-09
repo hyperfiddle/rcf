@@ -16,7 +16,8 @@
                                                              minifn
                                                              when|
                                                              with-context|
-                                                             with-config|]]
+                                                             with-config|
+                                                             mini|]]
                                        :cljs [:refer        [report-actions
                                                              marking-as|
                                                              on-level|
@@ -30,7 +31,8 @@
                                                              minifn
                                                              when|
                                                              with-context|
-                                                             with-config|]])]
+                                                             with-config|
+                                                             mini|]])]
             [minitest.config                  :refer        [config context]
                                               :as           config]
             [minitest.inner-tests             :refer        [reporting-inner-tests|]]
@@ -100,7 +102,10 @@
                 (into {}))
     :ns    (->> data
                 (map (partial map-data pred :block)))
-    :block (map pred data)))
+    :block (map (partial map-data pred :case) data)
+    :case  (if (-> data :type (= :inner-tests))
+             (update data :inner-tests (partial map-data pred :block))
+             (pred data))))
 
 (def befores (atom {}))
 
@@ -110,6 +115,7 @@
 ;; field in &data, but at the [:do :case] level.
 (defn separating-levels| [f]
   (fn [state position level ns data]
+    ; (println "CTX" (select-keys (context) [:type :position :level]))
     (let [did-actions (map #(->> % name (str "did-") keyword)
                            (keys (report-actions)))]
       (when (= position :before)
@@ -334,8 +340,8 @@
                     ((-> (config) :run-fn)  &state &level &ns
                      (filter-data
                        (fn [d]
-                         (config/with-context {:status    (:status d) ;; TODO: case config ?
-                                               :test-type (:type   d)} ;; TODO: useful? add test-position?
+                         (config/with-context {:status (:status d) ;; TODO: case config ?
+                                               :type   (:type   d)} ;; TODO: useful? add test-position?
                            (some (fn [[action m]]
                                    (let [did-action
                                          (->> action name (str "did-") keyword)]
@@ -387,7 +393,7 @@
   data)
 
 (defn display-stats [state position level ns data]
-  (config/with-context {:test-level :stats}
+  (config/with-context {:level :stats}
     (let [counts (:counts @state)
           ks     (keep (-> counts keys set)
                        (-> (config) :stats :for))] ;; preserve order

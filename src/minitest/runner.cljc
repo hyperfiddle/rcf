@@ -167,7 +167,6 @@
         (                rest (orch false true  s l n      (-> d rest last)))))))
 
 (defn run [state level ns data]
-  (let [c (config)]
-    (if (= level :case)
-      ((-> c :execute-fn)   state :do :case  ns data)
-      (process-all state (level-below level) ns data))))
+  (if (= level :case)
+    ((-> (config) :execute-fn)   state :do :case  ns data)
+    (process-all state (level-below level) ns data)))

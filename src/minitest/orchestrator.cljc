@@ -96,7 +96,6 @@
              :let [varv @var]]
          [var
           (config/deep-merge varv val)
-
           ;; TODO: for cljs
           #_(config/deep-merge
             @var
@@ -148,34 +147,29 @@
           fetch-case-config-after  #(-> (fetch-case-config-before %)
                                         (merge (-> % meta :minitest/config)))
           handle-before (with-context|
-                          {:position :before ;; TODO
-                           :test-position :before}
+                          {:position :before
+                           :type     (if (= &level :case)
+                                       (:type &data) :minitest/not-set!)}
                           (handling-meta-case-config|
                             fetch-case-config-before
                             (or handle-before
-                                #_(chain|
-                                    (minifn (&report &state :before &level &ns
-                                                     &data))
-                                  (handling-case-execution-output| &execute))
-                                ;; TODO: remove
                                 (fn [s l n d]
-                                    (let [dd (&report  s :before l n d)]
-                                      (handling-case-execution-output l
-                                        (&execute s :before l n dd)))))))
+                                  (let [dd (&report s :before l n d)]
+                                    (handling-case-execution-output l
+                                      (&execute     s :before l n dd)))))))
           handle-after  (with-context|
-                          {:position :after ;; TODO
-                           :test-position :after
-                           :test-type  (if (= &level :case)
-                                         (:type &data) :minitest/not-set!)
-                           :status     (if (= &level :case)
-                                         (:status   &data) :minitest/not-set!)}
+                          {:position :after
+                           :type     (if (= &level :case)
+                                       (:type   &data) :minitest/not-set!)
+                           :status   (if (= &level :case)
+                                       (:status &data) :minitest/not-set!)}
                           (handling-meta-case-config|
                             fetch-case-config-after
                             (or handle-after
                                 (fn [s l n d]
                                   (let [dd (handling-case-execution-output l
-                                             (&execute  s :after l n d))]
-                                    (&report s :after l n dd))))))]
+                                             (&execute s :after l n d))]
+                                    (&report           s :after l n dd))))))]
       (handle-before       state level ns data)
       (let [run-f    (handling-meta-case-config|
                        fetch-case-config-before
@@ -205,13 +199,12 @@
   (outside-in->>
     handling-case-bindings|
     handling-case-config-bindings|
-    (with-context|
-      {:test-level &level
-       :ns         &ns
-       :lang       (macros/case  :clj :clj  :cljs :cljs)})
+    (with-context| {:ns    &ns
+                    :level &level
+                    :lang  (macros/case  :clj :clj  :cljs :cljs)})
     installing-config-bindings|
     binding-test-output|
-    handling-fail-fast|
+    ; handling-fail-fast|
     orchestrate-level))
 
 ;; TODO: get rid off

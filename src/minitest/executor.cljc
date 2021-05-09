@@ -5,11 +5,13 @@
             [minitest.higher-order #?@(:clj  [:refer        [marking-as|
                                                              on-level|
                                                              outside-in->>
-                                                             when|]]
+                                                             when|
+                                                             minifn]]
                                        :cljs [:refer        [marking-as|
                                                              on-level|]
                                               :refer-macros [outside-in->>
-                                                             when|]])]
+                                                             when|
+                                                             minifn]])]
             [minitest.dbg          #?@(:clj  [:refer        [dbg]]
                                        :cljs [:refer-macros [dbg]])]
             [minitest.runner                  :refer        [run-test-and-yield-report!]]
@@ -24,8 +26,7 @@
 
 (def execute-clj
   (on-level| [:do :case] (when| (-> &data :executed not) ;; TODO: remove guard ?
-                           (fn [state position level ns data]
-                             (run-test-and-yield-report! ns data)))))
+                           (minifn (run-test-and-yield-report! &ns &data)))))
 
 (macros/deftime
   (defn- start-testing-repl! []

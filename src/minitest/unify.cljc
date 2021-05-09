@@ -57,14 +57,15 @@
                 [var (set (map lvar-val-val var-vals))]))
          (into {}))))
 
-(defn report-? [s p l n d]
+(defn report-unified? [s p l n d]
   (let [ctx (context)]
-    (doto d (-> (assoc :op :≈)
-                (print-result :left  (-> ctx :case-data :? :tested :form)
-                              :right (-> ctx :case-data :? :expected :form))))))
+    (doto d (-> (assoc :op :unified?)
+                (print-result
+                  :left  (-> ctx :case-data :unified? :tested   :form)
+                  :right (-> ctx :case-data :unified? :expected :form))))))
 
-(defn explain-? [s p l n d]
-  (let [case-data           (-> (context) :case-data :?)
+(defn explain-unified? [s p l n d]
+  (let [case-data           (-> (context) :case-data :unified?)
         _ (println case-data)
         tested              (-> case-data :tested   :form)
         expected            (-> case-data :expected :form)
@@ -95,18 +96,21 @@
     d))
 
 (macros/deftime
-  (defmacro ? [tested expected]
+  (defmacro unified? [tested expected]
     `(extending-config
-         {:CTX       {:case-data
-                      {:? {:tested   {:form '~tested}
-                           :expected {:form '~expected}}}}
-          :report-fn (outside-in->>
-                       (instead-of-level|
-                         [:report  :case] report-?)
-                       (instead-of-level|
-                         [:explain :case] (if| (-> ~'&data :status (= :failure))
-                                            explain-?
-                                            (-> ~'&config :report-fn)))
-                       (-> ~'&config :report-fn))}
-         (tests :? (unify ~tested ~(postwalk #(if  (lvar? %)  `(quote ~%)  %)
-                                       expected))))))
+       {:CTX       {:case-data
+                    {:unified? {:tested   {:form '~tested}
+                                :expected {:form '~expected}}}}
+        ; :report-fn (outside-in->>
+        ;              (instead-of-level|
+        ;                [:report  :case] report-unified?)
+        ;              (instead-of-level|
+        ;                [:explain :case] (if| (-> ~'&data :status (= :failure))
+        ;                                   explain-unified?
+        ;                                   (-> ~'&config :report-fn)))
+        ;              (-> ~'&config :report-fn))
+        ;; Let's simplify the above
+        :actions {:report  {:fn report-unified?}
+                  :explain {:WHEN {:status {:failure {:fn explain-unified?}}}}}}
+       (tests :? (unify ~tested ~(postwalk #(if  (lvar? %)  `(quote ~%)  %)
+                                           expected))))))

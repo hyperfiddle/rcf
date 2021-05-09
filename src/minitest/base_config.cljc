@@ -53,7 +53,7 @@
    :announce-fn       (at-runtime (deref (resolve 'minitest.higher-order/do-nothing)))
    :announce-nb-tests false ;; TODO
 
-   :bindings {:WHEN {:test-level
+   :bindings {:WHEN {:level
                      {:suite {:WHEN {:lang {:clj {#'*e (at-runtime (or *e nil))
                                                   #'*1 (at-runtime (or *1 nil))
                                                   #'*2 (at-runtime (or *2 nil))
@@ -94,9 +94,9 @@
           :js-env         :node               ;; TODO
           :last-in-level  :minitest/not-set!  ;; #{true false}
           :first-in-level :minitest/not-set!  ;; #{true false}
-          :test-level     :minitest/not-set!  ;; #{:suite :ns :block :case}
-          :test-position  :minitest/not-set!  ;; #{:before :after :do}
-          :test-type      :minitest/not-set!  ;; #{:expectation :effect}
+          :level          :minitest/not-set!  ;; #{:suite :ns :block :case}
+          :position       :minitest/not-set!  ;; #{:before :after :do}
+          :type           :minitest/not-set!  ;; #{:expectation :effect}
           :status         :minitest/not-set!  ;; #{:success :failure :error}
           :report-action  :minitest/not-set!  ;; #{:output :report :explain}
           :report-level   :case}              ;; #{:suite :ns :block :case}
@@ -119,11 +119,11 @@
                          :dev         run-on-load
                          :quiet-dev   [:dev, silent-success]}
             :status     {:success     {:logo                            "✅"
-                                       :WHEN {:test-type {:effect {:logo (emphasize "[Effect] ")}}}}
+                                       :WHEN {:type {:effect {:logo (emphasize "[Effect] ")}}}}
                          :failure     {:logo                            "❌"}
                          :error       {:logo                            "🔥"
-                                       :WHEN {:test-type {:effect {:logo (emphasize "😱 [Effect] ")}}}}}
-            :test-level {:suite       {:announce-fn (at-runtime (deref (resolve 'minitest.reporter/announce-suite)))}
+                                       :WHEN {:type {:effect {:logo (emphasize "😱 [Effect] ")}}}}}
+            :level      {:suite       {:announce-fn (at-runtime (deref (resolve 'minitest.reporter/announce-suite)))}
                          :ns          {:announce-fn (at-runtime (deref (resolve 'minitest.reporter/announce-ns)))
                                        :WHEN {:position {:after {:separator "\n"}}
                                               :dots {true  {:WHEN {:report-level {:suite {:WHEN {:position {:before {:announce-fn (fn [s p l n d]
@@ -134,6 +134,6 @@
                                                                                                                   :WHEN {:last-in-level {true {:separator "\n"}}}}}}}}}}}}}
                          ;; TODO: fix bug in minitest.reporter/separate-levels|
                          ; :case        {:WHEN {:position {:after {:WHEN {:dots {true {:WHEN {:report-level {:suite {:separator "\n"
-                         ;                                                                                           :WHEN {:test-level {:case {:separator false}}}}}}}}}}}}}
+                         ;                                                                                           :WHEN {:level {:case {:separator false}}}}}}}}}}}}}
                          :stats       {:WHEN {:position {:before {:separator "   "}
                                                          :after {:separator "\n"}}}}}})})
