@@ -1,0 +1,144 @@
+
+-- Running minitest on 1 namespace
+---- Testing minitest-features-test
+With a ':=' expectation...
+... success
+✅ (inc 1) := 2
+... failure
+❌ (inc 0) := 2
+[1m   Actual: [0m1
+... error
+🔥 (throw (ex-info "intentionally-raised" {})) := 1
+ExceptionInfo intentionally-raised {}
+
+With a ':?' expectation...
+... success
+✅ (zero? (inc -1)) ?
+... failure
+❌ (zero? (inc 0)) ?
+[1m   Actual: [0mfalse
+... error
+🔥 (throw (ex-info "intentionally-raised" {})) ?
+ExceptionInfo intentionally-raised {}
+
+This is an effect
+
+*1, *2, *3 should be bound
+[1m[Effect] [0m (inc 0) -> 1
+✅ (inc *1) := 2
+✅ (inc *2) := 2
+✅ (inc *3) := 2
+✅ (inc *1) := 3
+
+*e should be set in effects
+[1m😱 [Effect] [0m (throw (ex-info intentionally raised in effect {})) -> nil
+ExceptionInfo intentionally raised in effect {}
+✅ (ex-message *e) := "intentionally raised in effect"
+
+*e should be set in tests
+🔥 (throw (ex-info "intentionally raised in assertion" {})) := 0
+ExceptionInfo intentionally raised in assertion {}
+✅ (ex-message *e) := "intentionally raised in assertion"
+
+wildcards are supported...
+... for successes
+✅ [1 2] := [1 _]
+... for failures
+❌ [2 2] := [1 _]
+[1m   Actual: [0m[2 2]
+... for errors
+🔥 [1 (throw (ex-info "intentionally raised" {}))] := [1 _]
+ExceptionInfo intentionally raised {}
+
+wildcards are supported...
+... for maps (success)
+✅ {:a 1, :b 2} := {:a 1, :b _}
+... for maps (failure)
+❌ {:a 1, :b 2} := {:a 2, :b _}
+[1m   Actual: [0m{:a 1, :b 2}
+... for maps (errors)
+🔥 {:a 1, :b (throw (ex-info "intentionally-raised" {}))} := {:a 1, :b _}
+ExceptionInfo intentionally-raised {}
+
+wildcards are not supported...
+... as keys in maps
+🔥 {:a 1} := {_ 1}
+ExceptionInfo [Minitest] Can't use wildcards as keys in maps {:type :minitest/illegal-wildcard, :tested {:a 1}, :expected {_ 1}}
+... as elements of sets
+🔥 #{1 2} := #{_ 2}
+ExceptionInfo [Minitest] Can't use wildcards in sets {:type :minitest/illegal-wildcard, :tested #{1 2}, :expected #{_ 2}}
+
+inner tests ...
+... inline
+✅ 1 := 1
+... macroexpansion
+✅ 2 := 2
+... function call
+✅ 3 := 3
+... inner inner test
+✅ 4 := 4
+... in a let form
+✅ (inc 1) := 2
+... are reported coherently with surrounding effect output
+-- before
+✅ 0 := 0
+-- after
+... play well with report levels
+✅ 100 := 100
+
+config via case meta for...
+... :? expectation
+👍 (true? true) ?
+... := expectation
+👍 [2] := [2]
+...effect
+👍 (do :nothing) -> :nothing
+
+behavior with dynamic vars...
+
+... when not bound
+✅ *dyn-var* := :root-val
+
+... when bound
+...... outside tests blocks
+✅ *dyn-var* := :bound-val
+
+...... inside tests blocks
+✅ *dyn-var* := :bound-val
+
+
+behavior with config
+
+... outside tests blocks
+👐 1 := 1
+
+... inside tests blocks
+👐 2 := 2
+
+
+behavior with context
+
+... outside tests blocks
+✌️ 1 := 1
+
+... inside tests blocks
+✌️ 2 := 2
+
+Unification with (unified? _ _) ...
+... success
+✅ [0 1 2 2] :unified? [0 ?a ?b ?b]
+... failure
+❌ [-1 1 2 3 4] :unified? [0 _ ?b ?b]
+{:expected {:form [0 _ ?b ?b]}, :tested {:form [-1 1 2 3 4]}}
+[1m   Unification conflicts:[0m
+     • ?b: 3
+       ?b: 2
+[1m   Inequalities:[0m
+     • [1;31m[[0m[31m--1[0m [32m+0[0m _ ?b ?b [31m-4[0m[1;31m][0m
+... error
+🔥 [(throw (ex-info "intentionally-raised" {}))] :unified? [_]
+ExceptionInfo intentionally-raised {}
+
+
+
+   27 successes, 5 failures, 8 errors.

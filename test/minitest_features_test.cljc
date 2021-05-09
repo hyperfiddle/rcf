@@ -2,8 +2,10 @@
   {:minitest/config {:error-depth 0
                      :effects     {:show-form   true
                                    :show-result true}
-                     :WHEN {:test-key   {true {:logo "✌️"}}
-                            :test-level {:block {:post-separator "\n\n"}}}}}
+                     :WHEN {:test-key  {true {:logo "✌️"}}
+                            :level     {:block {:post-separator "\n\n"}}
+                            ; :exec-mode {:on-load {:run-tests false}}
+                            }}}
 
   (:refer-clojure                       :exclude      [println])
   (:require [net.cgrand.macrovich       :as           macros]
@@ -17,14 +19,15 @@
                                                        context]
                                         :refer-macros [with-config
                                                        with-context]])]
-            [minitest.unify  #?@(:clj  [:refer        [?]]
-                                 :cljs [:refer-macros [?]])]
-            #?@(:clj [[minitest.inner-tests :reload true]
-                      [minitest.orchestrator :reload true]
-                      [minitest.runner :reload true]
-                      [minitest.executor :reload true]
-                      [minitest.reporter :reload true]
-                      [minitest.around-load :reload true]])
+            [minitest.unify  #?@(:clj  [:refer        [unified?]]
+                                 :cljs [:refer-macros [unified?]])]
+            ; #?@(:clj [[minitest.unify        :reload true]
+            ;           [minitest.inner-tests  :reload true]
+            ;           [minitest.orchestrator :reload true]
+            ;           [minitest.runner       :reload true]
+            ;           [minitest.executor     :reload true]
+            ;           [minitest.reporter     :reload true]
+            ;           [minitest.around-load  :reload true]])
             )
   #?(:cljs
       (:require-macros [minitest-features-test :refer [println
@@ -66,13 +69,13 @@
   (inc *1) := 3)
 
 (tests
-  (println "*e should be bound in effects")
+  (println "*e should be set in effects")
   ;; TODO; errors are not printed in effects
   (throw (ex-info "intentionally raised in effect" {}))
   (ex-message *e) := "intentionally raised in effect")
 
 (tests
-  (println "*e should be bound in tests")
+  (println "*e should be set in tests")
   (throw (ex-info "intentionally raised in assertion" {}))  := 0
   (ex-message *e) := "intentionally raised in assertion")
 
@@ -127,9 +130,21 @@
              (tests 0 := 0)
              (with-config {:actions {:report {:level :block}
                                      :output {:level :block}}}
-               (tests (println "... and plays well with report levels")
+               (tests (println "... play well with report levels")
                       100 := 100))
-             (println "-- after"))))
+             (println "-- after")))
+  #_(println "... play well with separators")
+  #_(println "CONTEXT" (-> (context)))
+  #_(with-config {:WHEN {:level
+                         {:block {:WHEN {:position {:before "[block "
+                                                    :after  "block] "}}}
+                          :case  {:WHEN {:position {:before "[case "
+                                                    :after  "case] "}}}}}}
+    #_(do (println "CONTEXT" (-> (context)))
+        1) := 1
+    #_(tests 0 := 0
+           (tests 1 := 1)
+           2 := 2)))
 
 (tests
   (println "config via case meta for...")
@@ -170,11 +185,11 @@
          (tests 2 := 2)))
 
 (tests
-  (println "Unification with (? _ _) ...")
+  (println "Unification with (unified? _ _) ...")
   (println "... success")
-  (? [0 1 2 2] [0 ?a ?b ?b])
+  (unified? [0 1 2 2] [0 ?a ?b ?b])
   (println "... failure")
-  (? [-1 1 2 3 4] [0 _ ?b ?b])
+  (unified? [-1 1 2 3 4] [0 _ ?b ?b])
   (println "... error")
-  (tests (? [(throw (ex-info "intentionally-raised" {}))]
+  (tests (unified? [(throw (ex-info "intentionally-raised" {}))]
        [_])))
