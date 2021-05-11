@@ -1,7 +1,7 @@
 (ns minitest.higher-order
   (:require [net.cgrand.macrovich       :as           macros]
             [minitest.utils             :refer        [->|]]
-            [minitest.config            :refer        [context
+            [minitest.configuration     :refer        [context
                                                        config]
                                         :as           config]
    #?(:cljs [minitest.with-bindings     :refer        [with-bindings*]]))
@@ -67,7 +67,7 @@
              `(defmacro ~(symbol (str full-name "|"))
                 [arg# f#]
                 `(mini| (fn [& ~'args#]
-                           (~'~(symbol "minitest.config" full-name)
+                           (~'~(symbol "minitest.configuration" full-name)
                                 ~arg# (apply ~f# ~'args#))))))))
 
   (def-config-binders)

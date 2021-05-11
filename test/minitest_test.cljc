@@ -1,67 +1,71 @@
 (ns minitest-test
-  (:require [net.cgrand.macrovich             :as           macros]
-            [clojure.test                     :refer        [deftest testing is are
-                                                             run-tests]
-             :as           test]
-            [clojure.pprint                   :refer        [pprint]]
-            [clojure.string                   :as           str]
-            #?(:cljs [cljs.reader                      :refer        [read-string]])
-            [minitest           #?@(:clj     [:refer        [test!
-                                                             tests]]
-                                         :cljs    [:refer        [test!]
-                                                   :refer-macros [tests]])]
-            [minitest.config
-             #?@(:clj     [:refer        [with-config
-                                          with-context]]
-                      :cljs    [:refer-macros [with-config
-                                               with-context]])]
-            [lambdaisland.deep-diff2          :refer        [diff]
-             :as           diff]
-            ; [minitest-test-namespace]
+  (:require [net.cgrand.macrovich                 :as           macros]
+            [clojure.test                         :refer        [deftest testing is are
+                                                                 run-tests]
+                                                  :as           test]
+            [clojure.pprint                       :refer        [pprint]]
+            [clojure.string                       :as           str]
+   #?(:cljs [cljs.reader                          :refer        [read-string]])
+            [minitest               #?@(:clj     [:refer        [test!
+                                                                 tests
+                                                                 with-config
+                                                                 with-context]]
+                                        :cljs    [:refer        [test!]
+                                                  :refer-macros [tests]])]
+   #?(:clj  [lambdaisland.deep-diff2              :refer        [diff]
+                                                  :as           diff])
             [minitest-features-test]))
 
 
-(defmethod test/assert-expr 'outputting? [msg form]
-  (let [[_ ns file] form]
-    `(let [s#        (java.io.StringWriter.)
-           ns#       ~ns
-           _#        (println "Examining tests for ns" ns#)
-           tested#   (do (time (with-config {:print-to s#} (test! ns#)))
-                         (str s#))
-           expected# (slurp ~file)]
-       (if (= tested# expected#)
-         (test/do-report
-           {:type :pass :message ~msg :expected '~form
-            :actual (list '~'= tested# expected#)})
-         (test/do-report
-           {:type :fail-diff :message ~msg :expected '~form
-            :actual (diff (str/split-lines tested#)
-                              (str/split-lines expected#))})))))
+(macros/deftime
+  (defmethod test/assert-expr 'outputting? [msg form]
+    (let [[_ ns file] form]
+      `(let [s#        (java.io.StringWriter.)
+             ns#       ~ns
+             _#        (println "Examining tests for ns" ns#)
+             tested#   (do (time (with-config {:print-to s#} (test! ns#)))
+                           (str s#))
+             expected# (slurp ~file)]
+         (if (= tested# expected#)
+           (test/do-report
+             {:type :pass :message ~msg :expected '~form
+              :actual (list '~'= tested# expected#)})
+           (test/do-report
+             {:type :fail-diff :message ~msg :expected '~form
+              :actual (diff (str/split-lines tested#)
+                            (str/split-lines expected#))})))))
 
-(defmethod test/report :fail-diff [m]
-  (test/with-test-out
-    (test/inc-report-counter :fail)
-    (println "\nFAIL in" (test/testing-vars-str m))
-    (when (seq test/*testing-contexts*) (println (test/testing-contexts-str)))
-    (when-let [message (:message m)] (println message))
-    (println "expected:" (pr-str (:expected m)))
-    (println "  actual:")
-    (diff/pretty-print
-      (:actual m)
-      #?(:cljs (diff/printer {:print-color false})))))
+  (defmethod test/report :fail-diff [m]
+    (test/with-test-out
+      (test/inc-report-counter :fail)
+      (println "\nFAIL in" (test/testing-vars-str m))
+      (when (seq test/*testing-contexts*) (println (test/testing-contexts-str)))
+      (when-let [message (:message m)] (println message))
+      (println "expected:" (pr-str (:expected m)))
+      (println "  actual:")
+      (diff/pretty-print
+        (:actual m)
+        #?(:cljs (diff/printer {:print-color false})))))
 
-(defn record-test-output [ns out-file]
-  (let [s      (java.io.StringWriter.)
-        output (do (with-config {:print-to s} (test! ns))
-                   (str s))]
-    (spit out-file output)
-    (println "Recorded" ns "test output to" out-file)))
+  (defn record-test-output [ns out-file]
+    (let [s      (java.io.StringWriter.)
+          output (do (with-config {:print-to s} (test! ns))
+                     (str s))]
+      (spit out-file output)
+      (println "Recorded" ns "test output to" out-file)))
 
-; (record-test-output 'minitest-features-test "test_resources/features.normal.txt")
+  ; (record-test-output
+  ;   'minitest-features-test "test_resources/features.normal.txt")
+  )
+
 (deftest features-test
-  (is (outputting? 'minitest-features-test "test_resources/features.normal.txt")))
+  (macros/case
+    :clj  (is (outputting? 'minitest-features-test
+                           "test_resources/features.normal.txt"))
+    :cljs (test! 'minitest-features-test)))
 
-(run-tests)
+(macros/usetime
+  (run-tests))
 
 (macros/deftime
   (defmacro our-out-str [& args]

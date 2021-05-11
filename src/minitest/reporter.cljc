@@ -33,7 +33,7 @@
                                                              with-context|
                                                              with-config|
                                                              mini|]])]
-            [minitest.config                  :refer        [config context]
+            [minitest.configuration           :refer        [config context]
                                               :as           config]
             [minitest.inner-tests             :refer        [reporting-inner-tests|]]
             [minitest.utils                   :refer        [call ->| dissoc-in

@@ -1,33 +1,33 @@
 (ns minitest.unify
-  (:require [net.cgrand.macrovich             :as           macros]
-            [clojure.walk                     :refer        [postwalk
-                                                             postwalk-replace]]
-            [minitest.config       #?@(:clj  [:refer        [config
-                                                             context
-                                                             with-config
-                                                             extending-config]]
-                                       :cljs [:refer        [config
-                                                             context]
-                                              :refer-macros [with-config
-                                                             extending-config]])]
-            [minitest.custom-map   #?@(:clj  [:refer        [func-map
-                                                             at-runtime]]
-                                       :cljs [:refer-macros [func-map
-                                                             at-runtime]])]
-            [minitest.higher-order #?@(:clj  [:refer        [instead-of-level|
-                                                             outside-in->>
-                                                             if|]]
-                                       :cljs [:refer        [instead-of-level|]
-                                              :refer-macros [outside-in->>
-                                                             if|]])]
-            [minitest.reporter                :refer        [print-result]]
-            [minitest.utils                   :refer        [->| not| emphasize]]
-            [minitest.walk                    :refer        [copostwalk]]
-            [minitest              #?@(:clj  [:refer        [tests]]
-                                       :cljs [:refer-macros [tests]])]
-            [lambdaisland.deep-diff2          :refer        [diff]
-                                              :as           diff]
-            [minitest.clojure.core.unify      :refer        [unify lvar?]]))
+  (:require [net.cgrand.macrovich              :as           macros]
+            [clojure.walk                      :refer        [postwalk
+                                                              postwalk-replace]]
+            [minitest.configuration #?@(:clj  [:refer        [config
+                                                              context
+                                                              with-config
+                                                              extending-config]]
+                                        :cljs [:refer        [config
+                                                              context]
+                                               :refer-macros [with-config
+                                                              extending-config]])]
+            [minitest.custom-map    #?@(:clj  [:refer        [func-map
+                                                              at-runtime]]
+                                        :cljs [:refer-macros [func-map
+                                                              at-runtime]])]
+            [minitest.higher-order  #?@(:clj  [:refer        [instead-of-level|
+                                                              outside-in->>
+                                                              if|]]
+                                        :cljs [:refer        [instead-of-level|]
+                                               :refer-macros [outside-in->>
+                                                              if|]])]
+            [minitest.reporter                 :refer        [print-result]]
+            [minitest.utils                    :refer        [->| not| emphasize]]
+            [minitest.walk                     :refer        [copostwalk]]
+            [minitest.tests-block   #?@(:clj  [:refer        [tests]]
+                                        :cljs [:refer-macros [tests]])]
+            [lambdaisland.deep-diff2           :refer        [diff]
+                                               :as           diff]
+            [minitest.clojure.core.unify       :refer        [unify lvar?]]))
 
 (defn lvars [coll]
   (->> coll
@@ -95,22 +95,21 @@
                          #?(:cljs (diff/printer {:print-color false}))))
     d))
 
-(macros/deftime
-  (defmacro unified? [tested expected]
-    `(extending-config
-       {:CTX       {:case-data
-                    {:unified? {:tested   {:form '~tested}
-                                :expected {:form '~expected}}}}
-        ; :report-fn (outside-in->>
-        ;              (instead-of-level|
-        ;                [:report  :case] report-unified?)
-        ;              (instead-of-level|
-        ;                [:explain :case] (if| (-> ~'&data :status (= :failure))
-        ;                                   explain-unified?
-        ;                                   (-> ~'&config :report-fn)))
-        ;              (-> ~'&config :report-fn))
-        ;; Let's simplify the above
-        :actions {:report  {:fn report-unified?}
-                  :explain {:WHEN {:status {:failure {:fn explain-unified?}}}}}}
-       (tests :? (unify ~tested ~(postwalk #(if  (lvar? %)  `(quote ~%)  %)
-                                           expected))))))
+(defmacro unified? [tested expected]
+  `(extending-config
+     {:CTX       {:case-data
+                  {:unified? {:tested   {:form '~tested}
+                              :expected {:form '~expected}}}}
+      ; :report-fn (outside-in->>
+      ;              (instead-of-level|
+      ;                [:report  :case] report-unified?)
+      ;              (instead-of-level|
+      ;                [:explain :case] (if| (-> ~'&data :status (= :failure))
+      ;                                   explain-unified?
+      ;                                   (-> ~'&config :report-fn)))
+      ;              (-> ~'&config :report-fn))
+      ;; Let's simplify the above
+      :actions {:report  {:fn report-unified?}
+                :explain {:WHEN {:status {:failure {:fn explain-unified?}}}}}}
+     (tests :? (unify ~tested ~(postwalk #(if  (lvar? %)  `(quote ~%)  %)
+                                         expected)))))

@@ -1,7 +1,7 @@
 (ns minitest.config-test
   (:require [clojure.test         :refer        [deftest testing is are
                                                  run-tests]]
-            [minitest.config
+            [minitest.configuration
                       #?@(:clj   [:refer        [deep-merge
                                                  config
                                                  forced-config
@@ -34,7 +34,7 @@
 (deftest test-contextual-config
   (testing "memoization"
     (testing "doesn't leak"
-      (let [count-memo #(->> @minitest.config/config-memo
+      (let [count-memo #(->> @minitest.configuration/config-memo
                              (map (fn [[k v]] [k (count v)]))
                              (into {}))
             original-cnts (do (config) (count-memo))
@@ -46,8 +46,8 @@
                     (fn [f]
                       (with-meta (->|  (fn [x] (swap! calls inc) x)  f)
                         {:minitest/map-func true}))]
-        (require 'minitest.base-config :reload)
-        (require 'minitest.config      :reload)
+        (require 'minitest.base-config   :reload)
+        (require 'minitest.configuration :reload)
         (testing "are computed until the very last moment"
           (is (= false (-> (config) :fail-fast)))
           (is (= @calls 0))

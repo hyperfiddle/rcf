@@ -5,8 +5,12 @@
  {:browser-support
   {:target           :browser
    :devtools         {:hud                   #{:progress :errors}}
-   :modules          {:main                  {:entries [minitest
-                                                        minitest-features-test]}}
+   :modules          {:main                  {:entries [#_minitest.poney
+                                                        #_minitest.unify
+                                                        #_minitest.tests-block
+                                                        #_minitest
+                                                        #_minitest-features-test
+                                                        minitest-test]}}
    :compiler-options {:infer-externs         :auto
                       :js-options            {:variable-renaming :off}
                       ;; assign names to anon functions

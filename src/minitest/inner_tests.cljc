@@ -1,40 +1,40 @@
 (ns minitest.inner-tests
-  (:require [net.cgrand.macrovich             :as           macros]
-            [clojure.string                   :as           str]
-            [minitest.around-load             :refer        [*tests-to-process*]]
-            [minitest.orchestrator            :refer        [run-execute-report!]]
-            [minitest.higher-order #?@(:clj  [:refer        [report-actions
-                                                             stop-when|
-                                                             chain|
-                                                             do-nothing
-                                                             outside-in->>
-                                                             minifn
-                                                             when|
-                                                             if|]]
-                                       :cljs [:refer        [report-actions
-                                                             stop-when|
-                                                             chain|
-                                                             do-nothing]
-                                              :refer-macros [outside-in->>
-                                                             minifn
-                                                             when|
-                                                             if|]])]
-            [minitest.config       #?@(:clj  [:refer        [config
-                                                             context
-                                                             with-context]
-                                              :as           config]
-                                       :cljs [:refer        [config
-                                                             context]
-                                              :refer-macros [with-context]
-                                              :as           config])]
-            [minitest.utils        #?@(:clj  [:refer        [gen-uuid
-                                                             dmerge
-                                                             with-out-str+result]]
-                                       :cljs [:refer        [gen-uuid
-                                                             dmerge]
-                                              :refer-macros [with-out-str+result]])])
+  (:require [net.cgrand.macrovich              :as           macros]
+            [clojure.string                    :as           str]
+            [minitest.around-load              :refer        [*tests-to-process*]]
+            [minitest.orchestrator             :refer        [run-execute-report!]]
+            [minitest.higher-order  #?@(:clj  [:refer        [report-actions
+                                                              stop-when|
+                                                              chain|
+                                                              do-nothing
+                                                              outside-in->>
+                                                              minifn
+                                                              when|
+                                                              if|]]
+                                        :cljs [:refer        [report-actions
+                                                              stop-when|
+                                                              chain|
+                                                              do-nothing]
+                                               :refer-macros [outside-in->>
+                                                              minifn
+                                                              when|
+                                                              if|]])]
+            [minitest.configuration #?@(:clj  [:refer        [config
+                                                              context
+                                                              with-context]
+                                               :as           config]
+                                        :cljs [:refer        [config
+                                                              context]
+                                               :refer-macros [with-context]
+                                               :as           config])]
+            [minitest.utils         #?@(:clj  [:refer        [gen-uuid
+                                                              dmerge
+                                                              with-out-str+result]]
+                                        :cljs [:refer        [gen-uuid
+                                                              dmerge]
+                                               :refer-macros [with-out-str+result]])])
   #?(:cljs
-      (:require-macros [minitest.inner-tests  :refer        [capturing-inner-test-results]])))
+      (:require-macros [minitest.inner-tests   :refer        [capturing-inner-test-results]])))
 
 (def ^:dynamic *inner-test-results* nil)
 

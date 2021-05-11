@@ -8,7 +8,7 @@
     #?(:clj [cljs.repl.browser       :as           browser])
     #?(:clj [cljs.env                :as           env])
             [net.cgrand.macrovich    :as           macros]
-            [minitest.config         :refer        [context config]]
+            [minitest.configuration  :refer        [context config]]
             [minitest.dbg #?@(:clj  [:refer        [dbg]]
                               :cljs [:refer-macros [dbg]])])
 

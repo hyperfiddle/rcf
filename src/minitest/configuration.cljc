@@ -1,4 +1,4 @@
-(ns minitest.config
+(ns minitest.configuration
   (:require
     #?(:clj [clojure.java.io         :as    io])
     #?(:clj [clojure.edn             :as    edn])
@@ -17,7 +17,7 @@
             [minitest.custom-map     :refer [func-map filtered-map]])
   #?(:cljs
       (:require-macros
-        [minitest.config             :refer [get-file-config defaccessors memo]]
+        [minitest.configuration      :refer [get-file-config defaccessors memo]]
         [minitest.with-bindings      :refer [with-bindings]]
         [minitest.utils              :refer [set-var!]])))
 

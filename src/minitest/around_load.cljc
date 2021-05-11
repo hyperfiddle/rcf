@@ -1,30 +1,30 @@
 (ns minitest.around-load
   (:require
-    #?(:clj [cljs.analyzer.api                :as           ana])
-    #?(:clj [cljs.compiler                    :as           cljsc])
+    #?(:clj [cljs.analyzer.api                 :as           ana])
+    #?(:clj [cljs.compiler                     :as           cljsc])
     #?(:clj [cljs.repl])
-    #?(:clj [robert.hooke                     :refer        [add-hook]])
-            [net.cgrand.macrovich             :as           macros]
+    #?(:clj [robert.hooke                      :refer        [add-hook]])
+            [net.cgrand.macrovich              :as           macros]
     #?(:clj [minitest.utils                   :refer        [->|]])
-            [minitest.higher-order #?@(:clj  [:refer        [levels-above
-                                                             do-nothing
-                                                             if|]]
-                                       :cljs [:refer        [levels-above
-                                                             do-nothing]
-                                              :refer-macros [if|]])]
-            [minitest.dbg          #?@(:clj  [:refer        [dbg]]
-                                       :cljs [:refer-macros [dbg]])]
-            [minitest.orchestrator            :refer        [run-execute-report!]]
-            [minitest.config       #?@(:clj  [:refer        [config
-                                                             with-config
-                                                             with-context]]
-                                       :cljs [:refer        [config]
-                                              :refer-macros [with-config
-                                                             with-context]])])
+            [minitest.higher-order  #?@(:clj  [:refer        [levels-above
+                                                              do-nothing
+                                                              if|]]
+                                        :cljs [:refer        [levels-above
+                                                              do-nothing]
+                                               :refer-macros [if|]])]
+            [minitest.dbg           #?@(:clj  [:refer        [dbg]]
+                                        :cljs [:refer-macros [dbg]])]
+            [minitest.orchestrator             :refer        [run-execute-report!]]
+            [minitest.configuration #?@(:clj  [:refer        [config
+                                                              with-config
+                                                              with-context]]
+                                        :cljs [:refer        [config]
+                                               :refer-macros [with-config
+                                                              with-context]])])
   #?(:cljs
       (:require-macros
-        [minitest.around-load                 :refer        [currently-loading?
-                                                             tests-to-process]])))
+        [minitest.around-load                  :refer        [currently-loading?
+                                                              tests-to-process]])))
 
 (def ^:dynamic          *tests*             (atom nil))
 (def ^:dynamic ^:no-doc *currently-loading* false)

@@ -33,7 +33,9 @@
 
   ;; Taken from:
   ;; https://github.com/ptaoussanis/encore/blob/009da50b8d38ebd00db0ec99bd99312cf0c56203/src/taoensso/encore.cljc#L374
-  ;; TODO: keep ?
+  ;; Changes for Cljs support:
+  ;;   - in Cljs, def doesn't return the defined var but nil.
+
   (defmacro defalias
     "Defines an alias for a var, preserving its metadata."
     ([    src      ] `(defalias ~(symbol (name src)) ~src nil))
@@ -43,7 +45,8 @@
        `(let [attrs# (conj (select-keys (meta (var ~src))
                                         [:doc :arglists :private :macro])
                            ~attrs)]
-          (alter-meta! (def ~sym @(var ~src)) conj attrs#)
+          (def ~sym @(var ~src))
+          (alter-meta! (var ~sym)  conj attrs#)
           (var ~sym))))))
 
 ;; Taken from https://stackoverflow.com/questions/14488150/how-to-write-a-dissoc-in-command-for-clojure

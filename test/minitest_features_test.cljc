@@ -1,34 +1,24 @@
 (ns minitest-features-test
-  {:minitest/config {:error-depth 0
+  {:minitest/config {;:dots true
+                     :error-depth 0
                      :effects     {:show-form   true
                                    :show-result true}
                      :WHEN {:test-key  {true {:logo "✌️"}}
-                            :level     {:block {:post-separator "\n\n"}}
-                            ; :exec-mode {:on-load {:run-tests false}}
-                            }}}
+                            :level     {:block {:separator "\n"}}
+                  #?@(:clj [:exec-mode {:on-load {:run-tests false}}])}}}
 
-  (:refer-clojure                       :exclude      [println])
-  (:require [net.cgrand.macrovich       :as           macros]
-            [minitest        #?@(:clj  [:refer        [tests]]
-                                 :cljs [:refer-macros [tests]])]
-            [minitest.config #?@(:clj  [:refer        [config
-                                                       context
-                                                       with-config
-                                                       with-context]]
-                                 :cljs [:refer        [config
-                                                       context]
-                                        :refer-macros [with-config
-                                                       with-context]])]
-            [minitest.unify  #?@(:clj  [:refer        [unified?]]
-                                 :cljs [:refer-macros [unified?]])]
-            ; #?@(:clj [[minitest.unify        :reload true]
-            ;           [minitest.inner-tests  :reload true]
-            ;           [minitest.orchestrator :reload true]
-            ;           [minitest.runner       :reload true]
-            ;           [minitest.executor     :reload true]
-            ;           [minitest.reporter     :reload true]
-            ;           [minitest.around-load  :reload true]])
-            )
+  (:refer-clojure                              :exclude      [println])
+  (:require [net.cgrand.macrovich              :as           macros]
+            [minitest               #?@(:clj  [:refer        [config
+                                                              context
+                                                              with-config
+                                                              with-context
+                                                              tests
+                                                              unified?]]
+                                        :cljs [:refer-macros [with-config
+                                                              with-context
+                                                              tests
+                                                              unified?]])])
   #?(:cljs
       (:require-macros [minitest-features-test :refer [println
                                                        inner-test-macro]])))

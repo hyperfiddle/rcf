@@ -1,25 +1,25 @@
 (ns minitest.clojure.test
-  (:require [clojure.test                     :as           test]
-            [clojure.string                   :as           str]
-            [clojure.template                 :as           temp]
-            [minitest              #?@(:clj  [:refer        [tests]]
-                                       :cljs [:refer-macros [tests]])]
-            [minitest.config       #?@(:clj  [:refer        [config
-                                                             context
-                                                             ns-config!
-                                                             with-config
-                                                             with-context]]
-                                       :cljs [:refer        [config
-                                                             context
-                                                             ns-config!]
-                                              :refer-macros [with-config
-                                                             with-context]])]
-            [minitest.higher-order #?@(:clj  [:refer        [instead-of-level|
-                                                             outside-in->>
-                                                             minifn]]
-                                       :cljs [:refer        [instead-of-level|]
-                                              :refer-macros [outside-in->>
-                                                             minifn]])]))
+  (:require [clojure.test                      :as           test]
+            [clojure.string                    :as           str]
+            [clojure.template                  :as           temp]
+            [minitest               #?@(:clj  [:refer        [tests]]
+                                        :cljs [:refer-macros [tests]])]
+            [minitest.configuration #?@(:clj  [:refer        [config
+                                                              context
+                                                              ns-config!
+                                                              with-config
+                                                              with-context]]
+                                        :cljs [:refer        [config
+                                                              context
+                                                              ns-config!]
+                                               :refer-macros [with-config
+                                                              with-context]])]
+            [minitest.higher-order  #?@(:clj  [:refer        [instead-of-level|
+                                                              outside-in->>
+                                                              minifn]]
+                                        :cljs [:refer        [instead-of-level|]
+                                               :refer-macros [outside-in->>
+                                                              minifn]])]))
 
 (defn handling-test-hook| [f]
   (outside-in->>

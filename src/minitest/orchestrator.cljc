@@ -12,7 +12,8 @@
                                                              with-context|
                                                              minifn
                                                              if|]])]
-            [minitest.config                  :refer        [config]
+            [minitest.configuration           :refer        [config
+                                                             context]
                                               :as           config]
             [minitest.utils        #?@(:clj  [:refer        [->|
                                                              with-out-str+result]]
@@ -201,7 +202,8 @@
     handling-case-config-bindings|
     (with-context| {:ns    &ns
                     :level &level
-                    :lang  (macros/case  :clj :clj  :cljs :cljs)})
+                    :lang  (or (-> (context) :lang)
+                               (macros/case  :clj :clj  :cljs :cljs))})
     installing-config-bindings|
     binding-test-output|
     ; handling-fail-fast|

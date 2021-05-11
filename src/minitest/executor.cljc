@@ -15,7 +15,7 @@
             [minitest.dbg          #?@(:clj  [:refer        [dbg]]
                                        :cljs [:refer-macros [dbg]])]
             [minitest.runner                  :refer        [run-test-and-yield-report!]]
-            [minitest.config                  :refer        [context]
+            [minitest.configuration           :refer        [context]
                                               :as            config]
             [minitest.inner-tests             :refer        [executing-inner-tests|]])
   #?(:cljs
@@ -39,6 +39,7 @@
       :cljs (println "ATTEMPTED TO START THE REPL IN CLJS"))))
 
 (defn ensure-testing-repl [state position level ns-name data]
+  (println "lang here is" (macros/case :clj :clj  :cljs :cljs))
   (macros/case
     :clj (when-not @testing-repl
            (start-testing-repl!)

@@ -2,7 +2,7 @@
   (:require [clojure.pprint                   :refer        [pprint]]
             [clojure.string                   :as           str]
             [net.cgrand.macrovich             :as           macros]
-            [minitest.config                  :refer        [config]
+            [minitest.configuration           :refer        [config]
                                               :as           config]
             [minitest.higher-order            :refer        [level-below]]
             [minitest.utils        #?@(:clj  [:refer        [call

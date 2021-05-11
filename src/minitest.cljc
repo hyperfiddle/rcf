@@ -1,22 +1,20 @@
 (ns minitest
   #?(:clj (:gen-class))
-  (:require [clojure.string                    :as           str]
+  (:require [net.cgrand.macrovich              :as           macros]
+            [clojure.string                    :as           str]
             [clojure.pprint                    :refer        [pprint]]
-   #?(:clj  [clojure.spec.alpha                :as           s])
    #?(:clj  [clojure.tools.namespace.repl      :refer        [disable-reload!]])
    #?(:clj  [clojure.repl                      :refer        [source-fn]])
    #?(:clj  [clojure.edn                       :as           edn])
-            [net.cgrand.macrovich              :as           macros]
             [minitest.ns                       :as           ns
                              #?@(:cljs [       :include-macros true])]
             [minitest.base-config              :refer        [base-config]]
             [minitest.executor                 :refer        [execute-clj
                                                               execute-cljs]]
-            [minitest.inner-tests              :refer        [store-inner-test-results!]]
             [minitest.reporter                 :refer        [report]]
             [minitest.orchestrator             :refer        [orchestrate
                                                               run-execute-report!]]
-            [minitest.config                   :as           config
+            [minitest.configuration            :as           cfg
                              #?@(:cljs [       :include-macros true])]
             [minitest.utils  #?@(:clj  [       :refer        [as-form
                                                               as-thunk
@@ -39,15 +37,26 @@
                                         :cljs [:refer        [process-now!
                                                               process-later!
                                                               *tests*]
-                                               :refer-macros [currently-loading?]])]))
+                                               :refer-macros [currently-loading?]])]
+            [minitest.unify                    :as           u
+                                    #?@(:cljs [:include-macros true])]
+            [minitest.tests-block              :as           tst
+                                    #?@(:cljs [:include-macros true])]
+            [minitest.custom-map               :as           cm])
+  #?(:cljs
+      (:require-macros [minitest.tests-block :as tst])))
 
 (macros/deftime (disable-reload!))
 (macros/deftime (macros/case :clj (apply-clj-patches)))
 
-; (defalias config       minitest.config/config)
-; (defalias context      minitest.config/context)
-; (defalias with-config  minitest.config/with-config)
-; (defalias with-context minitest.config/with-context)
+(defalias config       cfg/config)
+(defalias context      cfg/context)
+(macros/deftime
+  (defalias with-config  cfg/with-config)
+  (defalias with-context cfg/with-context)
+  (defalias unified?     u/unified?)
+  (defalias tests        tst/tests)
+  (defalias at-runtime   cm/at-runtime))
 
 ;; -- Dev tools
 ;; ---- Some commands
@@ -57,7 +66,7 @@
 ;;
 ;; (require 'shadow.cljs.devtools.server) (shadow.cljs.devtools.server/start!) (require '[shadow.cljs.devtools.api :as shadow]) (shadow/watch :browser-support)
 ;;
-;; (require '[cljs.repl :as repl]) (require '[cljs.repl.browser :as browser]) (repl/repl (browser/repl))
+;; (require '[cljs.repl :as repl]) (require '[cljs.repl.browser :as browser]) (repl/repl (browser/repl-env))
 
 
 ;; -- Explorations
@@ -133,91 +142,6 @@
 ;; - [√] set-context!
 ;; - [√] namespaces as context
 
-
-
-(macros/deftime
-  ;; TODO: too much
-  (defn conform! [spec value]
-    (let [result (s/conform spec value)]
-      (when (= result :s/invalid)
-        (throw (Exception.
-                 (binding [*print-level* 7
-                           *print-namespace-maps* false]
-                   (str \newline
-                        (with-out-str (->> (s/explain-data spec value)
-                                           (mapv (fn [[k v]]
-                                                   [(-> k name keyword) v]))
-                                           (into {})
-                                           pprint)))))))
-      result))
-
-  (defn- parse-tests [env block-body]
-    (let [not-op? (complement #{:= :?})]
-      (->> block-body
-           (conform!
-             (s/*
-               (s/alt :effect  not-op?
-                      :expectation (s/alt
-                                     := (s/cat :tested   not-op?
-                                               :op       #{:=}
-                                               :expected not-op?)
-                                     :? (s/cat :op       #{:?}
-                                               :tested not-op?)))))
-           ;; Sample of what we are processing next:
-           ;; [[:effect '(do :something)]
-           ;;  [:expectation [:= {:tested 1, :op :=, :expected 1}]]]
-           (mapv
-             (fn [[type x]]
-               (case type
-                 :effect
-                 (let [xpd (meta-macroexpand env x)]
-                   {:type            :effect
-                    :form            (-> x as-form)
-                    :macroexpanded   (with-meta (-> xpd as-form)
-                                       (meta xpd))
-                    :thunk           (with-meta (-> xpd as-thunk)
-                                       (meta xpd))
-                    :bindings        `(config/current-case-bindings)
-                    :config-bindings `(config/current-config-bindings)})
-
-                 :expectation
-                 (let [[op m] x]
-                   (-> (merge
-                         {:type            :expectation
-                          :op              op
-                          :bindings        `(config/current-case-bindings)
-                          :config-bindings `(config/current-config-bindings)
-                          :tested
-                          (let [xpd  (meta-macroexpand env (-> m :tested))]
-                            {:form          (-> m :tested as-form)
-                             :macroexpanded (-> xpd as-form)
-                             :thunk         (-> xpd as-thunk)})}
-                         (when (= op :=)
-                           {:expected
-                            (let [xpd (meta-macroexpand env (-> m :expected))]
-                              {:form          (-> m :expected as-form)
-                               :macroexpanded (-> xpd as-form)
-                               :thunk         (-> xpd as-wildcard-thunk)})}))
-                       ))))))))
-
-  (defmacro tests [& body]
-    (when-not (-> (config/config) :elide-tests)
-      `(config/with-default-context
-         {:exec-mode (if (currently-loading?) :on-load :on-eval)}
-         (let [cfg#    (config/config)
-               exmod#  (-> (config/context) :exec-mode)
-               ns#     (current-ns-name)
-               block#  ~(parse-tests &env body)]
-           (when (or (:store-tests cfg#)
-                     (:run-tests   cfg#))
-             (process-later! ns# [block#])
-             (case exmod#
-               :on-load    nil
-               :inner-test (doto (process-now! :case ns#)
-                                 (store-inner-test-results!))
-               :on-eval    (process-now! :block ns#)))
-           nil)))))
-
 (defn- config-kw? [x]
   (and (keyword? x)
        (not (#{:exclude :all} x)))) ;; kws used for namespace selection
@@ -234,7 +158,7 @@
 (defn test!
   ([]       (let [ns (current-ns-name)]
               (cond
-                (currently-loading?) (config/with-config {:run-tests   true
+                (currently-loading?) (cfg/with-config {:run-tests   true
                                                           :store-tests false}
                                        (process-now! :suite))
                 (get @*tests* ns)    (test! ns)
@@ -250,7 +174,7 @@
               (macros/case :clj (run! require nss))
               (if (empty? ns->tests)
                 :no-test
-                (config/with-config (into {} (map vec conf))
+                (cfg/with-config (into {} (map vec conf))
                   (run-execute-report! :suite ns->tests)
                   nil)))))
 
@@ -291,7 +215,7 @@
     (newline)
     (println (source-fn `base-config))
     (newline)
-    (let [confile (config/config-file)]
+    (let [confile (cfg/config-file)]
       (if confile
         (do (println "On top of this, here is your config from"
                      (str (->> confile .toURI
@@ -303,14 +227,14 @@
             (println "./minitest.edn or ./resources/minitest.edn"))))
     (newline)
     (println "And the resulting config after minitest merges them is:")
-    (pprint (config/config))))
+    (pprint (cfg/config))))
 
 (macros/case
   :clj
   (defn -main [& args]
     (if (-> args first #{"help" ":help" "h" "-h" "--help"})
       (print-usage)
-      (config/with-context {:env :cli}
+      (cfg/with-context {:env :cli}
         (->> (str \[ (str/join \space args) \])
              edn/read-string
              (apply test!))))))

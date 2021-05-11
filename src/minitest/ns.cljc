@@ -2,7 +2,7 @@
   (:require [net.cgrand.macrovich         :as    macros]
     #?(:clj [clojure.java.io              :as    io])
     #?(:clj [clojure.tools.namespace.find :as    tools])
-    #?(:clj [minitest.config              :refer [config]])
+    #?(:clj [minitest.configuration       :refer [config]])
             [minitest.utils               :refer [call ->|]]))
 
 (macros/deftime

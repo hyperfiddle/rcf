@@ -9,12 +9,12 @@
 (ns ^{:doc "A unification library for Clojure."
       :author "Michael Fogus"}
   minitest.clojure.core.unify
-  (:require [net.cgrand.macrovich :as macros]
-            [clojure.zip          :as zip]
-            [clojure.walk         :as walk])
+  (:require [net.cgrand.macrovich    :as macros]
+            [clojure.zip             :as zip]
+            [clojure.walk            :as walk])
   #?(:cljs
-      (:require-macros [minitest.clojure.core.unify
-                        :refer [create-var-unification-fn]])))
+      (:require-macros
+        [minitest.clojure.core.unify :refer [create-var-unification-fn]])))
 
 (defn ignore-variable? [sym] (= '_ sym))
 
