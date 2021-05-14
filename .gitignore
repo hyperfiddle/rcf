@@ -4,6 +4,4 @@
 .shadow-cljs/
 .rebel_readline_history
 .idea
-out
-minitest.iml
-nodejs-target/
+out/js

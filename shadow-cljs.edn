@@ -1,19 +1,5 @@
-{:deps     true
- :nrepl    {:port 9001}
+{:deps     {:aliases [:dev :cljs-test]}
  :dev-http {8000 "out"}
- :builds
- {:browser-support
-  {:target           :browser
-   :devtools         {:hud                   #{:progress :errors}}
-   :modules          {:main                  {:entries [minitest
-                                                        minitest.poney]}}
-   :compiler-options {:infer-externs         :auto
-                      :js-options            {:variable-renaming :off}
-                      ;; assign names to anon functions
-                      :anon-fn-naming-policy :unmapped}
-   :output-dir       "out"}
-
-  :node-support
-  {:target    :node-script
-   :output-to "nodejs-target/main.js"
-   :main      minitest.poney/entry-point}}}
+ :builds   {:app {:target     :browser
+                  :modules    {:main {:entries [hyperfiddle.rcf.tests]}}
+                  :output-dir "out/js"}}}
