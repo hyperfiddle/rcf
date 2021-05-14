@@ -19,7 +19,7 @@
   Set this to true if you want to generate clojure.test compatible tests.
   This will define testing functions in your namespace using `deftest`. Defaults
   to `false`. "
-  {:dots           false
+  {:dots           true
    :enabled        #?( :clj (= "true" (System/getProperty "hyperfiddle.rcf.enabled"))
                       :cljs true ; use a goog.define instead
                       )
