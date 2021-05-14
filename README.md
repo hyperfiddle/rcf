@@ -82,7 +82,7 @@
    If you want to work at the REPL, just eval the form.
 
    If you want to run them as part of a test suite, you can set
-   `-Dhyperfiddle.rcf.generate-tests="true"`¹ or
+   `-Dhyperfiddle.rcf.generate-tests=true`¹ or
    `(hyperfiddle.rcf/set-config! {:generate-tests true})`. It will generate
    `clojure.test` compatible tests using `deftest`. You can then run them as
    you would do with `clojure.test`:
@@ -132,6 +132,8 @@
     versions (called Minitest) and did a great and creative job. We learned the
     intricacies, dead-ends, and advantages of various approaches from Minitest
     before settling on the current implementation.
+  - RCF use a cljs-compatible, slightly modified version of
+    [core.unify](https://github.com/clojure/core.unify).
 
 ## Contributing
 
