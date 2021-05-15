@@ -1,5 +1,6 @@
 (ns hyperfiddle.rcf
   (:refer-clojure :exclude [*1 *2 *3])
+  #?(:cljs (:require-macros [hyperfiddle.rcf :refer [tests]]))
   (:require #?(:clj [clojure.test :as t :refer [testing]]
                :cljs [cljs.test :as t :refer-macros [testing]])
             #?(:cljs [cljs.analyzer.api :as ana-api])
