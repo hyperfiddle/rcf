@@ -1,24 +1,21 @@
 (ns hyperfiddle.rcf.reporters
   (:require [clojure.stacktrace :as stack]
             [clojure.test :as t]
-            [hyperfiddle.rcf.utils :refer [pprint testing-vars-str]]))
+            [hyperfiddle.rcf.utils :as utils :refer [pprint testing-vars-str]]))
 
 (defmethod t/report :pass [m]
   (t/with-test-out
     (t/inc-report-counter :pass)
     (if (:dots (:config m))
       (print "✅")
-      (let [{:keys [expected actual message]} m
-            [a b]                             (if (sequential? actual)
-                                                (rest actual)
-                                                [expected actual])]
+      (let [[a b] (utils/extract-comparison m)]
         (print "✅ ")
         (pprint a)
         (print " := ")
         (pprint b)
         (print (str "  " (testing-vars-str m)))
         (prn)
-        (when message
+        (when-let [message (:message m)]
           (println message))))))
 
 (defmethod t/report :fail [m]

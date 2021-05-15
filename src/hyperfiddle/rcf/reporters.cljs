@@ -1,6 +1,6 @@
 (ns hyperfiddle.rcf.reporters
   (:require [cljs.test :as t]
-            [hyperfiddle.rcf.utils :refer [pprint-str]]))
+            [hyperfiddle.rcf.utils :as utils :refer [pprint-str]]))
 
 (defn testing-vars-str
   "Returns a string representation of the current test.  Renders names
@@ -13,16 +13,13 @@
 (defmethod t/report [::t/default :pass] [m]
   (t/inc-report-counter! :pass)
   (js/console.groupCollapsed "✅" (testing-vars-str m))
-  (let [{:keys [expected actual message]} m
-        [a b]                             (if (sequential? actual)
-                                            (rest actual)
-                                            [expected actual])]
+  (let [[a b] (utils/extract-comparison m)]
     (when (seq (:testing-contexts (t/get-current-env)))
       (println (t/testing-contexts-str)))
     (js/console.log "expected:" (pprint-str a))
     (js/console.log "  actual:" (pprint-str b))
     (js/console.groupEnd)
-    (when message
+    (when-let [message (:message m)]
       (println message))))
 
 (defmethod t/report [::t/default :fail] [m]

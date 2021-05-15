@@ -36,8 +36,6 @@
      ~@body))
 
 (s/def ::expr (s/or :assert (s/cat :eq #{'= :=} :actual any? :expected any?)
-                    ;; :assert-match (s/cat :eq #{':matches?} :actual any? :expected any?)
-                    :assert-unify (s/cat :eq #{':?=} :actual any? :expected any?)
                     :tests (s/cat :tests #{'tests} :doc (s/? string?) :body (s/* ::expr))
                     :effect (s/cat :do #{'do} :body (s/* any?))))
 
@@ -159,12 +157,6 @@
 (defmacro unifies? [x pattern]
   `(= ~x (unifier ~x ~pattern)))
 
-#_#_:assert-match (let [{:keys [actual expected]} val]
-                    `((let [x# ~actual]
-                        (is ~menv (= x# (m/match [x#] ;; yeah it's flipped
-                                                 [~expected] x#
-                                                 [~'_] '~expected))))))
-
 (defn rewrite-infix [body]
   (seq (loop [[x & xs :as body] body
               acc               []]
@@ -180,7 +172,6 @@
            (= := (first xs))              (recur (rest (rest xs)) (conj acc (list '= x (first (rest xs)))))
            (= :?= (first xs))             (recur (rest (rest xs)) (conj acc (list ':?= x (first (rest xs)))))
            :else                          (recur xs (conj acc (list 'do x)))
-           #_#_                           (= :matches? (first xs))                  (recur (rest (rest xs)) (conj acc (list ':matches? x (first (rest xs)))))
            ))))
 
 (def ^:dynamic *1)
@@ -207,14 +198,10 @@
      (if (nil? expr)
        acc
        (case type
-         :assert-unify (let [{:keys [actual expected]} val
+         :assert (let [{:keys [actual expected]} val
                              actual                    (rewrite-stars actual)
                              expected                  (rewrite-stars expected)]
                          (recur body (conj acc `(is ~menv (unifies? ~actual ~(rewrite-wildcards expected))))))
-         :assert       (let [{:keys [actual expected]} val
-                             actual                    (rewrite-stars actual)
-                             expected                  (rewrite-stars expected)]
-                         (recur body (conj acc `(is ~menv (= ~actual ~expected)))))
          :tests        (if-let [doc (:doc val)]
                          (recur body (conj acc `(~(symf 'testing) ~doc ~@(rewrite-body* menv symf (:body val)))))
                          (recur body (apply conj acc (rewrite-body* menv symf (:body val)))))
