@@ -10,12 +10,13 @@
   (let [{:keys [file line column]} m]
     (str file ":" line (when column (str ":" column)) )))
 
+;; For js console.
 (defmethod t/report [::t/default :pass] [m]
   (t/inc-report-counter! :pass)
   (js/console.groupCollapsed "✅" (testing-vars-str m))
   (let [[a b] (utils/extract-comparison m)]
     (when (seq (:testing-contexts (t/get-current-env)))
-      (println (t/testing-contexts-str)))
+      (js/console.log (t/testing-contexts-str)))
     (js/console.log "expected:" (pprint-str a))
     (js/console.log "  actual:" (pprint-str b))
     (js/console.groupEnd)
