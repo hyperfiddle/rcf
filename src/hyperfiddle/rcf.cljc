@@ -156,7 +156,12 @@
 (declare rewrite-body*)
 
 (defmacro unifies? [x pattern]
-  `(= ~x (unifier ~x ~pattern)))
+  `(= ~x (unifier ~x ~(clojure.walk/postwalk
+                       (fn [x]
+                         (if (and (symbol? x) (or (= '_ x) (= \? (first (name x)))))
+                           (list 'quote x)
+                           x))
+                       pattern))))
 
 (defn rewrite-infix [body]
   (seq (loop [[x & xs :as body] body

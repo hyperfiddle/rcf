@@ -21,14 +21,14 @@
     (:= 1 1)) ; works too
 
   (tests "unification is supported with `:=`"
-    1 := '?a                           ; passes {?a 1}
-    {:a 1, :b 2} := '{:a ?a, :b ?b}    ; passes {?a 1, ?b 2}
+    1 := ?a                           ; passes {?a 1}
+    {:a 1, :b 2} := {:a ?a, :b ?b}    ; passes {?a 1, ?b 2}
     (tests "this fails because 1 != 2"
-      (rcf/unifies? {:a 1, :b 2} '{:a ?a, :b ?a}) := false
+      (rcf/unifies? {:a 1, :b 2} {:a ?a, :b ?a}) := false
       (tests "and works as infix too"
-        (:= 1 '?a)))
+        (:= 1 ?a)))
     (tests "wildcard is supported with `_` and always unifies."
-      {:a 1, :b 2} := '{:a _, :b _}))
+      {:a 1, :b 2} := {:a _, :b _}))
 
   (tests "*1, *2 and *3 are respectively bound to the last, penultimate and antepenultimate values."
     :foo
@@ -52,7 +52,7 @@
 
 (tests "References works with unification"
   (def a (Foo. 1))
-  {:a a, :a2 a} := '{:a ?a, :a2 ?a})
+  {:a a, :a2 a} := {:a ?a, :a2 ?a})
 
 ;;;;;;;;;;;;;;;;;;;;;;
 ;; RUNNING FLOW CLI ;;
