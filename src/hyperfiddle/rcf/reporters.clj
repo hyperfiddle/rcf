@@ -22,7 +22,7 @@
   (t/with-test-out
     (t/inc-report-counter :fail)
     (prn)
-    (print "🔥 ")
+    (print "❌ ")
     (println (str (testing-vars-str m) " "))
     (when (seq t/*testing-contexts*) (println (t/testing-contexts-str)))
     (when-let [message (:message m)] (println message))
@@ -39,7 +39,7 @@
   (t/with-test-out
     (t/inc-report-counter :error)
     (prn)
-    (print "❌ ")
+    (print "🔥 ")
     (print (str (testing-vars-str m) " "))
     (prn)
     (when (seq t/*testing-contexts*) (println (t/testing-contexts-str)))

@@ -25,7 +25,7 @@
 
 (defmethod t/report [::t/default :fail] [m]
   (t/inc-report-counter! :fail)
-  (js/console.group (str "🔥" (testing-vars-str m)))
+  (js/console.group (str "❌ " (testing-vars-str m)))
   (when (seq (:testing-contexts (t/get-current-env)))
     (println (t/testing-contexts-str)))
   (when-let [message (:message m)] (println message))
@@ -35,7 +35,7 @@
 (defmethod t/report [::t/default :error] [m]
   (let [formatter-fn (or (:formatter (t/get-current-env)) pr-str)]
     (t/inc-report-counter! :error)
-    (js/console.group (str "❌ " (testing-vars-str m)))
+    (js/console.group (str "🔥" (testing-vars-str m)))
     (when (seq (:testing-contexts (t/get-current-env)))
       (println (t/testing-contexts-str)))
     (when-let [message (:message m)] (println message))
