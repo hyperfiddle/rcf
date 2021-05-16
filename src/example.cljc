@@ -8,7 +8,7 @@
   (rcf/rewrite-infix '(0 1 := 2 3)) := '((do 0) (= 1 2) (do 3)))
 
 (tests "Usage:"
-  "infix `:=` is equality assertion"
+  "equality"
   1 := 1
   1 := 2
   "foo" := "foo"
