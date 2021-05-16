@@ -1,8 +1,5 @@
-(ns hyperfiddle.rcf.tests
-  #?(:cljs (:require[hyperfiddle.rcf :as rcf]))
-  #?(:clj (:require [hyperfiddle.rcf :as rcf :refer [tests]]
-                    [clojure.test :as t])
-     :cljs (:require-macros [hyperfiddle.rcf :as rcf :refer [tests]])))
+(ns example
+  (:require [hyperfiddle.rcf :as rcf :refer [tests]]))
 
 (tests "Syntax"
   "an infix assertion is converted to a prefix one"
@@ -13,6 +10,7 @@
 (tests "Usage:"
   "infix `:=` is equality assertion"
   1 := 1
+  1 := 2
   "foo" := "foo"
   (inc 0) := (dec 2)
 
@@ -41,10 +39,6 @@
   *2 := :bar
   *1 := :baz
 
-  "everything that is not an assertion or documentation is considered an effect"
-  (doto (inc 1) prn)
-  *1 := 2
-
   (rcf/with-config {:dots true}
     (tests "Theses will just print a single char: ✅ if they succeed"
       (:= 1 1)
@@ -56,23 +50,6 @@
 (tests "References works with unification"
   (def a (Foo. 1))
   {:a a, :a2 a} := {:a ?a, :a2 ?a})
-
-;;;;;;;;;;;;;;;;;;;;;;
-;; RUNNING FLOW CLI ;;
-;;;;;;;;;;;;;;;;;;;;;;
-
-#?(:clj
-   (defn -main [& _args]
-     (let [{:keys [enabled generate-tests]} rcf/*config*]
-       (when enabled
-         (println "\n\nTests should run only when the -Dhyperfiddle.rcf.enabled=\"true\" JVM property is present. \n"))
-
-       (when generate-tests
-         (println "\n\nClojure.test tests runner should see generated tests when the -Dhyperfiddle.rcf.generate-tests=\"true\" JVM property is present \n")
-         (t/run-all-tests #"hyperfiddle.rcf.tests"))
-
-       (when (and (not enabled) (not generate-tests))
-         (println "\nHyperfiddle.rcf is disabled, `(tests …)` blocks are treated as comments. \n")))))
 
 #_(tests
     "Pattern matching works as in core.match, using :matches?"
