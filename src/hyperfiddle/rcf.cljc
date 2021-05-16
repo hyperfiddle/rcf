@@ -38,7 +38,8 @@
 
 (s/def ::expr (s/or :assert (s/cat :eq #{'= :=} :actual any? :expected any?)
                     :tests (s/cat :tests #{'tests} :doc (s/? string?) :body (s/* ::expr))
-                    :effect (s/cat :do #{'do} :body (s/* any?))))
+                    :effect (s/cat :do #{'do} :body (s/* any?))
+                    :doc    string?))
 
 (defn prefix-sym [cljs? x]
   (symbol (if cljs? "cljs.test" "clojure.test")
@@ -168,8 +169,6 @@
               acc               []]
          (cond
            (empty? body)                  acc
-           (and (= 'tests x)
-                (string? (first xs)))     (recur (rest xs) (conj acc x (first xs))) ;; doc
            (= 'tests x)                   (recur xs (conj acc x))
            (and (sequential? x)
                 (= 'tests (first x)))     (recur xs (conj acc (rewrite-infix x)))
@@ -177,6 +176,7 @@
                 (#{'= := :?=} (first x))) (recur xs (conj acc x))
            (= := (first xs))              (recur (rest (rest xs)) (conj acc (list '= x (first (rest xs)))))
            (= :?= (first xs))             (recur (rest (rest xs)) (conj acc (list ':?= x (first (rest xs)))))
+           (string? x)                    (recur xs (conj acc x))
            :else                          (recur xs (conj acc (list 'do x)))
            ))))
 
@@ -197,6 +197,8 @@
   (let [counter (let [x (volatile! 0)] (fn [] (vswap! x inc)))]
     (walk/postwalk #(case % _ (symbol (str "?_" (counter))) %) body)))
 
+(def not-doc? (complement #(= :doc (first %))))
+
 (defn rewrite-body* [menv symf body]
   (seq
    (loop [[[type val :as expr] & body] body
@@ -205,13 +207,16 @@
        acc
        (case type
          :assert (let [{:keys [actual expected]} val
-                             actual                    (rewrite-stars actual)
-                             expected                  (rewrite-stars expected)]
-                         (recur body (conj acc `(is ~menv (unifies? ~actual ~(rewrite-wildcards expected))))))
-         :tests        (if-let [doc (:doc val)]
-                         (recur body (conj acc `(~(symf 'testing) ~doc ~@(rewrite-body* menv symf (:body val)))))
-                         (recur body (apply conj acc (rewrite-body* menv symf (:body val)))))
-         :effect       (recur nil (apply conj acc (push-value! (first (:body val)) (rewrite-body* menv symf (rewrite-stars body))))))))))
+                       actual                    (rewrite-stars actual)
+                       expected                  (rewrite-stars expected)]
+                   (recur body (conj acc `(is ~menv (unifies? ~actual ~(rewrite-wildcards expected))))))
+         :tests  (if-let [doc (:doc val)]
+                   (recur body (conj acc `(~(symf 'testing) ~doc ~@(rewrite-body* menv symf (:body val)))))
+                   (recur body (apply conj acc (rewrite-body* menv symf (:body val)))))
+         :effect (recur nil (apply conj acc (push-value! (first (:body val)) (rewrite-body* menv symf (rewrite-stars body)))))
+         :doc    (recur (drop-while not-doc? body)
+                        (conj acc `(~(symf 'testing) ~val
+                                    ~@(rewrite-body* menv symf (rewrite-stars (take-while not-doc? body)))))))))))
 
 (defn rewrite-body [menv symf body]
   (let [parsed (s/conform ::expr (rewrite-infix (cons 'tests body)))]
