@@ -1,4 +1,24 @@
 (ns minitest.inner-tests
+  "Inner tests refers to tests-blocks within tests-blocks, for instance,
+  `(tests (tests 0 := 0))`.
+
+  This is used to develop additional tools for minitest, for instance,
+  ```clojure
+  (defn test-inc [x y]
+     (let [inced (inc x)]
+       (tests inced := y)))
+  ````
+
+  and to compose them easily with standard clojure code
+  ```clojure
+  (tests
+    (for [[x y] [[1 2] [2 3] [3 4]]]
+      (tests (test-inc x y))))
+  ```
+
+  Think of tests blocks as windows into the testing world. Place them
+  inline, in functions or in macros. They will integrate smoothely into the
+  rest of the tests."
   (:require [net.cgrand.macrovich              :as           macros]
             [clojure.string                    :as           str]
             [minitest.around-load              :refer        [*tests-to-process*]]
@@ -35,6 +55,35 @@
                                                :refer-macros [with-out-str+result]])])
   #?(:cljs
       (:require-macros [minitest.inner-tests   :refer        [capturing-inner-test-results]])))
+
+
+;; Here is the strategy:
+;; - Discover inner tests.
+;; - Execute all the inner tests. They can be nested
+;; - Only after it is done, report them all.
+
+;; 1. Discovery
+;; Inner tests are contained within effects prior to execution.
+;; If their execution leads to inner tests being run, their type is changed
+;; to :inner-tests and all the discovered tests are placed under :inner-tests
+;; in the case datum:
+;; {:type        :inner-tests
+;;  :inner-tests [...]
+;;  ...}
+;; Note that this does not require inner tests block to return something
+;; specific or be placed in tail position in effect forms.
+
+;; 2. Execution
+;; 3. Report
+;; We also want to support
+;; (tests (do (println "before")
+;;            (tests 0 := 0)
+;;            (println "after"))
+;; while keeping execution output intertwined with reporting output as much as
+;; possible (for instance when reporting cases at another level).
+;; We achieve this by building a template during execution for any case of
+;; type :inner-tests, and use it during the report-phase to incorporate the
+;; report output of children tests."
 
 (def ^:dynamic *inner-test-results* nil)
 
