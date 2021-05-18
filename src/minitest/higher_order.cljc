@@ -57,6 +57,7 @@
         (let   [~'&args       [~'&state ~'&position ~'&level ~'&ns ~'&data]]
           ~@body))))
 
+  ;; TODO: remove 'without' binders at least.
   (defmacro def-config-binders []
     `(do ~@(for [w-wo     ['with 'without]
                  name     ['config 'context]
@@ -166,3 +167,30 @@
       (-> (apply f &args)
           (assoc k true))
       (apply f &args))))
+
+(defn filter-data [pred level data]
+  (case level
+    :suite (->> data
+                (map (fn [[k v]]  [k (filter-data pred :ns v)]))
+                (filter (->| second seq))
+                (into {}))
+    :ns    (->> data
+                (filter (partial filter-data pred :block))
+                (filter seq))
+    :block (filter pred data)))
+
+(defn map-data [pred level data]
+  (case level
+    :suite (->> data
+                (map (fn [[k v]]  [k (map-data pred :ns v)]))
+                (into {}))
+    :ns    (->> data
+                (map (partial map-data pred :block)))
+    :block (map (partial map-data pred :case) data)
+    :case  (if (-> data :type (= :inner-tests))
+             (update data :inner-tests (partial map-data pred :block))
+             (pred data))))
+
+(defn report-via| [pos]
+  (fn [s _ l n d]
+    ((:report-fn (config)) s pos l n d)))

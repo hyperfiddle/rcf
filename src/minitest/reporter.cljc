@@ -3,6 +3,7 @@
   (:require [clojure.string                   :as           str]
             [clojure.pprint                   :as           pp
                                               :refer        [pprint]]
+            [clojure.repl                     :refer        [pst]]
             [minitest.higher-order #?@(:clj  [:refer        [report-actions
                                                              marking-as|
                                                              on-level|
@@ -11,7 +12,9 @@
                                                              apply|
                                                              chain|
                                                              stop-when|
+                                                             report-via|
                                                              do-nothing
+                                                             map-data
                                                              outside-in->>
                                                              minifn
                                                              when|
@@ -26,7 +29,9 @@
                                                              apply|
                                                              chain|
                                                              stop-when|
-                                                             do-nothing]
+                                                             report-via|
+                                                             do-nothing
+                                                             map-data]
                                               :refer-macros [outside-in->>
                                                              minifn
                                                              when|
@@ -38,7 +43,7 @@
             [minitest.inner-tests             :refer        [reporting-inner-tests|]]
             [minitest.utils                   :refer        [call ->| dissoc-in
                                                              emphasize]]
-            [clojure.repl                     :refer        [pst]]
+            [minitest.report-at-level         :refer        [handling-reports-at-report-level|]]
             [net.cgrand.macrovich             :as           macros])
   #?(:cljs
       (:require-macros [minitest.reporter     :refer        [once once-else]])))
@@ -82,30 +87,6 @@
                "es"
                "s")
              ""))))
-
-;; TODO: move to higher-level
-(defn filter-data [pred level data]
-  (case level
-    :suite (->> data
-                (map (fn [[k v]]  [k (filter-data pred :ns v)]))
-                (filter (->| second seq))
-                (into {}))
-    :ns    (->> data
-                (filter (partial filter-data pred :block))
-                (filter seq))
-    :block (filter pred data)))
-
-(defn map-data [pred level data]
-  (case level
-    :suite (->> data
-                (map (fn [[k v]]  [k (map-data pred :ns v)]))
-                (into {}))
-    :ns    (->> data
-                (map (partial map-data pred :block)))
-    :block (map (partial map-data pred :case) data)
-    :case  (if (-> data :type (= :inner-tests))
-             (update data :inner-tests (partial map-data pred :block))
-             (pred data))))
 
 (def befores (atom {}))
 
@@ -234,10 +215,6 @@
       (macros/case :clj (flush-outputs))
       data)))
 
-(defn report-via| [pos]
-  (fn [s _ l n d]
-    ((:report-fn (config)) s pos l n d)))
-
 (defn do| [action]
   (let [did-action (->> action name (str "did-") keyword)]
     (mini|
@@ -279,98 +256,7 @@
     ; (on-level| [:explain :case]  explain-case)
     ))
 
-;; --- LEVEL CONTROL
-(def ^:dynamic *reporting-level* {})
 
-(defn stop-when-not-at-report-level| [f]
-  (minifn
-    (if-let
-      [disabled-actions
-       (and (= [&position &level] [:do :case])
-            (let [conf (config)]
-              (->> (filter (fn [[action action-conf]]
-                             (or (not (:enabled action-conf))
-                                 (not (contains?
-                                        (set [:case (*reporting-level* action)])
-                                        (-> action-conf :level)))))
-                           (report-actions))
-                   (map key)
-                   seq)))]
-      (config/with-config {:actions (->> (for [a disabled-actions]
-                                           [a {:enabled false}])
-                                         (into {}))}
-        (apply f &args))
-      (apply f &args))))
-
-(defn mark-for-later| [f]
-  (outside-in->>
-    (on-level| [:do :case]
-      (minifn
-        (reduce (fn [d [action m]]
-                  (if (and (not= (:level m) :case)
-                           (:enabled m)
-                           (empty? *reporting-level*))
-                    (do (swap! &state assoc-in
-                               [:later-at-level action (:level m)]
-                               true)
-                        (assoc-in d [:later-at-level action (:level m)]
-                                  true))
-                    d))
-                &data
-                (report-actions))))
-    f))
-
-(defn run-reports-at-report-level| [f]
-  (outside-in->>
-    (on-level| (minifn (and (= &position :after) (not= &level :case)))
-      (minifn
-        (let [levels (-> &state deref :later-at-level)]
-          (if (some #(-> levels % &level) (keys (report-actions)))
-            (do
-              (doseq [action (keys (report-actions))]
-                (when (-> levels action &level)
-                  (swap! &state dissoc-in [:later-at-level action &level])))
-              (binding [*reporting-level* (reduce #(if (-> levels %2 &level)
-                                                     (assoc %1 %2 &level)
-                                                     %1)
-                                                  *reporting-level*
-                                                  (keys (report-actions)))]
-                (config/with-context {:report-level &level}
-                  (config/with-config {:execute-fn do-nothing}
-                    ((-> (config) :run-fn)  &state &level &ns
-                     (filter-data
-                       (fn [d]
-                         (config/with-context {:status (:status d) ;; TODO: case config ?
-                                               :type   (:type   d)} ;; TODO: useful? add test-position?
-                           (some (fn [[action m]]
-                                   (let [did-action
-                                         (->> action name (str "did-") keyword)]
-                                     (and (-> m :enabled)
-                                          (-> d :later-at-level action &level)
-                                          (-> d did-action not))))
-                                 (report-actions))))
-                       &level &data))))))
-            &data))))
-    f))
-
-(defn reprint-reports-with-explanation| [f]
-  (outside-in->>
-    (on-level| [:explain :case]
-      (when| (and (seq *reporting-level*)
-                  (not= (or (-> &data :later-at-level :report)  :case)
-                        (or (-> &data :later-at-level :explain) :case)))
-        (with-config| {:actions {:report {:enabled true}}}
-          (chain| (minifn (dissoc &data :did-report))
-                  (report-via| :report)))));; TODO: report-via doesn't mark as reported
-    f))
-
-(defn handling-reports-at-report-level| [f]
-  (outside-in->>
-    mark-for-later|
-    stop-when-not-at-report-level|
-    run-reports-at-report-level|
-    reprint-reports-with-explanation|
-    f))
 
 ;; --- SILENT MODE
 (defn handling-silent-mode| [f]
