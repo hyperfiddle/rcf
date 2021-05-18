@@ -1,4 +1,5 @@
 (ns minitest.clojure.test
+  {:minitest/config {:error-depth 100}}
   (:require [clojure.test                      :as           test]
             [clojure.string                    :as           str]
             [clojure.template                  :as           temp]
@@ -41,21 +42,23 @@
      ~@body))
 
 (defn locate-is [state position level ns data]
-  (when-let [ctxs (and (-> data :status (not= :success))
-                       (seq (concat [\[] (-> (context) ::deftest-names) [\]]
-                                    (-> (context) ::testing-contexts)
-                                    [(-> (context) ::is-msg)])))]
-    (println (str/join \space ctxs)))
+  (when-let [ctxs   (and (-> data :status (not= :success))
+                         (seq (concat [\[] (-> (context) ::deftest-names) [\]]
+                                      (-> (context) ::testing-contexts)
+                                      [(-> (context) ::is-msg)])))]
+    (println "In" (str/join \space ctxs)))
   data)
+
+(def locate-action-config
+  {:order  [:locate :output :report :explain]
+   :locate {:enabled true
+            :level   :case
+            :fn      locate-is}})
 
 (defmacro is
   ([form]     `(is ~form nil))
-  ([form msg] `(with-config
-                 {:CTX {::is-msg ~msg}
-                  :actions {:order  [:locate :output :report :explain]
-                            :locate {:enabled true
-                                     :level   :case
-                                     :fn      locate-is}}}
+  ([form msg] `(with-config {:CTX     {::is-msg ~msg}
+                             :actions locate-action-config}
                  ~(if (and (-> form seq?)
                            (-> form first (= '=)))
                     `(tests ~(nth form 1) := ~(nth form 2))
@@ -78,11 +81,9 @@
   (when-not (-> (config) :elide-tests)
     `(let [var# ~definition]
        (defn test# []
-         (with-context {::deftest-names [(str var#)]}
-           ;; TODO: something's off with the context
-           ;; It should print the deftest-names for var-linked tests.
-           (tests #_(println "ctx" (context))
-                  ~@body)))
+         (with-config {:CTX     {::deftest-names [(str var#)]}
+                       :actions locate-action-config}
+           (tests ~@body)))
        (alter-meta! var# assoc :test test#)
        (ns-config! (or (-> (context) :ns) (ns-name *ns*))
                    {:run-fn (handling-test-hook| (-> (config) :run-fn))})
@@ -99,8 +100,8 @@
        1 1))
 
 (with-test (def func +)
-  (func 1 2) := 3
-  (func 1 1) := 1)
+  (is (= (func 1 2) 3))
+  (is (= (func 1 2) 0)))
 
 
 (def run-tests minitest/test!)
@@ -111,5 +112,3 @@
     (test-something)))
 
 ;; TODO: fixtures
-
-(ns-config! {:WHEN {:exec-mode {:on-load {:run-tests false}}}})

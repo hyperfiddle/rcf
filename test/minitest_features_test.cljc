@@ -3,19 +3,25 @@
                      :error-depth 0
                      :effects     {:show-form   true
                                    :show-result true}
-                     :WHEN {:test-key  {true {:logo "✌️"}}
-                            :level     {:block {:separator "\n"}}
-                  #?@(:clj [:exec-mode {:on-load {:run-tests false}}])}}}
+                     :WHEN        {:test-key  {true     {:logo      "✌️"}}
+                                   :level     {:block   {:separator "\n"}}
+                         #?@(:clj [:exec-mode {:on-load {:run-tests false}}])}}}
 
   (:refer-clojure                              :exclude      [println])
   (:require [net.cgrand.macrovich              :as           macros]
             [minitest               #?@(:clj  [:refer        [config
                                                               context
+                                                              ns-config!
+                                                              minifn
                                                               with-config
                                                               with-context
                                                               tests
                                                               unified?]]
-                                        :cljs [:refer-macros [with-config
+                                        :cljs [:refer        [config
+                                                              context
+                                                              ns-config!]
+                                               :refer-macros [minifn
+                                                              with-config
                                                               with-context
                                                               tests
                                                               unified?]])])
@@ -157,6 +163,11 @@
 (tests (println   "...... inside tests blocks")
        (binding [*dyn-var* :bound-val]
          (tests *dyn-var* := :bound-val)))
+;; TODO
+#_(tests (println "... at block level"))
+#_(def *test-dyn-var-at-block-level* false)
+#_(ns-config! {:WHEN {#_(at-runtime)}})
+#_(tests [] := [])
 
 (tests (println "\nbehavior with config"))
 (with-config {:logo "👐"}

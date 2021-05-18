@@ -12,9 +12,10 @@
                                                                  with-context]]
                                         :cljs    [:refer        [test!]
                                                   :refer-macros [tests]])]
+            [minitest.configuration               :as           cfg]
+            [minitest-features-test]
    #?(:clj  [lambdaisland.deep-diff2              :refer        [diff]
-                                                  :as           diff])
-            [minitest-features-test]))
+                                                  :as           diff])))
 
 
 (macros/deftime

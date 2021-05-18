@@ -42,21 +42,28 @@
                                     #?@(:cljs [:include-macros true])]
             [minitest.tests-block              :as           tst
                                     #?@(:cljs [:include-macros true])]
-            [minitest.custom-map               :as           cm])
+            [minitest.custom-map               :as           cm]
+            [minitest.higher-order             :as           higher])
   #?(:cljs
       (:require-macros [minitest.tests-block :as tst])))
 
 (macros/deftime (disable-reload!))
 (macros/deftime (macros/case :clj (apply-clj-patches)))
 
-(defalias config       cfg/config)
-(defalias context      cfg/context)
+(defalias config         cfg/config)
+(defalias ns-config      cfg/ns-config)
+(defalias context        cfg/context)
+(defalias config!        cfg/config!)
+(defalias ns-config!     cfg/ns-config!)
+(defalias context!       cfg/context!)
+
 (macros/deftime
   (defalias with-config  cfg/with-config)
   (defalias with-context cfg/with-context)
   (defalias unified?     u/unified?)
   (defalias tests        tst/tests)
-  (defalias at-runtime   cm/at-runtime))
+  (defalias at-runtime   cm/at-runtime)
+  (defalias minifn       higher/minifn))
 
 ;; -- Dev tools
 ;; ---- Some commands

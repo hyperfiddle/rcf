@@ -88,18 +88,18 @@
                    ;   :nashorn       'cljs.server.nashorn/prepl}}
                    })
 
-   :CTX  {:exec-mode      :on-eval            ;; #{:on-eval :on-load}
-          :env            :dev                ;; #{:production :lib :cli :ci
-                                              ;;   :dev :quiet-dev}
-          :js-env         :node               ;; TODO
-          :last-in-level  :minitest/not-set!  ;; #{true false}
-          :first-in-level :minitest/not-set!  ;; #{true false}
-          :level          :minitest/not-set!  ;; #{:suite :ns :block :case}
-          :position       :minitest/not-set!  ;; #{:before :after :do}
-          :type           :minitest/not-set!  ;; #{:expectation :effect}
-          :status         :minitest/not-set!  ;; #{:success :failure :error}
-          :report-action  :minitest/not-set!  ;; #{:output :report :explain}
-          :report-level   :case}              ;; #{:suite :ns :block :case}
+   :CTX  {:exec-mode      :on-eval    ;; #{:on-eval :on-load}
+          :env            :dev        ;; #{:production :lib :cli :ci
+                                      ;;   :dev :quiet-dev}
+          :js-env         :node       ;; TODO
+          :last-in-level  nil         ;; #{true false}
+          :first-in-level nil         ;; #{true false}
+          :level          nil         ;; #{:suite :ns :block :case}
+          :position       nil         ;; #{:before :after :do}
+          :type           nil         ;; #{:expectation :effect}
+          :status         nil         ;; #{:success :failure :error}
+          :report-action  nil         ;; #{:output :report :explain}
+          :report-level   :case}      ;; #{:suite :ns :block :case}
    :WHEN (let [silent-success
                {:WHEN {:status    {:success {:silent    true}}}}
                run-on-load
