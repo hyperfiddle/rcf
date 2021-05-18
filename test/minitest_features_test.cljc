@@ -5,7 +5,7 @@
                                    :show-result true}
                      :WHEN        {:test-key  {true     {:logo      "✌️"}}
                                    :level     {:block   {:separator "\n"}}
-                         #?@(:clj [:exec-mode {:on-load {:run-tests false}}])}}}
+                         #?@(:clj [:exec-mode {:on-load {:run-tests true}}])}}}
 
   (:refer-clojure                              :exclude      [println])
   (:require [net.cgrand.macrovich              :as           macros]

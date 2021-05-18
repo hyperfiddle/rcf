@@ -177,7 +177,14 @@
     :ns    (->> data
                 (filter (partial filter-data pred :block))
                 (filter seq))
-    :block (filter pred data)))
+    :block (->> data
+                (map (fn [d]
+                       (if (-> d :type (= :inner-tests))
+                         (let [xs (filter-data pred :block (:inner-tests d))]
+                           [(some identity xs) (assoc d :inner-tests xs)])
+                         [(pred d) d])))
+                (filter first)
+                (map second))))
 
 (defn map-data [pred level data]
   (case level
@@ -186,10 +193,17 @@
                 (into {}))
     :ns    (->> data
                 (map (partial map-data pred :block)))
-    :block (map (partial map-data pred :case) data)
+    :block (mapcat (partial map-data pred :case) data)
     :case  (if (-> data :type (= :inner-tests))
-             (update data :inner-tests (partial map-data pred :block))
-             (pred data))))
+             (map-data pred :block (:inner-tests data))
+             [(pred data)])))
+
+(defn flatten-data [level data]
+  (case level
+    :suite (apply concat (map (partial flatten-data :ns) (vals data)))
+    :ns    (apply concat (map (partial flatten-data :block) data))
+    :block data
+    :case  data))
 
 (defn report-via| [pos]
   (fn [s _ l n d]

@@ -57,13 +57,13 @@
   (let [gen-inner-id        (minifn (let [id (str "minitest/inner-test-"
                                                   (gen-uuid))]
                                       (binding [#?(:clj  *out*
-                                                        :cljs cljs.core/*print-fn*)
+                                                   :cljs cljs.core/*print-fn*)
                                                 *upper-out*]
                                         (println id))
                                       (assoc &data :inner-id id)))
         binding-upper-out| #(minifn (binding [*upper-out*
                                               #?(:clj  *out*
-                                                      :cljs cljs.core/*print-fn*)]
+                                                 :cljs cljs.core/*print-fn*)]
                                       (apply % &args)))
         execute-inners      (minifn
                               (let [[result inner-tests]
