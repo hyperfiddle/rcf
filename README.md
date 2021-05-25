@@ -1,5 +1,3 @@
-Project status, 2021 May: closed beta, public release eta 2021
-
 # RCF – turn your Rich Comment Forms into tests
 
 RCF is a REPL-friendly Clojure/Script test macro and notation for describing what code does, or should do. We find it especially good for brainstorming. A well-formed idea, presented for consideration, comes in the form of an RCF.
@@ -12,15 +10,18 @@ RCF is a REPL-friendly Clojure/Script test macro and notation for describing wha
 
 (tests
   "equality"
-  1 := 1 ; pass
-  1 := 2 ; fail
-  
+  (inc 1) := 2
+
   "wildcards"
-  {:a 1, :b [2 3]} := {:a _, _ [2 _]}
+  {:a :b, :b [2 :b]} := {:a _, _ [2 _]}
 
   "unification"
-  {:a 1, :b 1} := {:a ?a, :b ?b} ; fail
-  
+  {:a :b, :b [2 :b]} := {:a ?b, ?b [2 ?b]}
+
+  "unification on reference types"
+  (def x (atom nil))
+  {:a x, :b x} := {:a ?x, :b ?x}
+
   "the usual REPL bindings"
   :foo
   :bar
@@ -29,7 +30,7 @@ RCF is a REPL-friendly Clojure/Script test macro and notation for describing wha
   *2 := :bar
   *1 := :baz
 
-  (tests 
+  (tests
     "nested tests for convenience"
     1 := 1))
 ```
@@ -38,15 +39,7 @@ Tests are run when you send a file or form to your Clojure/Script REPL. In Cursi
 
 ```text
 Loading src/example.cljc... 
-✅✅✅✅
-❌ example:10 
-Usage: infix `:=` is equality assertion
-
-(hyperfiddle.rcf/unifies? 1 2)
- := 
-false
-
-✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅Loaded
+✅✅✅✅✅✅✅✅Loaded
 ```
 
 # Configuration
@@ -64,8 +57,10 @@ Unfortunately, this will run all your tests at startup when the namespaces load,
 ```Clojure
 ; dev entrypoint
 (ns dev (:require hyperfiddle.rcf))
-(hyperfiddle.rcf/with-config {:enabled false} ; skip tests on app startup
-  (require 'example))
+(hyperfiddle.rcf/with-config {:enabled false}
+  (require 'example)) ; erase tests
+; Subsequent REPL interactions will still run tests. 
+; Subsequent `(require ...)` will also run tests, which is rather nice.
 ```
 
 We explored fixing the startup problem with monkeypatches to clojure.core/load and the ClojureScript module loader. We determined the monkeypatch approach to be workable, but not worth deploying yet as the flag is good enough for now.
@@ -76,25 +71,15 @@ The :test alias will generate clojure.test deftest vars for use in CI:
 % clj -M:test -e "(require 'example)(clojure.test/run-tests 'example)"
 
 Testing example
-✅
-❌ example:10
-Usage: infix `:=` is equality assertion
-
-(hyperfiddle.rcf/unifies? 1 2)
- :=
-false
-
-✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅
-Ran 4 tests containing 20 assertions.
-1 failures, 0 errors.
-{:test 4, :pass 19, :fail 1, :error 0, :type :summary}
+✅✅✅✅✅✅✅✅
+Ran 1 tests containing 8 assertions.
+0 failures, 0 errors.
+{:test 1, :pass 8, :fail 0, :error 0, :type :summary}
 ```
 
 # FAQ
 
 *One of my tests threw an exception, but the stack trace is empty?* — you want `{:jvm-opts ["-XX:-OmitStackTraceInFastThrow"]}` [explanation](https://web.archive.org/web/20190416091616/http://yellerapp.com/posts/2015-05-11-clojure-no-stacktrace.html) (this may be JVM specific)
-
-Fixtures?
 
 # Contributing
 
