@@ -36,7 +36,7 @@
   `(binding [*config* ~config]
      ~@body))
 
-(s/def ::expr (s/or :assert (s/cat :eq #{'= :=} :actual any? :expected any?)
+(s/def ::expr (s/or :assert (s/cat :eq #{:=} :actual any? :expected any?)
                     :tests (s/cat :tests #{'tests} :doc (s/? string?) :body (s/* ::expr))
                     :effect (s/cat :do #{'do} :body (s/* any?))
                     :doc    string?))
@@ -168,16 +168,15 @@
   (seq (loop [[x & xs :as body] body
               acc               []]
          (cond
-           (empty? body)                  acc
-           (= 'tests x)                   (recur xs (conj acc x))
+           (empty? body)              acc
+           (= 'tests x)               (recur xs (conj acc x))
            (and (sequential? x)
-                (= 'tests (first x)))     (recur xs (conj acc (rewrite-infix x)))
+                (= 'tests (first x))) (recur xs (conj acc (rewrite-infix x)))
            (and (sequential? x)
-                (#{'= := :?=} (first x))) (recur xs (conj acc x))
-           (= := (first xs))              (recur (rest (rest xs)) (conj acc (list '= x (first (rest xs)))))
-           (= :?= (first xs))             (recur (rest (rest xs)) (conj acc (list ':?= x (first (rest xs)))))
-           (string? x)                    (recur xs (conj acc x))
-           :else                          (recur xs (conj acc (list 'do x)))
+                (= := (first x)))     (recur xs (conj acc x))
+           (= := (first xs))          (recur (rest (rest xs)) (conj acc (list ':= x (first (rest xs)))))
+           (string? x)                (recur xs (conj acc x))
+           :else                      (recur xs (conj acc (list 'do x)))
            ))))
 
 (def ^:dynamic *1)
