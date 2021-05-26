@@ -57,11 +57,26 @@ Unfortunately, this will run all your tests at startup when the namespaces load,
 ```Clojure
 ; dev entrypoint
 (ns dev (:require hyperfiddle.rcf))
-(hyperfiddle.rcf/with-config {:enabled false}
+(binding [hyperfiddle.rcf/*enabled* false]
   (require 'example)) ; erase tests
 ; Subsequent REPL interactions will still run tests. 
 ; Subsequent `(require ...)` will also run tests, which is rather nice.
 ```
+
+In ClojureScript, your build tool might load namespaces and thus run tests when you save the corresponding file.
+To prevent it:
+
+```Clojure
+(ns js-runtime-example
+  (:require [hyperfiddle.rcf :refer-macros [tests]]))
+
+(tests 1 := 1)
+
+(defn ^:dev/before-load stop [] (set! hyperfiddle.rcf/*enabled* false))
+(defn ^:dev/after-load start [] (set! hyperfiddle.rcf/*enabled* true))
+```
+
+Tests are always erased in cljs `:advanced` compilation mode.
 
 We explored fixing the startup problem with monkeypatches to clojure.core/load and the ClojureScript module loader. We determined the monkeypatch approach to be workable, but not worth deploying yet as the flag is good enough for now.
 

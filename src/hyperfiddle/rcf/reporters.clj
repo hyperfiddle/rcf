@@ -6,17 +6,7 @@
 (defmethod t/report :pass [m]
   (t/with-test-out
     (t/inc-report-counter :pass)
-    (if (:dots (:config m))
-      (print "✅")
-      (let [[a b] (utils/extract-comparison m)]
-        (print "✅ ")
-        (pprint a)
-        (print " := ")
-        (pprint b)
-        (print (str "  " (testing-vars-str m)))
-        (prn)
-        (when-let [message (:message m)]
-          (println message))))))
+    (print "✅")))
 
 (defmethod t/report :fail [m]
   (t/with-test-out

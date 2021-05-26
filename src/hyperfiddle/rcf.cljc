@@ -12,29 +12,17 @@
             [hyperfiddle.rcf.unify :refer [unifier]]
             ))
 
-(def ^:dynamic *config*
-  "
-  `:dots` if set to `true`, just print compact `✅`.
+;; "Set this to true if you want to generate clojure.test compatible tests. This
+;; will define testing functions in your namespace using `deftest`. Defaults to
+;; `false`.
 
-  `:generate-tests`
-  Set this to true if you want to generate clojure.test compatible tests.
-  This will define testing functions in your namespace using `deftest`. Defaults
-  to `false`. "
-  {:dots           true
-   :enabled        #?( :clj (= "true" (System/getProperty "hyperfiddle.rcf.enabled"))
-                      :cljs true ; use a goog.define instead
-                      )
-   :generate-tests #?(:clj (= "true" (System/getProperty "hyperfiddle.rcf.generate-tests"))
-                      :cljs true ; mandatory for now, not an issue.
-                      )})
+#?(:clj  (def ^:dynamic *enabled* (= "true" (System/getProperty "hyperfiddle.rcf.enabled")))
+   :cljs (goog-define ^boolean ^:dynamic *enabled* false))
 
-(defn set-config! [config]
-  #?(:clj (alter-var-root #'*config* merge config)
-     :cljs (set! *config* (merge *config* config))))
 
-(defmacro with-config [config & body]
-  `(binding [*config* ~config]
-     ~@body))
+#?(:clj  (def ^:dynamic *generate-tests* (= "true" (System/getProperty "hyperfiddle.rcf.generate-tests")))
+   :cljs (goog-define ^boolean ^:dynamic *generate-tests* false))
+
 
 (s/def ::expr (s/or :assert (s/cat :eq #{:=} :actual any? :expected any?)
                     :tests (s/cat :tests #{'tests} :doc (s/? string?) :body (s/* ::expr))
@@ -93,13 +81,11 @@
          (~(prefix-sym cljs 'do-report)
           {:type :pass, :message ~msg,
            :file ~file :line ~line :end-line ~end-line :column ~column :end-column ~end-column
-           :expected '~form, :actual (cons '~pred values#)
-           :config *config*})
+           :expected '~form, :actual (cons '~pred values#)})
          (~(prefix-sym cljs 'do-report)
           {:type :fail, :message ~msg,
            :file ~file :line ~line :end-line ~end-line :column ~column :end-column ~end-column
-           :expected '~form, :actual (list '~'not (cons '~pred values#))
-           :config *config*}))
+           :expected '~form, :actual (list '~'not (cons '~pred values#))}))
        result#)))
 
 (defn assert-any
@@ -112,13 +98,11 @@
          (~(prefix-sym (:cljs menv) 'do-report)
           {:type :pass, :message ~msg,
            :file ~file :line ~line :end-line ~end-line :column ~column :end-column ~end-column
-           :expected '~form, :actual value#
-           :config *config*})
+           :expected '~form, :actual value#})
          (~(prefix-sym (:cljs menv) 'do-report)
           {:type :fail, :message ~msg,
            :file ~file :line ~line :end-line ~end-line :column ~column :end-column ~end-column
-           :expected '~form, :actual value#
-           :config *config*}))
+           :expected '~form, :actual value#}))
        value#)))
 
 (defmethod assert-expr :default [menv msg form]
@@ -232,10 +216,10 @@
 (defmacro deftest [nom & body]
   (let [cljs? (cljs? &env)
         symf  (partial prefix-sym cljs?)]
-    (if (or (:generate-tests *config*) cljs?)
-       `(do (~(symf 'deftest) ~nom ~@body)
-            ~(when (:enabled *config*)
-               `(~nom)))
+    (if (or *generate-tests* cljs?)
+      `(do (~(symf 'deftest) ~nom ~@body)
+           (when *enabled*
+             (~nom)))
        `((fn [] (binding [t/*testing-vars* (conj clojure.test/*testing-vars* '~nom)]
                  (clojure.test/do-report {:type :begin-test-var, :var '~nom})
                 (clojure.test/inc-report-counter :test)
@@ -249,11 +233,10 @@
 
 (defn should-run-tests? [menv]
   (if (cljs? menv)
-    ana/*load-tests*
+    (and ana/*load-tests* (or *enabled* *generate-tests*))
     #?(:clj (and t/*load-tests* ; standard clojure.test way of skipping tests
                  (not *compile-files*) ; no tests in AOT compiled code
-                 (or (:enabled *config*)
-                     (:generate-tests *config*))))))
+                 (or *enabled* *generate-tests*)))))
 
 (defmacro tests
   {:style/indent [:defn]}

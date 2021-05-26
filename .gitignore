@@ -5,3 +5,4 @@
 .rebel_readline_history
 .idea
 out/js
+/out/main.js
