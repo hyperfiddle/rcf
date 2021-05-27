@@ -4,6 +4,12 @@ RCF is a REPL-friendly Clojure/Script test macro and notation for describing wha
 
 # Usage
 
+```Clojure
+{:deps
+ {hyperfiddle/rcf {:git/url "https://github.com/hyperfiddle/rcf.git"
+                   :sha ...}}}
+```
+
 ```clojure
 (ns example
   (:require [hyperfiddle.rcf :refer [tests]]))
@@ -46,30 +52,28 @@ Loading src/example.cljc...
 
 `(tests)` blocks erase by default (macroexpanding to nothing). They will only run and assert under a flag:
 
-
-```Clojure
-; clj
-(alter-var-root #'hyperfiddle.rcf/*enabled* (constantly true))
-
-; cljs
-(set! hyperfiddle.rcf/*enabled* true)
-```
-
-In ClojureScript, your build tool might reload namespaces, running tests when you save the file.
-To prevent it:
-
 ```Clojure
 (ns dev-entrypoint
-  (:require [hyperfiddle.rcf :refer-macros [tests]]))
+  (:require [example] ; transitive inline tests will erase
+            [hyperfiddle.rcf :refer [tests]]))
 
-(defn ^:dev/before-load stop [] (set! hyperfiddle.rcf/*enabled* false))
-(defn ^:dev/after-load start [] (set! hyperfiddle.rcf/*enabled* true))
+; wait to enable tests until after app namespaces are loaded (intended for subsequent REPL interactions) 
+#?(:clj  (alter-var-root #'hyperfiddle.rcf/*enabled* (constantly true))
+   :cljs (set! hyperfiddle.rcf/*enabled* true))
+
+; subsequent REPL interactions will run tests
+
+; prevent test execution during cljs hot code reload
+#?(:cljs (defn ^:dev/before-load stop [] (set! hyperfiddle.rcf/*enabled* false)))
+#?(:cljs (defn ^:dev/after-load start [] (set! hyperfiddle.rcf/*enabled* true)))
 ```
 
-Tests are always erased in cljs `:advanced` compilation mode.
+To run in CI, generate clojure.test deftests with a JVM flag:
 
-The `:test` alias will generate clojure.test deftest vars for use in CI:
-
+```Clojure
+; deps.edn
+{:aliases {:test {:jvm-opts ["-Dhyperfiddle.rcf.generate-tests=true"]}}}
+```
 ```bash
 % clj -M:test -e "(require 'example)(clojure.test/run-tests 'example)"
 
@@ -79,23 +83,6 @@ Ran 1 tests containing 8 assertions.
 0 failures, 0 errors.
 {:test 1, :pass 8, :fail 0, :error 0, :type :summary}
 ```
-
-# Fastest cljs example
-
-```bash
-% shadow-cljs watch :browser
-# once ready, in another shell
-% shadow-cljs browser-repl
-# wait for the prompt
-% cljs.user =>
-```
-
-```clojure
-(require '[hyperfiddle.rcf :refer-macros [tests]])
-(set! hyperfiddle.rcf/*enabled* true)
-(tests 1 := 2)
-```
-Test results are also printed to the browser's javascript console.
 
 # FAQ
 
