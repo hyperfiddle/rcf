@@ -233,7 +233,7 @@
 
 (defn should-run-tests? [menv]
   (if (cljs? menv)
-    (and ana/*load-tests* (or *enabled* *generate-tests*))
+    ana/*load-tests*
     #?(:clj (and t/*load-tests* ; standard clojure.test way of skipping tests
                  (not *compile-files*) ; no tests in AOT compiled code
                  (or *enabled* *generate-tests*)))))

@@ -1,11 +1,5 @@
-{:deps     {:aliases [:dev :cljs-test]}
+{:deps     {:aliases [:example]}
  :dev-http {8000 "out"}
- :builds   {:browser {:target           :browser
-                      :modules          {:main {:entries [js-runtime-example]}}
-                      :compiler-options {:closure-defines {hyperfiddle.rcf/*enabled* false}}
-                      :output-dir       "out/js"}
-            :node    {:target           :node-script
-                      :modules          {:main {:entries [js-runtime-example]}}
-                      :compiler-options {:closure-defines {hyperfiddle.rcf/*enabled* false}}
-                      :main             js-runtime-example/run-one-test
-                      :output-to        "out/main.js"}}}
+ :builds   {:browser {:target     :browser
+                      :modules    {:main {:entries [dev-entrypoint]}}
+                      :output-dir "out/js"}}}

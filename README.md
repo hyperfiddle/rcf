@@ -38,7 +38,7 @@ RCF is a REPL-friendly Clojure/Script test macro and notation for describing wha
 Tests are run when you send a file or form to your Clojure/Script REPL. In Cursive, that's cmd-shift-L to re-run the file.
 
 ```text
-Loading src/example.cljc... 
+Loading src/example.cljc...
 ✅✅✅✅✅✅✅✅Loaded
 ```
 
@@ -46,31 +46,21 @@ Loading src/example.cljc...
 
 `(tests)` blocks erase by default (macroexpanding to nothing). They will only run and assert under a flag:
 
-```Clojure
-; deps.edn
-{:aliases {:dev  {:jvm-opts ["-Dhyperfiddle.rcf.enabled=true"]}
-           :test {:jvm-opts ["-Dhyperfiddle.rcf.generate-tests=true"]}}}
-```
-
-Unfortunately, this will run all your tests at startup when the namespaces load, which is too slow. To prevent this, wrap your dev entrypoint like below. Subsequent REPL interactions will still run tests.
 
 ```Clojure
-; dev entrypoint
-(ns dev (:require hyperfiddle.rcf))
-(binding [hyperfiddle.rcf/*enabled* false]
-  (require 'example)) ; erase tests
-; Subsequent REPL interactions will still run tests. 
-; Subsequent `(require ...)` will also run tests, which is rather nice.
+; clj
+(alter-var-root #'hyperfiddle.rcf/*enabled* (constantly true))
+
+; cljs
+(set! hyperfiddle.rcf/*enabled* true)
 ```
 
-In ClojureScript, your build tool might load namespaces and thus run tests when you save the corresponding file.
+In ClojureScript, your build tool might reload namespaces, running tests when you save the file.
 To prevent it:
 
 ```Clojure
-(ns js-runtime-example
+(ns dev-entrypoint
   (:require [hyperfiddle.rcf :refer-macros [tests]]))
-
-(tests 1 := 1)
 
 (defn ^:dev/before-load stop [] (set! hyperfiddle.rcf/*enabled* false))
 (defn ^:dev/after-load start [] (set! hyperfiddle.rcf/*enabled* true))
@@ -78,9 +68,7 @@ To prevent it:
 
 Tests are always erased in cljs `:advanced` compilation mode.
 
-We explored fixing the startup problem with monkeypatches to clojure.core/load and the ClojureScript module loader. We determined the monkeypatch approach to be workable, but not worth deploying yet as the flag is good enough for now.
-
-The :test alias will generate clojure.test deftest vars for use in CI:
+The `:test` alias will generate clojure.test deftest vars for use in CI:
 
 ```bash
 % clj -M:test -e "(require 'example)(clojure.test/run-tests 'example)"
@@ -91,6 +79,23 @@ Ran 1 tests containing 8 assertions.
 0 failures, 0 errors.
 {:test 1, :pass 8, :fail 0, :error 0, :type :summary}
 ```
+
+# Fastest cljs example
+
+```bash
+% shadow-cljs watch :browser
+# once ready, in another shell
+% shadow-cljs browser-repl
+# wait for the prompt
+% cljs.user =>
+```
+
+```clojure
+(require '[hyperfiddle.rcf :refer-macros [tests]])
+(set! hyperfiddle.rcf/*enabled* true)
+(tests 1 := 2)
+```
+Test results are also printed to the browser's javascript console.
 
 # FAQ
 
