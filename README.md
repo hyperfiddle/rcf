@@ -5,11 +5,8 @@ RCF is a REPL-friendly Clojure/Script test macro and notation for describing wha
 # Usage
 
 ```Clojure
-{:deps
- {hyperfiddle/rcf {:git/url "https://github.com/hyperfiddle/rcf.git"
-                   :sha ...}}}
+{:deps {hyperfiddle/rcf {:git/url "https://github.com/hyperfiddle/rcf.git" :sha ...}}}
 ```
-
 ```clojure
 (ns example
   (:require [hyperfiddle.rcf :refer [tests]]))
