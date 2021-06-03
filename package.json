@@ -1,0 +1,19 @@
+{
+    "name": "rcf",
+    "version": "1.0.0",
+    "dependencies": {},
+    "devDependencies": {
+        "shadow-cljs": "^2.14.2",
+        "karma": "^2.0.0",
+        "karma-chrome-launcher": "^2.2.0",
+        "karma-cljs-test": "^0.1.0"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/hyperfiddle/minitest.git"
+    },
+    "bugs": {
+        "url": "https://github.com/hyperfiddle/minitest/issues"
+    },
+    "homepage": "https://github.com/hyperfiddle/minitest#readme"
+}

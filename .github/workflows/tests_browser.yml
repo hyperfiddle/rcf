@@ -1,4 +1,4 @@
-name: NodeJS
+name: Browser
 on: [push]
 jobs:
   node:
@@ -23,11 +23,11 @@ jobs:
           node-version: 14.x
 
       - name: Install Shadow
-        run: npm install shadow-cljs
+        run: npm install --also dev
 
       - name: Compile Tests
-        run: ./node_modules/.bin/shadow-cljs compile :test
+        run: ./node_modules/.bin/shadow-cljs compile :browser-test
 
       - name: Run Tests
-        run: node out/node-tests.js
+        run: ./node_modules/.bin/karma start --single-run
 
