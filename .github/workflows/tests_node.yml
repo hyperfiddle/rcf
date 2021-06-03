@@ -1,4 +1,4 @@
-name: Run tests
+name: NodeJS
 on: [push]
 jobs:
   clojure:
@@ -17,7 +17,17 @@ jobs:
         with:
           cli: 1.10.1.727
 
-      - name: Run tests
-        run: clojure -X:test :dirs [\"example\"] :patterns [\"example.*\"]
-        shell: bash
+      - name: Use Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: 14.x
+
+      - name: Install Shadow
+        run: npm install shadow-cljs
+
+      - name: Compile Tests
+        run: ./node_modules/.bin/shadow-cljs compile :test
+
+      - name: Run Tests
+        run: node out/node-tests.js
 

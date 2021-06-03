@@ -2,4 +2,7 @@
  :dev-http {8000 "out"}
  :builds   {:browser {:target     :browser
                       :modules    {:main {:entries [dev-entrypoint]}}
-                      :output-dir "out/js"}}}
+                      :output-dir "out/js"}
+            :test    {:target    :node-test
+                      :output-to "out/node-tests.js"
+                      :ns-regexp "^example.*"}}}
