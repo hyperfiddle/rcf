@@ -28,11 +28,15 @@
 #?(:clj  (def ^:dynamic *generate-tests* (= "true" (System/getProperty "hyperfiddle.rcf.generate-tests")))
    :cljs (goog-define ^boolean ^:dynamic *generate-tests* false))
 
+#?(:clj (def ^:dynamic *timeout* (or (System/getProperty "hyperfiddle.rcf.generate-tests") 1000))
+   :cljs (goog-define ^:dynamic *timeout* 1000))
+
 
 (s/def ::expr (s/or :assert (s/cat :eq #{:= :<>} :actual any? :expected any?)
                     :tests (s/cat :tests #{'tests} :doc (s/? string?) :body (s/* ::expr))
                     :effect (s/cat :do #{'do} :body (s/* any?))
-                    :doc    string?))
+                    :doc    string?
+                    :async  (s/cat :async #{'async} :deliver simple-symbol? :result simple-symbol? :body (s/* ::expr))))
 
 (defn prefix-sym [cljs? x]
   (symbol (if cljs? "cljs.test" "clojure.test")
@@ -182,8 +186,12 @@
          (cond
            (empty? body)              acc
            (= 'tests x)               (recur xs (conj acc x))
+           (= 'async x)               (recur (rest (rest xs)) (conj acc x (first xs) (second xs)))
            (and (sequential? x)
                 (= 'tests (first x))) (recur xs (conj acc (rewrite-infix x)))
+           (and (sequential? x)
+                (= 'async (first x))) (let [[async ! v & body] x]
+                                        (recur xs (conj acc (apply list async ! v (rewrite-infix body)))))
            (and (sequential? x)
                 (= := (first x)))     (recur xs (conj acc x))
            (#{:= :<>} (first xs))     (recur (rest (rest xs)) (conj acc (list (first xs) x (first (rest xs)))))
@@ -208,6 +216,23 @@
   (let [counter (let [x (volatile! 0)] (fn [] (vswap! x inc)))]
     (walk/postwalk #(case % _ (symbol (str "?_" (counter))) %) body)))
 
+(defn rewrite-async [menv symf {:keys [deliver result body] :as expr}]
+  (let [asserts        (filter (comp #{:assert} key) body)
+        current-assert (volatile! 0)
+        proms          (gensym "proms")]
+    `(let [~proms   ~(vec (repeat (count asserts) `(promise)))
+           ~deliver (let [x# (volatile! 0)]
+                      (fn [v#]
+                        (clojure.core/deliver (get ~proms @x#) v#)
+                        (vswap! x# inc)))]
+       ~@(walk/postwalk (fn [x]
+                         (cond
+                           (= result x) (let [expr `(deref (get ~proms ~(deref current-assert)) *timeout* ::timed-out)]
+                                          (vswap! current-assert inc)
+                                          expr)
+                           :else        x))
+                       (rewrite-body* menv symf body)))))
+
 (def not-doc? (complement #(= :doc (first %))))
 
 (defn rewrite-body* [menv symf body]
@@ -226,7 +251,9 @@
                    (recur body (apply conj acc (rewrite-body* menv symf (:body val)))))
          :effect (recur nil (apply conj acc (push-value! (first (:body val)) (rewrite-body* menv symf (rewrite-stars body)))))
          :doc    (recur (drop-while not-doc? body)
-                        (conj acc `(~(symf 'testing) ~val ~@(rewrite-body* menv symf (rewrite-stars (take-while not-doc? body)))))))))))
+                        (conj acc `(~(symf 'testing) ~val
+                                    ~@(rewrite-body* menv symf (rewrite-stars (take-while not-doc? body))))))
+         :async  (recur body (conj acc (rewrite-async menv symf val))))))))
 
 (defn rewrite-body [menv symf body]
   (let [parsed (s/conform ::expr (rewrite-infix (cons 'tests body)))]
