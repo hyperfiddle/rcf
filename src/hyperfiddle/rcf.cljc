@@ -33,12 +33,16 @@
 #?(:clj (def ^:dynamic *timeout* (or (System/getProperty "hyperfiddle.rcf.generate-tests") 1000))
    :cljs (goog-define ^:dynamic *timeout* 1000))
 
+(def ^{:doc "Function. Use it to push a value onto the RCF queue `(! 1)`"}
+  !)
+
+(def ^{:doc "Queue behaving as a value. Assert `v := _` to pop from the it. Blocking, will time out after `*timeout*`"}
+  v)
 
 (s/def ::expr (s/or :assert (s/cat :eq #{:= :<>} :actual any? :expected any?)
                     :tests (s/cat :tests #{'tests} :doc (s/? string?) :body (s/* ::expr))
                     :effect (s/cat :do #{'do} :body (s/* any?))
-                    :doc    string?
-                    :async  (s/cat :async #{'async} :deliver simple-symbol? :result simple-symbol? :body (s/* ::expr))))
+                    :doc    string?))
 
 (defn prefix-sym [cljs? x]
   (symbol (if cljs? "cljs.test" "clojure.test")
@@ -188,12 +192,8 @@
          (cond
            (empty? body)              acc
            (= 'tests x)               (recur xs (conj acc x))
-           (= 'async x)               (recur (rest (rest xs)) (conj acc x (first xs) (second xs)))
            (and (sequential? x)
                 (= 'tests (first x))) (recur xs (conj acc (rewrite-infix x)))
-           (and (sequential? x)
-                (= 'async (first x))) (let [[async ! v & body] x]
-                                        (recur xs (conj acc (apply list async ! v (rewrite-infix body)))))
            (and (sequential? x)
                 (= := (first x)))     (recur xs (conj acc x))
            (#{:= :<>} (first xs))     (recur (rest (rest xs)) (conj acc (list (first xs) x (first (rest xs)))))
@@ -218,15 +218,19 @@
   (let [counter (let [x (volatile! 0)] (fn [] (vswap! x inc)))]
     (walk/postwalk #(case % _ (symbol (str "?_" (counter))) %) body)))
 
-(defn rewrite-async [menv symf {:keys [deliver result body] :as _expr}]
-  (let [queue (gensym "queue")]
-    `(let [~queue   (q/queue)
-           ~deliver #(q/offer! ~queue %)]
+(defn rewrite-async [menv symf body]
+  (let [queue (gensym "queue")
+        !     (gensym "!")]
+    `(let [~queue (q/queue)
+           ~!     #(q/offer! ~queue %)]
        ~@(walk/postwalk (fn [x]
-                         (cond
-                           (= result x) (with-meta `(q/poll! ~queue *timeout* ::timeout) {::form x})
-                           :else        x))
-                       (rewrite-body* menv symf body)))))
+                          (if-some [var (and (symbol? x) (resolve x))]
+                            (cond
+                              (= #'! var) !
+                              (= #'v var) (with-meta `(q/poll! ~queue *timeout* ::timeout) {::form x})
+                              :else    x)
+                            x))
+                       body))))
 
 (def not-doc? (complement #(= :doc (first %))))
 
@@ -242,13 +246,12 @@
                        expected                     (rewrite-stars expected)]
                    (recur body (conj acc `(is ~menv ~(with-meta `(unifies? ~eq ~actual ~(rewrite-wildcards expected)) {::form `~actual})))))
          :tests  (if-let [doc (:doc val)]
-                   (recur body (conj acc `(~(symf 'testing) ~doc ~@(rewrite-body* menv symf (:body val)))))
-                   (recur body (apply conj acc (rewrite-body* menv symf (:body val)))))
+                   (recur body (conj acc `(~(symf 'testing) ~doc ~(rewrite-async menv symf (rewrite-body* menv symf (:body val))))))
+                   (recur body (apply conj acc (list (rewrite-async menv symf (rewrite-body* menv symf (:body val)))))))
          :effect (recur nil (apply conj acc (push-value! (first (:body val)) (rewrite-body* menv symf (rewrite-stars body)))))
          :doc    (recur (drop-while not-doc? body)
                         (conj acc `(~(symf 'testing) ~val
-                                    ~@(rewrite-body* menv symf (rewrite-stars (take-while not-doc? body))))))
-         :async  (recur body (conj acc (rewrite-async menv symf val))))))))
+                                    ~@(rewrite-body* menv symf (rewrite-stars (take-while not-doc? body)))))))))))
 
 (defn rewrite-body [menv symf body]
   (let [parsed (s/conform ::expr (rewrite-infix (cons 'tests body)))]
