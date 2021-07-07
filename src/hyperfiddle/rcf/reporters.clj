@@ -43,8 +43,11 @@
     (prn)
     (print ":≠ ")
     (prn)
-    (prn)
     (pprint (:expected m))
+    (prn)
     ))
 
+(defmethod t/report :begin-test-var [m] (prn))
 
+(defmethod t/report :end-test-var [m]
+  (print \.))

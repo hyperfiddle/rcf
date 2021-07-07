@@ -1,5 +1,7 @@
 (ns example
-  (:require [hyperfiddle.rcf :refer [tests ! %]]))
+  (:require [hyperfiddle.rcf :as rcf :refer [tests ! %]]
+            [clojure.core.async :refer [chan >! go go-loop <! timeout close!]]
+            [missionary.core :as m]))
 
 (defn get-extension [path]
   (let [found (last (re-find #"(\.[a-zA-Z0-9]+)$" path))
@@ -51,32 +53,62 @@
   "inequality"
   1 :<> 2
 
-  "async tests"
-  (set! rcf/*timeout* 100)
-  (future
-    (rcf/! 1)
-    (Thread/sleep 10)
-    (rcf/! 2)
-    (Thread/sleep 200) ; timeout
-    (rcf/! 3))
-  % := 1
-  % := 2
-  % := 3 ; fail, timeout
+#?(:clj
+   (tests
+     "async tests"
+     (rcf/set-timeout! 100)
+     (future
+       (rcf/! 1)
+       (Thread/sleep 10)
+       (rcf/! 2)
+       (Thread/sleep 200) ; timeout
+       (rcf/! 3))
+     % := 1
+     % := 2
+     % := ::rcf/timeout ; fail, timeout
+     ))
 
+#?(:cljs
+   (tests
+    "async tests"
+    (rcf/set-timeout! 100)
+    (js/setTimeout
+     (fn []
+       (rcf/! 1)
+       (js/setTimeout
+        (fn []
+          (rcf/! 2)
+          (js/setTimeout
+           (fn []
+             (rcf/! 3))
+           200))
+        10))
+     0)
+    % := 1
+    % := 2
+    % := ::rcf/timeout ; fail, timeout
+    ))
+
+(tests
   "core.async"
-  (require '[clojure.core.async :refer [chan >! go <! timeout]])
   (def c (chan))
-  (go (while true (<! (timeout 10)) (! (<! c))))
+  (rcf/set-timeout! 100)
+  (go-loop [x (<! c)]
+    (when x
+      (<! (timeout 10))
+      (! x)
+      (recur (<! c))))
   (go (>! c :hello) (>! c :world))
   % := :hello ; queue
   % := :world ; queue
   (close! c) ; dispose when queue is empty
+  )
 
+(tests
   "missionary"
-  (require '[missionary.core :as m])
   (def !x (atom 0))
-  (def dispose ((m/reactor (m/stream! (m/ap (! (inc (m/watch !x))))))
-                #(prn :done %) #(prn :fail %)))
+  (def dispose ((m/reactor (m/stream! (m/ap (! (inc (m/?< (m/watch !x)))))))
+                (fn [_] (prn :done)) #(prn :fail %)))
   % := 1
   (swap! !x inc)
   (swap! !x inc)
