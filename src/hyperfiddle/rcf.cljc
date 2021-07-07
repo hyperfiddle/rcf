@@ -224,7 +224,7 @@
            ~deliver #(q/offer! ~queue %)]
        ~@(walk/postwalk (fn [x]
                          (cond
-                           (= result x) `(q/poll! ~queue *timeout* ::timeout)
+                           (= result x) (with-meta `(q/poll! ~queue *timeout* ::timeout) {::form x})
                            :else        x))
                        (rewrite-body* menv symf body)))))
 
