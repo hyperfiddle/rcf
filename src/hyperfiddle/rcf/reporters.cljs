@@ -17,8 +17,8 @@
   (let [[a b] (utils/extract-comparison m)]
     (when (seq (:testing-contexts (t/get-current-env)))
       (js/console.log (t/testing-contexts-str)))
-    (js/console.log "expected:" (pprint-str a))
-    (js/console.log "  actual:" (pprint-str b))
+    (js/console.log "  actual:" (pprint-str a))
+    (js/console.log "expected:" (pprint-str b))
     (js/console.groupEnd)
     (when-let [message (:message m)]
       (println message))))
@@ -39,7 +39,7 @@
     (when (seq (:testing-contexts (t/get-current-env)))
       (println (t/testing-contexts-str)))
     (when-let [message (:message m)] (println message))
-    (println "expected:" (formatter-fn (:expected m)))
     (println "  actual:")
     (js/console.error (:actual m))
+    (println "expected:" (formatter-fn (:expected m)))
     (js/console.groupEnd)))
