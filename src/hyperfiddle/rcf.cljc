@@ -259,18 +259,20 @@
          :tests  (if-let [doc (:doc val)]
                    (recur body (conj acc `(~(symf 'testing) ~doc ~@(rewrite-body menv symf q (:body val)))))
                    (recur body (apply conj acc (rewrite-body menv symf q (:body val)))))
-         :assert (let [{:keys [eq actual expected]} val
-                       %                         (gensym "%")]
+         :assert (let [{:keys [eq actual expected]} val]
                    (recur nil (apply conj acc (if (or (has-%? (:actual val)) (has-%? (:expected val)))
                                                 `((q/poll! ~q *timeout* ::timeout
-                                                           (fn [~%]
-                                                             ~(rewrite-assert menv eq (with-meta (rewrite-var #'% % actual) {::form actual}) expected)
+                                                           (fn [~'%]
+                                                             ~(rewrite-assert menv eq (with-meta (rewrite-var #'% '% actual) {::form actual}) expected)
                                                              ~@(rewrite-body menv symf q body))))
                                                 (cons (rewrite-assert menv eq actual expected)
-                                                      (rewrite-body menv symf q body)))))
-                   ;; (recur body (apply conj acc (rewrite-assert menv actual expected)))
-                   )
-         :effect (recur nil (apply conj acc (push-value! (first (:body val)) (rewrite-body menv symf q (rewrite-stars body)))))
+                                                      (rewrite-body menv symf q body))))))
+         :effect (let [expr (first (:body val))]
+                   (if (has-%? expr)
+                     (recur nil (conj acc `(q/poll! ~q *timeout* ::timeout
+                                                    (fn [~'%]
+                                                      ~@(push-value! (rewrite-var #'% '% expr) (rewrite-body menv symf q (rewrite-stars body)))))))
+                     (recur nil (apply conj acc (push-value! expr (rewrite-body menv symf q (rewrite-stars body)))))))
          :doc    (recur (drop-while not-doc? body)
                         (conj acc `(~(symf 'testing) ~val
                                     ~@(rewrite-body menv symf q (rewrite-stars (take-while not-doc? body)))))))))))
