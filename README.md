@@ -1,19 +1,27 @@
 # RCF – turn your Rich Comment Forms into tests
 
-[![JVM](https://github.com/hyperfiddle/rcf/actions/workflows/tests_clj.yml/badge.svg?branch=master)](https://github.com/hyperfiddle/rcf/actions/workflows/tests_clj.yml)
-[![NodeJS](https://github.com/hyperfiddle/rcf/actions/workflows/tests_node.yml/badge.svg?branch=master)](https://github.com/hyperfiddle/rcf/actions/workflows/tests_node.yml)
-[![Browser](https://github.com/hyperfiddle/rcf/actions/workflows/tests_browser.yml/badge.svg?branch=master)](https://github.com/hyperfiddle/rcf/actions/workflows/tests_browser.yml)
-
 RCF is a REPL-friendly Clojure/Script test macro and notation for describing what code does, or should do. We find it especially good for brainstorming. A well-formed idea, presented for consideration, comes in the form of an RCF.
-
-# Usage
 
 ```Clojure
 {:deps {hyperfiddle/rcf {:git/url "https://github.com/hyperfiddle/rcf.git" :sha ...}}}
 ```
+
+[![JVM](https://github.com/hyperfiddle/rcf/actions/workflows/tests_clj.yml/badge.svg?branch=master)](https://github.com/hyperfiddle/rcf/actions/workflows/tests_clj.yml)
+[![NodeJS](https://github.com/hyperfiddle/rcf/actions/workflows/tests_node.yml/badge.svg?branch=master)](https://github.com/hyperfiddle/rcf/actions/workflows/tests_node.yml)
+[![Browser](https://github.com/hyperfiddle/rcf/actions/workflows/tests_browser.yml/badge.svg?branch=master)](https://github.com/hyperfiddle/rcf/actions/workflows/tests_browser.yml)
+
+# Usage
+
+Tests are run when you send a file or form to your Clojure/Script REPL. In Cursive, that's cmd-shift-L to re-run the file.
+
+```text
+Loading src/example.cljc...
+✅✅✅✅✅✅✅✅Loaded
+```
+
 ```clojure
 (ns example
-  (:require [hyperfiddle.rcf :refer [tests]]))
+  (:require [hyperfiddle.rcf :refer [tests ! %]]))
 
 (tests
   "equality"
@@ -42,13 +50,6 @@ RCF is a REPL-friendly Clojure/Script test macro and notation for describing wha
     1 := 1))
 ```
 
-Tests are run when you send a file or form to your Clojure/Script REPL. In Cursive, that's cmd-shift-L to re-run the file.
-
-```text
-Loading src/example.cljc...
-✅✅✅✅✅✅✅✅Loaded
-```
-
 # Configuration
 
 `(tests)` blocks erase by default (macroexpanding to nothing). They will only run and assert under a flag:
@@ -69,7 +70,9 @@ Loading src/example.cljc...
 #?(:cljs (defn ^:dev/after-load start [] (set! hyperfiddle.rcf/*enabled* true)))
 ```
 
-To run in CI, generate clojure.test deftests with a JVM flag:
+# CI
+
+To run in CI, generate clojure.test deftests with a JVM flag and then run them with clojure.test. [Github actions examples](https://github.com/hyperfiddle/rcf/tree/master/.github/workflows).
 
 ```Clojure
 ; deps.edn
@@ -95,6 +98,6 @@ Sure – you can reach us on clojurians.net in #hyperfiddle or ping @dustingetz.
 
 # Acknowledgments
 
-Thank you to https://github.com/tristefigure for discovery, first implementations, and especially the work on the ClojureScript compiler monkey patches. RCF was not easy to write.
+Thank you to https://github.com/tristefigure for discovery and exploration of various ClojureScript compiler monkey patches that we considered. RCF was not easy to make.
 
 ![Scroll Of Truth meme saying "you do not really understand something until you can explain it as a passing test".](./doc/meme.png)
