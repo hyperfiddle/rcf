@@ -14,11 +14,6 @@ RCF is a REPL-friendly Clojure/Script test macro and notation for describing wha
 
 Tests are run when you send a file or form to your Clojure/Script REPL. In Cursive, that's cmd-shift-L to re-run the file.
 
-```text
-Loading src/example.cljc...
-✅✅✅✅✅✅✅✅Loaded
-```
-
 ```clojure
 (ns example
   (:require [hyperfiddle.rcf :refer [tests]]))
@@ -48,6 +43,10 @@ Loading src/example.cljc...
   (tests
     "nested tests for convenience"
     1 := 1))
+```
+```text
+Loading src/example.cljc...
+✅✅✅✅✅✅✅✅Loaded
 ```
 
 # Configuration
