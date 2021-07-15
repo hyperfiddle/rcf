@@ -16,7 +16,7 @@
   (js/console.groupCollapsed "✅" (testing-vars-str m))
   (let [[a b] (utils/extract-comparison m)]
     (when (seq (:testing-contexts (t/get-current-env)))
-      (js/console.log (t/testing-contexts-str)))
+      (js/console.log (t/testing-contexts-str) (:doc (t/get-current-env))))
     (js/console.log "  actual:" (pprint-str a))
     (js/console.log "expected:" (pprint-str b))
     (js/console.groupEnd)
@@ -27,7 +27,7 @@
   (t/inc-report-counter! :fail)
   (js/console.group (str "❌ " (testing-vars-str m)))
   (when (seq (:testing-contexts (t/get-current-env)))
-    (println (t/testing-contexts-str)))
+    (println (t/testing-contexts-str) (:doc (t/get-current-env))))
   (when-let [message (:message m)] (println message))
   (t/print-comparison m)
   (js/console.groupEnd))

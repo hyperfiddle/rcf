@@ -1,8 +1,8 @@
 (ns hyperfiddle.rcf
   (:refer-clojure :exclude [*1 *2 *3])
   #?(:cljs (:require-macros [hyperfiddle.rcf :refer [tests]]))
-  (:require #?(:clj [clojure.test :as t :refer [testing]]
-               :cljs [cljs.test :as t :refer-macros [testing]])
+  (:require #?(:clj [clojure.test :as t]
+               :cljs [cljs.test :as t])
             #?(:cljs [cljs.analyzer.api :as ana-api])
             [cljs.analyzer :as ana]
             [clojure.spec.alpha :as s]
@@ -10,8 +10,7 @@
             [clojure.walk :as walk]
             [hyperfiddle.rcf.reporters]
             [hyperfiddle.rcf.unify :refer [unifier]]
-            [hyperfiddle.rcf.queue :as q]
-            ))
+            [hyperfiddle.rcf.queue :as q]))
 
 #?(:cljs (goog-define ^boolean ENABLED false))
 
@@ -42,6 +41,8 @@
 
 (def ^{:doc "Queue behaving as a value. Assert `% := _` to pop from the it. Blocking, will time out after `*timeout*`"}
   %)
+
+(def ^:dynamic *doc* nil)
 
 (s/def ::expr (s/or :assert (s/cat :eq #{:= :<>} :actual any? :expected any?)
                     :tests (s/cat :tests #{'tests} :doc (s/? string?) :body (s/* ::expr))
@@ -143,11 +144,13 @@
          (~(prefix-sym (:cljs menv) 'do-report)
           {:type     :pass,   :message ~msg,
            :file     ~file    :line    ~line :end-line ~end-line :column ~column :end-column ~end-column
-           :expected '~right, :actual  left#})
+           :expected '~right, :actual  left#
+           :doc      *doc*})
          (~(prefix-sym (:cljs menv) 'do-report)
-          {:type     :fail,           :message ~(str msg " in " original-left),
-           :file     ~file            :line    ~line :end-line ~end-line :column ~column :end-column ~end-column
-           :expected '~right, :actual  left#, :assert-type ~type}))
+          {:type     :fail,   :message ~(str msg " in " original-left),
+           :file     ~file    :line    ~line :end-line ~end-line :column ~column :end-column ~end-column
+           :expected '~right, :actual  left# :assert-type ~type
+           :doc      *doc*}))
        result#)))
 
 (defn cljs? [env] (some? (:ns env)))
@@ -173,7 +176,8 @@
              :column     ~column
              :end-column ~end-column
              :expected   '~form,
-             :actual     t#}))
+             :actual     t#
+             :doc        *doc*}))
          (finally
            (~'RCF__done))))))
 
@@ -265,30 +269,41 @@
                 (fn [~%]
                   ~(poll-n (dec n) q (rewrite-var 1 #'% % form)))))))
 
+(defmacro testing' [doc & body]
+  (if (some? (:ns &env))
+    `(do (cljs.test/update-current-env! [:doc] (constantly ~doc))
+         ~@body)
+    `(binding [*doc* ~doc]
+       ~@body)))
+
+(defmacro testing [doc & body]
+  (if (some? (:ns &env))
+    `(do (cljs.test/update-current-env! [:testing-contexts] clojure.core/conj ~doc)
+         ~@body)
+    `(clojure.test/testing ~doc ~@body)))
+
 (defn rewrite-body [menv symf q exprs]
   (seq
    (loop [[[type val :as expr] & exprs] exprs
-          acc                          []]
+          acc                           []]
      (if (nil? expr)
        acc
        (case type
          :tests  (if-let [doc (:doc val)]
-                   (recur exprs (conj acc `(~(symf 'testing) ~doc ~@(rewrite-body menv symf q (:body val)))))
-                   (recur exprs (apply conj acc (rewrite-body menv symf q (:body val)))))
+                   (conj acc `(testing ~doc ~@(rewrite-body menv symf q (concat (:body val) exprs))))
+                   (apply conj acc (rewrite-body menv symf q (concat (:body val) exprs))))
          :assert (let [{:keys [eq actual expected]} val]
-                   (recur nil (apply conj acc (if (or (has-%? (:actual val)) (has-%? (:expected val)))
-                                                `(~(poll-n (count (persents actual)) q `(~(rewrite-assert menv eq actual expected)
-                                                                                         ~@(rewrite-body menv symf q exprs))))
-                                                (cons (rewrite-assert menv eq actual expected)
-                                                      (rewrite-body menv symf q exprs))))))
+                   (apply conj acc (if (or (has-%? (:actual val)) (has-%? (:expected val)))
+                                     `(~(poll-n (count (persents actual)) q `(~(rewrite-assert menv eq actual expected)
+                                                                              ~@(rewrite-body menv symf q exprs))))
+                                     (cons (rewrite-assert menv eq actual expected)
+                                           (rewrite-body menv symf q exprs)))))
          :effect (let [expr (first (:body val))]
                    (if (has-%? expr)
-                     (recur nil (conj acc (poll-n (count (persents expr)) q
-                                                  (push-value! expr (rewrite-body menv symf q (rewrite-stars exprs))) )))
-                     (recur nil (apply conj acc (push-value! expr (rewrite-body menv symf q (rewrite-stars exprs)))))))
-         :doc    (recur (drop-while not-doc? exprs)
-                        (conj acc `(~(symf 'testing) ~val
-                                    ~@(rewrite-body menv symf q (rewrite-stars (take-while not-doc? exprs)))))))))))
+                     (conj acc (poll-n (count (persents expr)) q
+                                       (push-value! expr (rewrite-body menv symf q (rewrite-stars exprs)))))
+                     (apply conj acc (push-value! expr (rewrite-body menv symf q (rewrite-stars exprs))))))
+         :doc    (conj acc `(testing' ~val ~@(rewrite-body menv symf q (rewrite-stars exprs)))))))))
 
 (defn filename->name [file]
   (-> (str/split file #"\.")
@@ -307,6 +322,8 @@
                                     (swap! !done-count# inc)
                                     (when (= ~assert-count @!done-count#)
                                       #_(~(symf 'do-report) {:type :end-test-var, :var '~nom})
+                                      ~(when cljs?
+                                         `(cljs.test/update-current-env! [:testing-contexts] clojure.core/empty))
                                       (~'RCF__async__done)))]
                  (binding [~@(when-not cljs? [(symf '*testing-vars*) `(conj ~(symf '*testing-vars*) '~nom)])]
                    (~(symf 'do-report) {:type :begin-test-var, :var '~nom})
@@ -323,12 +340,12 @@
                             (when *enabled*
                               (~nom)))
       *generate-tests* `(do (~(symf 'deftest) ~nom
-                             (let [~'RCF__async__done #()]
-                               ~body))
+                                              (let [~'RCF__async__done #()]
+                                                ~body))
                             (when *enabled*
                               (~nom)))
       :else            `((fn [] (let [~'RCF__async__done #()]
-                                 ~body))))))
+                                  ~body))))))
 
 (defn should-run-tests? [menv]
   (if (cljs? menv)
