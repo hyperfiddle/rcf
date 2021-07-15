@@ -21,7 +21,7 @@ Loading src/example.cljc...
 
 ```clojure
 (ns example
-  (:require [hyperfiddle.rcf :refer [tests ! %]]))
+  (:require [hyperfiddle.rcf :refer [tests]]))
 
 (tests
   "equality"
