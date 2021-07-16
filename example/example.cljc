@@ -53,9 +53,8 @@
   "inequality"
   1 :<> 2
 
-(tests
+(tests {:timeout 100}
   "async tests"
-  (rcf/set-timeout! 100)
   #?(:clj  (tests
              (future
                (rcf/! 1) (Thread/sleep 10)

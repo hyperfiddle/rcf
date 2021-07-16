@@ -30,7 +30,7 @@
 #?(:clj  (def ^:dynamic *generate-tests* (= "true" (System/getProperty "hyperfiddle.rcf.generate-tests")))
    :cljs (goog-define ^boolean ^:dynamic *generate-tests* false))
 
-#?(:clj (def ^:dynamic *timeout* (or (System/getProperty "hyperfiddle.rcf.generate-tests") 1000))
+#?(:clj (def ^:dynamic *timeout* (or (System/getProperty "hyperfiddle.rcf.timeout") 1000))
    :cljs (goog-define ^:dynamic *timeout* 1000))
 
 (defn set-timeout! [ms]
@@ -40,7 +40,7 @@
 (def ^{:doc "Function. Use it to push a value onto the RCF queue `(! 1)`"}
   !)
 
-(def ^{:doc "Queue behaving as a value. Assert `% := _` to pop from the it. Blocking, will time out after `*timeout*`"}
+(def ^{:doc "Queue behaving as a value. Assert `% := _` to pop from the it. Async, will time out after `:timeout` option, default to 1000 (ms)."}
   %)
 
 (def ^{:doc "Queue backing `%`. Exposed to help you debug timing out tests."}
@@ -49,7 +49,7 @@
 (def ^:dynamic *doc* nil)
 
 (s/def ::expr (s/or :assert (s/cat :eq #{:= :<>} :actual any? :expected any?)
-                    :tests (s/cat :tests #{'tests} :doc (s/? string?) :body (s/* ::expr))
+                    :tests (s/cat :tests #{'tests} :opts (s/? map?) :doc (s/? string?) :body (s/* ::expr))
                     :effect (s/cat :do #{'do} :body (s/* any?))
                     :doc    string?))
 
@@ -208,15 +208,16 @@
               acc               []]
          (cond
            (empty? body)              acc
-           (= 'tests x)               (recur xs (conj acc x))
+           (= 'tests x)               (if (map? (first xs))
+                                        (recur (rest xs) (conj acc x (first xs)))
+                                        (recur xs (conj acc x)))
            (and (sequential? x)
                 (= 'tests (first x))) (recur xs (conj acc (rewrite-infix x)))
            (and (sequential? x)
                 (= := (first x)))     (recur xs (conj acc x))
            (#{:= :<>} (first xs))     (recur (rest (rest xs)) (conj acc (list (first xs) x (first (rest xs)))))
            (string? x)                (recur xs (conj acc x))
-           :else                      (recur xs (conj acc (list 'do x)))
-           ))))
+           :else                      (recur xs (conj acc (list 'do x)))))))
 
 (def ^:dynamic *1)
 (def ^:dynamic *2)
@@ -267,7 +268,7 @@
   (if (zero? n)
     `(do ~@form)
     (let [% (gensym "%")]
-      `(q/poll! ~q ~'RCF__time_start *timeout* ::timeout
+      `(q/poll! ~q ~'RCF__time_start ~'RCF__timeout ::timeout
                 (fn [~%]
                   ~(poll-n (dec n) q (replace-var 1 {#'% %} form)))))))
 
@@ -291,9 +292,19 @@
      (if (nil? expr)
        acc
        (case type
-         :tests  (if-let [doc (:doc val)]
-                   (conj acc `(testing ~doc ~@(rewrite-body menv symf q (concat (:body val) exprs))))
-                   (apply conj acc (rewrite-body menv symf q (concat (:body val) exprs))))
+         :tests (if-let [opts (:opts val)]
+                  (conj acc `(let [~'RCF__timeout_prev ~'RCF__timeout
+                                   ~'RCF__timeout ~(:timeout opts 1000)]
+                               ~@(rewrite-body menv symf q (cons [type (dissoc val :opts)] exprs))))
+                  (if-let [doc (:doc val)]
+                    (conj acc `(testing ~doc ~@(rewrite-body menv symf q (if (seq exprs)
+                                                                           (concat (:body val) [[:restore-timeout]] exprs)
+                                                                           (:body val)))))
+                    (apply conj acc (rewrite-body menv symf q (concat (:body val) exprs)))))
+         :restore-timeout (if (seq exprs)
+                            (conj acc `(let [~'RCF__timeout ~'RCF__timeout_prev]
+                                         ~@(rewrite-body menv symf q exprs)))
+                            acc)
          :assert (let [{:keys [eq actual expected]} val]
                    (apply conj acc (if (or (has-%? (:actual val)) (has-%? (:expected val)))
                                      `(~(poll-n (count (persents actual)) q `(~(rewrite-assert menv eq actual expected)
@@ -321,6 +332,7 @@
                      ~q           (q/queue)
                      ~!           #(q/offer! ~q %)
                      ~'RCF__time_start (time/current-time)
+                     ~'RCF__timeout ~*timeout*
                      ~'RCF__done  (fn []
                                     (swap! !done-count# inc)
                                     (when (= ~assert-count @!done-count#)
