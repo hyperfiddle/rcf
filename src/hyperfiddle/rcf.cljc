@@ -10,7 +10,8 @@
             [clojure.walk :as walk]
             [hyperfiddle.rcf.reporters]
             [hyperfiddle.rcf.unify :refer [unifier]]
-            [hyperfiddle.rcf.queue :as q]))
+            [hyperfiddle.rcf.queue :as q]
+            [hyperfiddle.rcf.time :as time]))
 
 #?(:cljs (goog-define ^boolean ENABLED false))
 
@@ -231,8 +232,6 @@
   (let [counter (let [x (volatile! 0)] (fn [] (vswap! x inc)))]
     (walk/postwalk #(case % _ (symbol (str "?_" (counter))) %) body)))
 
-(def not-doc? (complement #(= :doc (first %))))
-
 (defn rewrite-assert [menv type actual expected]
   (let [actual   (rewrite-stars actual)
         expected (rewrite-stars expected)]
@@ -265,7 +264,7 @@
   (if (zero? n)
     `(do ~@form)
     (let [% (gensym "%")]
-      `(q/poll! ~q *timeout* ::timeout
+      `(q/poll! ~q ~'RCF__time_start *timeout* ::timeout
                 (fn [~%]
                   ~(poll-n (dec n) q (rewrite-var 1 #'% % form)))))))
 
@@ -318,6 +317,7 @@
         body  `(let [!done-count# (atom 0)
                      ~q           (q/queue)
                      ~!           #(q/offer! ~q %)
+                     ~'RCF__time_start (time/current-time)
                      ~'RCF__done  (fn []
                                     (swap! !done-count# inc)
                                     (when (= ~assert-count @!done-count#)

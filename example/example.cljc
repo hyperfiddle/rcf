@@ -71,8 +71,9 @@
              (rcf/! 3)))))
              % := 1
              % := 2
-             % := ::rcf/timeout))
+             % := ::rcf/timeout)))
 
+(tests
   "core.async"
   (def c (chan))
   (go-loop [x (<! c)]

@@ -1,4 +1,5 @@
-(ns hyperfiddle.rcf.queue)
+(ns hyperfiddle.rcf.queue
+  (:require [hyperfiddle.rcf.time :as time]))
 
 (defprotocol IObservableQueue
   (put! [this val])
@@ -24,18 +25,21 @@
 
 (defn queue [] (ObservableArray. #js [] #js []))
 
-(defn poll! [^js q timeout missing-value callback]
-  (let [resolved? (volatile! false)
-        resolve   (fn [val] (when-not @resolved?
-                             (vreset! resolved? true)
-                             (callback val)))]
-    (if (-empty? q)
-      (observe! q resolve)
-      (resolve (take! q)))
-    (js/setTimeout (fn []
-                     (unobserve! q resolve)
-                     (resolve missing-value))
-                   timeout)))
+(defn poll! [^js q start timeout missing-value callback]
+  (let [now (time/current-time)]
+    (if (time/timeout? now start timeout)
+      (callback missing-value)
+      (let [resolved? (volatile! false)
+            resolve   (fn [val] (when-not @resolved?
+                                  (vreset! resolved? true)
+                                  (callback val)))]
+        (if (-empty? q)
+          (do (observe! q resolve)
+              (js/setTimeout (fn []
+                               (unobserve! q resolve)
+                               (resolve missing-value))
+                             (time/remaining now start timeout)))
+          (resolve (take! q)))))))
 
 (defn offer! [q v]
   (put! q v)
