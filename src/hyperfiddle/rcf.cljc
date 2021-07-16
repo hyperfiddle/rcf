@@ -9,8 +9,7 @@
             [clojure.string :as str]
             [clojure.walk :as walk]
             [hyperfiddle.rcf.reporters]
-            [hyperfiddle.rcf.unify :refer [unifier]]
-            ))
+            [hyperfiddle.rcf.unify :refer [unifier]]))
 
 ;; "Set this to true if you want to generate clojure.test compatible tests. This
 ;; will define testing functions in your namespace using `deftest`. Defaults to
@@ -112,6 +111,24 @@
     (assert-predicate menv msg form)
     (assert-any menv msg form)))
 
+(defmethod assert-expr `unifies? [menv msg form]
+  (let [{:keys [file line end-line column end-column]} menv
+        left                                           (nth form 1)
+        original-left                                  (::form (meta left) left)
+        right                                          (nth form 2)]
+    `(let [left#   ~left
+           result# (unifies? left# ~right)]
+       (if result#
+         (~(prefix-sym (:cljs menv) 'do-report)
+          {:type     :pass,  :message ~msg,
+           :file     ~file   :line    ~line :end-line ~end-line :column ~column :end-column ~end-column
+           :expected '~right, :actual  left#})
+         (~(prefix-sym (:cljs menv) 'do-report)
+          {:type     :fail,           :message ~(str msg " in " original-left),
+           :file     ~file            :line    ~line :end-line ~end-line :column ~column :end-column ~end-column
+           :expected '~right, :actual  left#}))
+       result#)))
+
 (defn cljs? [env] (some? (:ns env)))
 
 (defmacro try-expr
@@ -193,14 +210,13 @@
          :assert (let [{:keys [actual expected]} val
                        actual                    (rewrite-stars actual)
                        expected                  (rewrite-stars expected)]
-                   (recur body (conj acc `(is ~menv (unifies? ~actual ~(rewrite-wildcards expected))))))
+                   (recur body (conj acc `(is ~menv ~(with-meta `(unifies? ~actual ~(rewrite-wildcards expected)) {::form `~actual})))))
          :tests  (if-let [doc (:doc val)]
                    (recur body (conj acc `(~(symf 'testing) ~doc ~@(rewrite-body* menv symf (:body val)))))
                    (recur body (apply conj acc (rewrite-body* menv symf (:body val)))))
          :effect (recur nil (apply conj acc (push-value! (first (:body val)) (rewrite-body* menv symf (rewrite-stars body)))))
          :doc    (recur (drop-while not-doc? body)
-                        (conj acc `(~(symf 'testing) ~val
-                                    ~@(rewrite-body* menv symf (rewrite-stars (take-while not-doc? body)))))))))))
+                        (conj acc `(~(symf 'testing) ~val ~@(rewrite-body* menv symf (rewrite-stars (take-while not-doc? body)))))))))))
 
 (defn rewrite-body [menv symf body]
   (let [parsed (s/conform ::expr (rewrite-infix (cons 'tests body)))]
