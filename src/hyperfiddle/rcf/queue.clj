@@ -4,6 +4,9 @@
 
 (defn queue [] (LinkedBlockingQueue.))
 
+(defn get-queue [^LinkedBlockingQueue q]
+  (map :value q))
+
 (defn poll!
   ([^LinkedBlockingQueue q, start, timeout, timeout-value]
    (let [now (time/current-time)]

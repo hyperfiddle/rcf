@@ -25,6 +25,9 @@
 
 (defn queue [] (ObservableArray. #js [] #js []))
 
+(defn get-queue [^js q]
+  (seq (.-arr q)))
+
 (defn poll! [^js q start timeout missing-value callback]
   (let [now (time/current-time)]
     (if (time/timeout? now start timeout)

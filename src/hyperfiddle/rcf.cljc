@@ -43,6 +43,9 @@
 (def ^{:doc "Queue behaving as a value. Assert `% := _` to pop from the it. Blocking, will time out after `*timeout*`"}
   %)
 
+(def ^{:doc "Queue backing `%`. Exposed to help you debug timing out tests."}
+  q)
+
 (def ^:dynamic *doc* nil)
 
 (s/def ::expr (s/or :assert (s/cat :eq #{:= :<>} :actual any? :expected any?)
@@ -245,17 +248,17 @@
 
 (def has-%? (comp seq persents))
 
-(defn rewrite-var
-  ([var sym form]
-   (rewrite-var -1 var sym form))
-  ([stop var sym form]
+(defn replace-var
+  ([var-sym-map form]
+   (replace-var -1 var-sym-map form))
+  ([stop var-sym-map form]
    (let [!n-found (volatile! 0)]
      (walk/postwalk (fn [x]
                       (if-not (= stop @!n-found)
                         (if-some [var' (and (symbol? x) #?(:clj (resolve x)))]
-                          (cond
-                            (= var var') (do (vswap! !n-found inc) sym)
-                            :else        x)
+                          (if-let [sym (get var-sym-map var')]
+                            (do (vswap! !n-found inc) sym)
+                            x)
                           x)
                         x))
                     form))))
@@ -266,7 +269,7 @@
     (let [% (gensym "%")]
       `(q/poll! ~q ~'RCF__time_start *timeout* ::timeout
                 (fn [~%]
-                  ~(poll-n (dec n) q (rewrite-var 1 #'% % form)))))))
+                  ~(poll-n (dec n) q (replace-var 1 {#'% %} form)))))))
 
 (defmacro testing' [doc & body]
   (if (some? (:ns &env))
@@ -329,7 +332,7 @@
                    (~(symf 'do-report) {:type :begin-test-var, :var '~nom})
                    ~(when-not cljs?
                       `(clojure.test/inc-report-counter :test))
-                   (try (do ~@(rewrite-var #'! ! body))
+                   (try (do ~@(replace-var {#'! !, #'q `(q/get-queue ~q)} body))
                         (catch ~(if cljs? 'js/Error 'Throwable) e#
                           (~(symf 'do-report) {:type     :error,
                                                :message  "Uncaught exception, not in assertion."
