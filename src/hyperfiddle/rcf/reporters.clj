@@ -19,7 +19,9 @@
     (prn)
     (pprint (:actual m))
     (prn)
-    (print ":≠ ")
+    (print (case (:assert-type m)
+             :<> ":="
+             ":≠"))
     (prn)
     (pprint (:expected m))
     (prn)

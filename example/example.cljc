@@ -25,4 +25,8 @@
 
   (tests
     "nested tests for convenience"
-    1 := 1))
+    1 := 1)
+
+  "inequality"
+  1 :<> 2
+  )

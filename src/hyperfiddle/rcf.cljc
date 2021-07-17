@@ -23,7 +23,7 @@
    :cljs (goog-define ^boolean ^:dynamic *generate-tests* false))
 
 
-(s/def ::expr (s/or :assert (s/cat :eq #{:=} :actual any? :expected any?)
+(s/def ::expr (s/or :assert (s/cat :eq #{:= :<>} :actual any? :expected any?)
                     :tests (s/cat :tests #{'tests} :doc (s/? string?) :body (s/* ::expr))
                     :effect (s/cat :do #{'do} :body (s/* any?))
                     :doc    string?))
@@ -113,11 +113,12 @@
 
 (defmethod assert-expr `unifies? [menv msg form]
   (let [{:keys [file line end-line column end-column]} menv
-        left                                           (nth form 1)
+        type                                           (nth form 1)
+        left                                           (nth form 2)
         original-left                                  (::form (meta left) left)
-        right                                          (nth form 2)]
+        right                                          (nth form 3)]
     `(let [left#   ~left
-           result# (unifies? left# ~right)]
+           result# (unifies? ~type left# ~right)]
        (if result#
          (~(prefix-sym (:cljs menv) 'do-report)
           {:type     :pass,  :message ~msg,
@@ -126,7 +127,7 @@
          (~(prefix-sym (:cljs menv) 'do-report)
           {:type     :fail,           :message ~(str msg " in " original-left),
            :file     ~file            :line    ~line :end-line ~end-line :column ~column :end-column ~end-column
-           :expected '~right, :actual  left#}))
+           :expected '~right, :actual  left#, :assert-type ~type}))
        result#)))
 
 (defn cljs? [env] (some? (:ns env)))
@@ -157,9 +158,12 @@
 
 (declare rewrite-body*)
 
-(defmacro unifies? [x pattern]
+(defmacro unifies? [type x pattern]
   `(let [x# ~x]
-     (= x# (unifier x# ~(clojure.walk/postwalk
+     (~(case type
+         :=  `=
+         :<> `not=)
+      x# (unifier x# ~(clojure.walk/postwalk
                          (fn [x]
                            (if (and (symbol? x) (or (= '_ x) (= \? (first (name x)))))
                              (list 'quote x)
@@ -176,7 +180,7 @@
                 (= 'tests (first x))) (recur xs (conj acc (rewrite-infix x)))
            (and (sequential? x)
                 (= := (first x)))     (recur xs (conj acc x))
-           (= := (first xs))          (recur (rest (rest xs)) (conj acc (list ':= x (first (rest xs)))))
+           (#{:= :<>} (first xs))     (recur (rest (rest xs)) (conj acc (list (first xs) x (first (rest xs)))))
            (string? x)                (recur xs (conj acc x))
            :else                      (recur xs (conj acc (list 'do x)))
            ))))
@@ -207,10 +211,10 @@
      (if (nil? expr)
        acc
        (case type
-         :assert (let [{:keys [actual expected]} val
-                       actual                    (rewrite-stars actual)
-                       expected                  (rewrite-stars expected)]
-                   (recur body (conj acc `(is ~menv ~(with-meta `(unifies? ~actual ~(rewrite-wildcards expected)) {::form `~actual})))))
+         :assert (let [{:keys [eq actual expected]} val
+                       actual                       (rewrite-stars actual)
+                       expected                     (rewrite-stars expected)]
+                   (recur body (conj acc `(is ~menv ~(with-meta `(unifies? ~eq ~actual ~(rewrite-wildcards expected)) {::form `~actual})))))
          :tests  (if-let [doc (:doc val)]
                    (recur body (conj acc `(~(symf 'testing) ~doc ~@(rewrite-body* menv symf (:body val)))))
                    (recur body (apply conj acc (rewrite-body* menv symf (:body val)))))
