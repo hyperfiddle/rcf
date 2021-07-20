@@ -157,7 +157,7 @@
            :doc      *doc*}))
        result#)))
 
-(defn cljs? [env] (some? (:ns env)))
+(defn cljs? [env] (some? (:js-globals env)))
 
 (defmacro try-expr
   "Used by the 'is' macro to catch unexpected exceptions.
@@ -273,14 +273,14 @@
                   ~(poll-n (dec n) q (replace-var 1 {#'% %} form)))))))
 
 (defmacro testing' [doc & body]
-  (if (some? (:ns &env))
+  (if (cljs? &env)
     `(do (cljs.test/update-current-env! [:doc] (constantly ~doc))
          ~@body)
     `(binding [*doc* ~doc]
        ~@body)))
 
 (defmacro testing [doc & body]
-  (if (some? (:ns &env))
+  (if (cljs? &env)
     `(do (cljs.test/update-current-env! [:testing-contexts] clojure.core/conj ~doc)
          ~@body)
     `(clojure.test/testing ~doc ~@body)))
@@ -390,7 +390,7 @@
                             (symbol)
                             (with-meta (assoc (meta &form)
                                               :ns (str *ns*))))
-          cljs?         (some? (:ns &env))
+          cljs?         (cljs? &env)
           symf          (partial prefix-sym cljs?)
           menv          (-> (meta &form)
                             (assoc :cljs cljs?)
