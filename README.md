@@ -1,4 +1,4 @@
-# RCF – a REPL-first test macro for Clojure/Script  
+# RCF – a REPL-first test macro for Clojure/Script (experimental)
 
 RCF turns your Rich Comment Forms into tests (in the same file as your functions). Send form or file to REPL to run tests and it squirts dopamine ✅✅✅, very pleasing. It's good, try it!
 
@@ -119,6 +119,10 @@ Ran 1 tests containing 8 assertions.
 # Community
 
 &#35;hyperfiddle @ clojurians.net
+
+# Project Maturity
+
+Experimental, severe breaking changes are allowed.
 
 # Acknowledgments
 
