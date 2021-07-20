@@ -250,13 +250,14 @@
 (def has-%? (comp seq persents))
 
 (defn replace-var
-  ([var-sym-map form]
-   (replace-var -1 var-sym-map form))
-  ([stop var-sym-map form]
+  ([env var-sym-map form]
+   (replace-var env -1 var-sym-map form))
+  ([env stop var-sym-map form]
    (let [!n-found (volatile! 0)]
      (walk/postwalk (fn [x]
                       (if-not (= stop @!n-found)
-                        (if-some [var' (and (symbol? x) #?(:clj (resolve x)))]
+                        (if-some [var' (and (symbol? x) #?(:clj (resolve x)
+                                                           :cljs (ana-api/resolve env x)))]
                           (if-let [sym (get var-sym-map var')]
                             (do (vswap! !n-found inc) sym)
                             x)
@@ -264,13 +265,13 @@
                         x))
                     form))))
 
-(defn poll-n [n q form]
+(defn poll-n [env n q form]
   (if (zero? n)
     `(do ~@form)
     (let [% (gensym "%")]
       `(q/poll! ~q ~'RCF__time_start ~'RCF__timeout ::timeout
                 (fn [~%]
-                  ~(poll-n (dec n) q (replace-var 1 {#'% %} form)))))))
+                  ~(poll-n env (dec n) q (replace-var env 1 {#'% %} form)))))))
 
 (defmacro testing' [doc & body]
   (if (cljs? &env)
@@ -307,13 +308,13 @@
                             acc)
          :assert (let [{:keys [eq actual expected]} val]
                    (apply conj acc (if (or (has-%? (:actual val)) (has-%? (:expected val)))
-                                     `(~(poll-n (count (persents actual)) q `(~(rewrite-assert menv eq actual expected)
+                                     `(~(poll-n menv (count (persents actual)) q `(~(rewrite-assert menv eq actual expected)
                                                                               ~@(rewrite-body menv symf q exprs))))
                                      (cons (rewrite-assert menv eq actual expected)
                                            (rewrite-body menv symf q exprs)))))
          :effect (let [expr (first (:body val))]
                    (if (has-%? expr)
-                     (conj acc (poll-n (count (persents expr)) q
+                     (conj acc (poll-n menv (count (persents expr)) q
                                        (push-value! expr (rewrite-body menv symf q (rewrite-stars exprs)))))
                      (apply conj acc (push-value! expr (rewrite-body menv symf q (rewrite-stars exprs))))))
          :doc    (conj acc `(testing' ~val ~@(rewrite-body menv symf q (rewrite-stars exprs)))))))))
@@ -333,6 +334,7 @@
                      ~!           #(q/offer! ~q %)
                      ~'RCF__time_start (time/current-time)
                      ~'RCF__timeout ~*timeout*
+                     ~'RCF__timeout_prev ~'RCF__timeout
                      ~'RCF__done  (fn []
                                     (swap! !done-count# inc)
                                     (when (= ~assert-count @!done-count#)
@@ -344,7 +346,7 @@
                    (~(symf 'do-report) {:type :begin-test-var, :var '~nom})
                    ~(when-not cljs?
                       `(clojure.test/inc-report-counter :test))
-                   (try (do ~@(replace-var {#'! !, #'q `(q/get-queue ~q)} body))
+                   (try (do ~@(replace-var &env {#'! !, #'q `(q/get-queue ~q)} body))
                         (catch ~(if cljs? 'js/Error 'Throwable) e#
                           (~(symf 'do-report) {:type     :error,
                                                :message  "Uncaught exception, not in assertion."
