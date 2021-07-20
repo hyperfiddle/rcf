@@ -3,7 +3,7 @@
   #?(:cljs (:require-macros [hyperfiddle.rcf :refer [tests]]))
   (:require #?(:clj [clojure.test :as t]
                :cljs [cljs.test :as t])
-            #?(:cljs [cljs.analyzer.api :as ana-api])
+            [cljs.analyzer.api :as ana-api]
             [cljs.analyzer :as ana]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
@@ -239,13 +239,23 @@
 (defn rewrite-assert [menv type actual expected]
   (let [actual   (rewrite-stars actual)
         expected (rewrite-stars expected)]
-    `(is ~menv (unifies? ~type ~actual ~(rewrite-wildcards expected)))))
+    `(is ~(select-keys menv [:file :line :end-line :column :end-column :cljs]) (unifies? ~type ~actual ~(rewrite-wildcards expected)))))
 
-(defn persents [form]
-  (->> (tree-seq coll? identity form)
-       (filter symbol?)
-       #?(:clj (map resolve))
-       (filter #{#'%})))
+(defn var-name [var]
+  (when var
+    (let [{:keys [ns name]} (meta var)]
+      (symbol (str ns) (str name)))))
+
+(defn resolve'
+  ([x] #?(:clj (var-name (resolve x))))
+  ([env x] (:name (ana-api/resolve env x))))
+
+(defn persents [env form]
+  (let [resolver (if (cljs? env) (partial resolve' env) resolve')]
+    (->> (tree-seq coll? identity form)
+         (filter symbol?)
+         (map resolver)
+         (filter #{`%}))))
 
 (def has-%? (comp seq persents))
 
@@ -256,8 +266,9 @@
    (let [!n-found (volatile! 0)]
      (walk/postwalk (fn [x]
                       (if-not (= stop @!n-found)
-                        (if-some [var' (and (symbol? x) #?(:clj (resolve x)
-                                                           :cljs (ana-api/resolve env x)))]
+                        (if-some [var' (and (symbol? x) (if (cljs? env)
+                                                          (resolve' env x)
+                                                          (resolve' x)))]
                           (if-let [sym (get var-sym-map var')]
                             (do (vswap! !n-found inc) sym)
                             x)
@@ -271,7 +282,7 @@
     (let [% (gensym "%")]
       `(q/poll! ~q ~'RCF__time_start ~'RCF__timeout ::timeout
                 (fn [~%]
-                  ~(poll-n env (dec n) q (replace-var env 1 {#'% %} form)))))))
+                  ~(poll-n env (dec n) q (replace-var env 1 {`% %} form)))))))
 
 (defmacro testing' [doc & body]
   (if (cljs? &env)
@@ -307,14 +318,14 @@
                                          ~@(rewrite-body menv symf q exprs)))
                             acc)
          :assert (let [{:keys [eq actual expected]} val]
-                   (apply conj acc (if (or (has-%? (:actual val)) (has-%? (:expected val)))
-                                     `(~(poll-n menv (count (persents actual)) q `(~(rewrite-assert menv eq actual expected)
+                   (apply conj acc (if (or (has-%? menv (:actual val)) (has-%? menv (:expected val)))
+                                     `(~(poll-n menv (count (persents menv actual)) q `(~(rewrite-assert menv eq actual expected)
                                                                               ~@(rewrite-body menv symf q exprs))))
                                      (cons (rewrite-assert menv eq actual expected)
                                            (rewrite-body menv symf q exprs)))))
          :effect (let [expr (first (:body val))]
-                   (if (has-%? expr)
-                     (conj acc (poll-n menv (count (persents expr)) q
+                   (if (has-%? menv expr)
+                     (conj acc (poll-n menv (count (persents menv expr)) q
                                        (push-value! expr (rewrite-body menv symf q (rewrite-stars exprs)))))
                      (apply conj acc (push-value! expr (rewrite-body menv symf q (rewrite-stars exprs))))))
          :doc    (conj acc `(testing' ~val ~@(rewrite-body menv symf q (rewrite-stars exprs)))))))))
@@ -346,7 +357,7 @@
                    (~(symf 'do-report) {:type :begin-test-var, :var '~nom})
                    ~(when-not cljs?
                       `(clojure.test/inc-report-counter :test))
-                   (try (do ~@(replace-var &env {#'! !, #'q `(q/get-queue ~q)} body))
+                   (try (do ~@(replace-var &env {`! !, `q `(q/get-queue ~q)} body))
                         (catch ~(if cljs? 'js/Error 'Throwable) e#
                           (~(symf 'do-report) {:type     :error,
                                                :message  "Uncaught exception, not in assertion."
@@ -396,7 +407,8 @@
           symf          (partial prefix-sym cljs?)
           menv          (-> (meta &form)
                             (assoc :cljs cljs?)
-                            (update :file #(or % (str *ns*))))
+                            (update :file #(or % (str *ns*)))
+                            (merge &env))
           parsed        [(s/conform ::expr (rewrite-infix (cons 'tests body)))]
           q             (gensym "q")]
       (if (= ::s/invalid parsed)
