@@ -2,12 +2,12 @@
 
 RCF turns your Rich Comment Forms into tests (in the same file as your functions). Send form or file to REPL to run tests and it squirts dopamine ✅✅✅, very pleasing. It's good, try it!
 
+![](https://i.imgur.com/nBOOZq7.png)
+
 * Very natural workflow that encourages use of the REPL. This Is The Way.
 * Documentation of example usages next to source code of function (this is way better than docstrings). Reading dense Clojure code is actually really hard and RCF fixes that.
 * Zero boilerplate. It matters.
 * Tool for communication. While pairing on Zoom, bang out some assertions quickly, and right in the file you're working on. Watch your communication bandwidth improve.
-
-![](https://i.imgur.com/nBOOZq7.png)
 
 # Dependency
 
