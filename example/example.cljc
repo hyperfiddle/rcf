@@ -51,7 +51,7 @@
     1 := 1)
 
   "inequality"
-  1 :<> 2
+  1 :<> 2)
 
 (tests {:timeout 100}
   "async tests"
