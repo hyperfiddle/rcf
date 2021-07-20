@@ -1,6 +1,27 @@
 (ns example
   (:require [hyperfiddle.rcf :refer [tests]]))
 
+(defn get-extension [path]
+  (let [found (last (re-find #"(\.[a-zA-Z0-9]+)$" path))
+        ext (and found (subs found 1))]
+    (or ext "")))
+
+(tests
+  "empty"
+  (get-extension "") := ""
+  (get-extension ".") := ""
+  (get-extension "..") := ""
+  (get-extension "image") := ""
+  (get-extension "image.") := ""
+  (get-extension "image..") := ""
+
+  "found"
+  (get-extension "image.png") := "png"
+  (get-extension "image.blah.png") := "png"
+  (get-extension "image.blah..png") := "png")
+
+; features
+
 (tests
   "equality"
   (inc 1) := 2
