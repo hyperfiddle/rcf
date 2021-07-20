@@ -18,6 +18,10 @@
 #?(:clj  (def ^:dynamic *enabled* (= "true" (System/getProperty "hyperfiddle.rcf.enabled")))
    :cljs (goog-define ^boolean ^:dynamic *enabled* false))
 
+(defn enable! [& [v]]
+  #?(:clj  (alter-var-root #'hyperfiddle.rcf/*enabled* (constantly (if (some? v) v true)))
+     :cljs (set! hyperfiddle.rcf/*enabled* (if (some? v) v true))))
+
 
 #?(:clj  (def ^:dynamic *generate-tests* (= "true" (System/getProperty "hyperfiddle.rcf.generate-tests")))
    :cljs (goog-define ^boolean ^:dynamic *generate-tests* false))
