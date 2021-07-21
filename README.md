@@ -11,6 +11,8 @@ RCF turns your Rich Comment Forms into tests (in the same file as your functions
 
 # Dependency
 
+Project maturity: experimental, expect severe breaking changes.
+
 ```Clojure
 {:deps {hyperfiddle/rcf {:git/url "https://github.com/hyperfiddle/rcf.git" :sha ...}}}
 ```
@@ -107,7 +109,6 @@ Ran 1 tests containing 8 assertions.
 #?(:cljs (defn ^:dev/after-load start [] (hyperfiddle.rcf/enable! false)))
 ```
 
-
 # FAQ
 
 *One of my tests threw an exception, but the stack trace is empty?* — you want `{:jvm-opts ["-XX:-OmitStackTraceInFastThrow"]}` [explanation](https://web.archive.org/web/20190416091616/http://yellerapp.com/posts/2015-05-11-clojure-no-stacktrace.html) (this may be JVM specific)
@@ -119,10 +120,6 @@ Ran 1 tests containing 8 assertions.
 # Community
 
 &#35;hyperfiddle @ clojurians.net
-
-# Project Maturity
-
-Experimental, severe breaking changes are allowed.
 
 # Acknowledgments
 
