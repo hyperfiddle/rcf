@@ -12,10 +12,10 @@ Features
 
 Deeper goals
 * Zero boilerplate, hyper-optimized notation for thought
-* Documentation of example usages next to source code of function (this is way better than docstrings). Reading dense Clojure code is actually really hard and RCF fixes that.
+* Teaching tool. RCF lets you share example usages next to the source code of the function (which is way better than docstrings). Figuring out what dense Clojure code does is actually really hard and RCF fixes that.
 * Pair programming tool. While pairing on Zoom, bang out some assertions quickly, right in the file you're working on. Watch your communication bandwidth improve.
 
-RCF was specifically engineered for the test and documentation requirements of Hyperfiddle, which includes an asynchronous dialect of Clojure that we intend to document through RCF inline example usages. Maybe it is also valuable to you.
+RCF was specifically engineered for the test and documentation requirements of Hyperfiddle, which includes an asynchronous dialect of Clojure that we intend to document and teach through RCF inline example usages. Maybe RCF is also valuable to you.
 
 # Dependency
 
