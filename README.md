@@ -1,17 +1,25 @@
-# RCF – a REPL-first test macro for Clojure/Script (experimental)
+# RCF – a REPL-first test macro for Clojure/Script
 
 RCF turns your Rich Comment Forms into tests (in the same file as your functions). Send form or file to REPL to run tests and it squirts dopamine ✅✅✅. It's good, try it!
 
 ![](https://i.imgur.com/nBOOZq7.png)
 
-* Natural workflow that encourages use of the REPL. This Is The Way.
+Features
+* Natural REPL workflow
+* Clojure/Script
+* Async tests (coming soon)
+* No file watchers, no extra windows, no beeping, no latency
+
+Deeper goals
+* Zero boilerplate, hyper-optimized notation for thought
 * Documentation of example usages next to source code of function (this is way better than docstrings). Reading dense Clojure code is actually really hard and RCF fixes that.
-* No watchers, no extra windows, no beeping, no lag.
-* Tool for communication. While pairing on Zoom, bang out some assertions quickly, and right in the file you're working on. Watch your communication bandwidth improve.
+* Pair programming tool. While pairing on Zoom, bang out some assertions quickly, right in the file you're working on. Watch your communication bandwidth improve.
+
+RCF was specifically engineered for the test and documentation requirements of Hyperfiddle, which includes an asynchronous dialect of Clojure that we intend to document through RCF inline example usages. Maybe it is also valuable to you.
 
 # Dependency
 
-Project maturity: experimental, expect severe breaking changes.
+Project maturity: experimental, the current development priority is iterating async tests (coming soon) and making them great.
 
 ```Clojure
 {:deps {hyperfiddle/rcf {:git/url "https://github.com/hyperfiddle/rcf.git" :sha ...}}}
