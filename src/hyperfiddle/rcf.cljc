@@ -49,6 +49,7 @@
 (def ^:dynamic *doc* nil)
 
 (s/def ::expr (s/or :assert (s/cat :eq #{:= :<>} :actual any? :expected any?)
+                    :let (s/cat :let #{'let} :bindings vector? :body (s/* ::expr))
                     :tests (s/cat :tests #{'tests} :opts (s/? map?) :doc (s/? string?) :body (s/* ::expr))
                     :effect (s/cat :do #{'do} :body (s/* any?))
                     :doc    string?))
@@ -217,6 +218,9 @@
                 (= := (first x)))     (recur xs (conj acc x))
            (#{:= :<>} (first xs))     (recur (rest (rest xs)) (conj acc (list (first xs) x (first (rest xs)))))
            (string? x)                (recur xs (conj acc x))
+           (and (sequential? x)
+                (= 'let (first x)))   (let [[_let bindings & body] x]
+                                              (recur xs (conj acc `(~'let ~bindings ~@(rewrite-infix body)))))
            :else                      (recur xs (conj acc (list 'do x)))))))
 
 (def ^:dynamic *1)
@@ -276,13 +280,15 @@
                         x))
                     form))))
 
-(defn poll-n [env n q form]
-  (if (zero? n)
-    `(do ~@form)
-    (let [% (gensym "%")]
-      `(q/poll! ~q ~'RCF__time_start ~'RCF__timeout ::timeout
-                (fn [~%]
-                  ~(poll-n env (dec n) q (replace-var env 1 {`% %} form)))))))
+(defn poll-n
+  ([env n q form]
+   (poll-n env n q (gensym "%") form))
+  ([env n q sym form]
+   (if (zero? n)
+     `(do ~@form)
+     `(q/poll! ~q ~'RCF__time_start ~'RCF__timeout ::timeout
+               (fn [~sym]
+                 ~(poll-n env (dec n) q (replace-var env 1 {`% sym} form)))))))
 
 (defmacro testing' [doc & body]
   (if (cljs? &env)
@@ -320,7 +326,7 @@
          :assert (let [{:keys [eq actual expected]} val]
                    (apply conj acc (if (or (has-%? menv (:actual val)) (has-%? menv (:expected val)))
                                      `(~(poll-n menv (count (persents menv actual)) q `(~(rewrite-assert menv eq actual expected)
-                                                                              ~@(rewrite-body menv symf q exprs))))
+                                                                                        ~@(rewrite-body menv symf q exprs))))
                                      (cons (rewrite-assert menv eq actual expected)
                                            (rewrite-body menv symf q exprs)))))
          :effect (let [expr (first (:body val))]
@@ -328,7 +334,14 @@
                      (conj acc (poll-n menv (count (persents menv expr)) q
                                        (push-value! expr (rewrite-body menv symf q (rewrite-stars exprs)))))
                      (apply conj acc (push-value! expr (rewrite-body menv symf q (rewrite-stars exprs))))))
-         :doc    (conj acc `(testing' ~val ~@(rewrite-body menv symf q (rewrite-stars exprs)))))))))
+         :doc    (conj acc `(testing' ~val ~@(rewrite-body menv symf q (rewrite-stars exprs))))
+         :let    (let [{:keys [bindings body]} val
+                       step                    (fn step [[[k v] & bindings] body]
+                                                 (if (has-%? menv v)
+                                                   (poll-n menv (count (persents menv v)) q `((let [~k ~v] ~@(if (empty? bindings) body (list (step bindings body))))))
+                                                   `(let [~k ~v] ~@(if (empty? bindings) body (list (step bindings body))))))]
+                   (apply conj (list (step (partition 2 bindings) (rewrite-body menv symf q (rewrite-stars body))))
+                          (rewrite-body menv symf q (rewrite-stars exprs)))))))))
 
 (defn filename->name [file]
   (-> (str/split file #"\.")
