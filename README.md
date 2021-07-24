@@ -21,7 +21,7 @@ RCF was specifically engineered for the test requirements of our upcoming asynch
 
 # Dependency
 
-Project maturity: experimental. We don't know if it is stable. The current development priority is great async tests.
+Project maturity: experimental. The current development priority is great async tests.
 
 ```Clojure
 {:deps {hyperfiddle/rcf {:git/url "https://github.com/hyperfiddle/rcf.git" :sha ...}}}
