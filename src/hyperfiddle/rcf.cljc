@@ -194,17 +194,22 @@
 
 (declare rewrite-body)
 
+(defn quoted? [x] (and (sequential? x) (= 'quote (first x))))
+
 (defmacro unifies? [type x pattern]
-  `(let [x# ~x]
-     (~(case type
-         :=  `=
-         :<> `not=)
-      x# (unifier x# ~(clojure.walk/postwalk
-                         (fn [x]
-                           (if (and (symbol? x) (or (= '_ x) (= \? (first (name x)))))
-                             (list 'quote x)
-                             x))
-                         pattern)))))
+  (let [pattern (if (quoted? pattern)
+                  pattern
+                  (clojure.walk/postwalk
+                   (fn [x]
+                     (if (and (symbol? x) (or (= '_ x) (= \? (first (name x)))))
+                       (list 'quote x)
+                       x))
+                   pattern))]
+    `(let [x# ~x]
+       (~(case type
+           :=  `=
+           :<> `not=)
+        x# (unifier x# ~pattern)))))
 
 (def assert-form? #{:= :<>})
 
