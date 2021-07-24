@@ -21,7 +21,7 @@
     (prn)
     (print (case (:assert-type m)
              :<> ":="
-             ":≠"))
+             ":<>"))
     (prn)
     (pprint (:expected m))
     (prn)
@@ -41,7 +41,7 @@
         (stack/print-cause-trace actual t/*stack-trace-depth*)
         (pprint actual)))
     (prn)
-    (print ":≠ ")
+    (print ":<> ")
     (prn)
     (pprint (:expected m))
     (prn)
