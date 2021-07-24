@@ -18,14 +18,12 @@
 ;; "Set this to true if you want to generate clojure.test compatible tests. This
 ;; will define testing functions in your namespace using `deftest`. Defaults to
 ;; `false`.
-
 #?(:clj  (def ^:dynamic *enabled* (= "true" (System/getProperty "hyperfiddle.rcf.enabled")))
    :cljs (def ^boolean ^:dynamic *enabled* ENABLED))
 
 (defn enable! [& [v]]
   #?(:clj  (alter-var-root #'hyperfiddle.rcf/*enabled* (constantly (if (some? v) v true)))
      :cljs (set! *enabled* (if (some? v) v true))))
-
 
 #?(:clj  (def ^:dynamic *generate-tests* (= "true" (System/getProperty "hyperfiddle.rcf.generate-tests")))
    :cljs (goog-define ^boolean ^:dynamic *generate-tests* false))
@@ -48,11 +46,15 @@
 
 (def ^:dynamic *doc* nil)
 
-(s/def ::expr (s/or :assert (s/cat :eq #{:= :<>} :actual any? :expected any?)
-                    :let (s/cat :let #{'let} :bindings vector? :body (s/* ::expr))
-                    :tests (s/cat :tests #{'tests} :opts (s/? map?) :doc (s/? string?) :body (s/* ::expr))
-                    :effect (s/cat :do #{'do} :body (s/* any?))
-                    :doc    string?))
+(s/def ::effect (s/and seq?
+                       #(not (#{'let 'let* := :<> 'tests} (first %)))
+                       (s/cat :body (s/+ ::expr))))
+
+(s/def ::expr (s/or :tests (s/cat :tests #{'tests} :opts (s/? map?) :body (s/* (s/or :effect ::effect, :expr ::expr)))
+                    :assert (s/cat :eq #{:= :<>} :actual any? :expected any?)
+                    :let (s/cat :let #{'let 'let*} :bindings vector? :body (s/* ::expr))
+                    :string string?
+                    :value any?))
 
 (defn prefix-sym [cljs? x]
   (symbol (if cljs? "cljs.test" "clojure.test")
@@ -204,34 +206,37 @@
                              x))
                          pattern)))))
 
-(defn rewrite-infix [body]
-  (seq (loop [[x & xs :as body] body
-              acc               []]
-         (cond
-           (empty? body)              acc
-           (= 'tests x)               (if (map? (first xs))
-                                        (recur (rest xs) (conj acc x (first xs)))
-                                        (recur xs (conj acc x)))
-           (and (sequential? x)
-                (= 'tests (first x))) (recur xs (conj acc (rewrite-infix x)))
-           (and (sequential? x)
-                (= := (first x)))     (recur xs (conj acc x))
-           (#{:= :<>} (first xs))     (recur (rest (rest xs)) (conj acc (list (first xs) x (first (rest xs)))))
-           (string? x)                (recur xs (conj acc x))
-           (and (sequential? x)
-                (= 'let (first x)))   (let [[_let bindings & body] x]
-                                              (recur xs (conj acc `(~'let ~bindings ~@(rewrite-infix body)))))
-           :else                      (recur xs (conj acc (list 'do x)))))))
+(def assert-form? #{:= :<>})
+
+(defn rewrite-infix [form]
+  (loop [acc                   []
+         [a b c & xs :as form] form]
+    (if (empty? form)
+      (seq acc)
+      (cond
+        (= 'fn* a)    (let [body (rewrite-infix c)]
+                        (if (and (seq? body)
+                                 (seq? (first body))
+                                 (assert-form? (ffirst body)))
+                          (apply list a b body)
+                          (list a b body)))
+        (assert-form? b) (recur (conj acc (list b a c)) xs)
+        :else
+        (if (seq? a)
+          (recur (conj acc (rewrite-infix a)) (rest form))
+          (recur (conj acc a) (rest form)))))))
 
 (def ^:dynamic *1)
 (def ^:dynamic *2)
 (def ^:dynamic *3)
 
 (defn push-value! [expr exprs]
-  `((binding [*3 *2,
-              *2 *1,
-              *1 (do ~expr)]
-      ~@exprs)))
+  `((let [x# ~expr]
+      (binding [*3 *2,
+                *2 *1,
+                *1 x#]
+        x#
+        ~@exprs))))
 
 (defn rewrite-stars [body]
   (walk/postwalk #(case % *1 `*1, *2 `*2, *3 `*3, %) body))
@@ -241,9 +246,7 @@
     (walk/postwalk #(case % _ (symbol (str "?_" (counter))) %) body)))
 
 (defn rewrite-assert [menv type actual expected]
-  (let [actual   (rewrite-stars actual)
-        expected (rewrite-stars expected)]
-    `(is ~(select-keys menv [:file :line :end-line :column :end-column :cljs]) (unifies? ~type ~actual ~(rewrite-wildcards expected)))))
+  `(is ~(select-keys menv [:file :line :end-line :column :end-column :cljs]) (unifies? ~type ~actual ~(rewrite-wildcards expected))))
 
 (defn var-name [var]
   (when var
@@ -255,7 +258,12 @@
   ([env x] (:name (ana-api/resolve env x))))
 
 (defn persents [env form]
-  (let [resolver (if (cljs? env) (partial resolve' env) resolve')]
+  (let [resolver (if (cljs? env) (partial resolve' env) resolve')
+        form (walk/prewalk (fn [x]
+                             (if (and (sequential? x) (#{'fn 'fn*} (first x)))
+                               nil
+                               x))
+                           form)]
     (->> (tree-seq coll? identity form)
          (filter symbol?)
          (map resolver)
@@ -297,51 +305,41 @@
     `(binding [*doc* ~doc]
        ~@body)))
 
-(defmacro testing [doc & body]
-  (if (cljs? &env)
-    `(do (cljs.test/update-current-env! [:testing-contexts] clojure.core/conj ~doc)
-         ~@body)
-    `(clojure.test/testing ~doc ~@body)))
-
 (defn rewrite-body [menv symf q exprs]
-  (seq
-   (loop [[[type val :as expr] & exprs] exprs
-          acc                           []]
-     (if (nil? expr)
-       acc
-       (case type
-         :tests (if-let [opts (:opts val)]
-                  (conj acc `(let [~'RCF__timeout_prev ~'RCF__timeout
-                                   ~'RCF__timeout ~(:timeout opts 1000)]
-                               ~@(rewrite-body menv symf q (cons [type (dissoc val :opts)] exprs))))
-                  (if-let [doc (:doc val)]
-                    (conj acc `(testing ~doc ~@(rewrite-body menv symf q (if (seq exprs)
-                                                                           (concat (:body val) [[:restore-timeout]] exprs)
-                                                                           (:body val)))))
-                    (apply conj acc (rewrite-body menv symf q (concat (:body val) exprs)))))
-         :restore-timeout (if (seq exprs)
-                            (conj acc `(let [~'RCF__timeout ~'RCF__timeout_prev]
-                                         ~@(rewrite-body menv symf q exprs)))
-                            acc)
-         :assert (let [{:keys [eq actual expected]} val]
-                   (apply conj acc (if (or (has-%? menv (:actual val)) (has-%? menv (:expected val)))
-                                     `(~(poll-n menv (count (persents menv actual)) q `(~(rewrite-assert menv eq actual expected)
-                                                                                        ~@(rewrite-body menv symf q exprs))))
-                                     (cons (rewrite-assert menv eq actual expected)
-                                           (rewrite-body menv symf q exprs)))))
-         :effect (let [expr (first (:body val))]
-                   (if (has-%? menv expr)
-                     (conj acc (poll-n menv (count (persents menv expr)) q
-                                       (push-value! expr (rewrite-body menv symf q (rewrite-stars exprs)))))
-                     (apply conj acc (push-value! expr (rewrite-body menv symf q (rewrite-stars exprs))))))
-         :doc    (conj acc `(testing' ~val ~@(rewrite-body menv symf q (rewrite-stars exprs))))
-         :let    (let [{:keys [bindings body]} val
-                       step                    (fn step [[[k v] & bindings] body]
-                                                 (if (has-%? menv v)
-                                                   (poll-n menv (count (persents menv v)) q `((let [~k ~v] ~@(if (empty? bindings) body (list (step bindings body))))))
-                                                   `(let [~k ~v] ~@(if (empty? bindings) body (list (step bindings body))))))]
-                   (apply conj (list (step (partition 2 bindings) (rewrite-body menv symf q (rewrite-stars body))))
-                          (rewrite-body menv symf q (rewrite-stars exprs)))))))))
+  (when-some [[[type val] & exprs] (seq exprs)]
+    (case type
+      :tests           (if-let [opts (:opts val)]
+                         `((let [~'RCF__timeout_prev ~'RCF__timeout
+                                 ~'RCF__timeout      ~(:timeout opts 1000)]
+                             ~@(rewrite-body menv symf q (cons [type (dissoc val :opts)] exprs))))
+                         (rewrite-body menv symf q (concat (:body val) exprs)))
+      :assert          (let [{:keys [eq actual expected]} val]
+                         (if (or (has-%? menv (:actual val)) (has-%? menv (:expected val)))
+                           `(~(poll-n menv (count (persents menv actual)) q `(~(rewrite-assert menv eq actual expected)
+                                                                              ~@(rewrite-body menv symf q exprs))))
+                           (cons (rewrite-assert menv eq actual expected)
+                                 (rewrite-body menv symf q exprs))))
+      :effect          (let [step (fn step [[[type val] & xs]]
+                                    (case type
+                                      (:string :value) (if (seq xs)
+                                                         (cons val (step xs))
+                                                         (list val))
+                                      (rewrite-body menv symf q (cons [type val] xs))))
+                             expr (or (:form val) (step (:body val)))]
+                         (if (has-%? menv expr)
+                           (poll-n menv (count (persents menv expr)) q
+                                   (push-value! expr (rewrite-body menv symf q exprs)))
+                           (push-value! expr (rewrite-body menv symf q exprs))))
+      :string          `((testing' ~val ~@(rewrite-body menv symf q exprs)))
+      :let             (let [{:keys [bindings body]} val
+                             step                    (fn step [[[k v] & bindings] body]
+                                                       (if (has-%? menv v)
+                                                         (poll-n menv (count (persents menv v)) q `((let [~k ~v] ~@(if (empty? bindings) body (list (step bindings body))))))
+                                                         `(let [~k ~v] ~@(if (empty? bindings) body (list (step bindings body))))))]
+                         (concat (list (step (partition 2 bindings) (rewrite-body menv symf q body)))
+                                 (rewrite-body menv symf q exprs)))
+      :value             (push-value! val (rewrite-body menv symf q exprs))
+      :expr              (rewrite-body menv symf q (cons val exprs)))))
 
 (defn filename->name [file]
   (-> (str/split file #"\.")
@@ -368,8 +366,6 @@
                                       (~'RCF__async__done)))]
                  (binding [~@(when-not cljs? [(symf '*testing-vars*) `(conj ~(symf '*testing-vars*) '~nom)])]
                    (~(symf 'do-report) {:type :begin-test-var, :var '~nom})
-                   ~(when-not cljs?
-                      `(clojure.test/inc-report-counter :test))
                    (try (do ~@(replace-var &env {`! !, `q `(q/get-queue ~q)} body))
                         (catch ~(if cljs? 'js/Error 'Throwable) e#
                           (~(symf 'do-report) {:type     :error,
@@ -395,11 +391,17 @@
                  (not *compile-files*) ; no tests in AOT compiled code
                  (or *enabled* *generate-tests*)))))
 
-(defn- nav-body [x] (or (:body x) (and (vector? x) (:body (second x)))))
+(defn- nav-body [x]
+  (if (vector? x)
+    (let [[type val] x]
+      (case type
+        (:expr :effect) val
+        (:body val)))
+    (:body x)))
 
 (defn asserts [[exprs]]
   (->> (tree-seq nav-body nav-body exprs)
-       (filter (fn [x] (and (vector? x) (= :assert (first x)))))))
+       (filter #{:assert})))
 
 (defmacro tests
   {:style/indent [:defn]}
@@ -422,9 +424,12 @@
                             (assoc :cljs cljs?)
                             (update :file #(or % (str *ns*)))
                             (merge &env))
-          parsed        [(s/conform ::expr (rewrite-infix (cons 'tests body)))]
+          parsed        [(->> (cons 'tests body)
+                              rewrite-stars
+                              rewrite-infix
+                              (s/conform ::expr))]
           q             (gensym "q")]
-      (if (= ::s/invalid parsed)
+      (if (= ::s/invalid (first parsed))
         (throw (ex-info "Invalid syntax" (s/explain-data ::expr body)))
         `(deftest ~test-name-sym ~q ~(count (asserts parsed))
            ~@(rewrite-body menv symf q parsed))))))
