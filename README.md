@@ -17,7 +17,7 @@ Deeper goal: a notation for communication
 * Pair programming tool. While pairing on Zoom, bang out some assertions quickly, right in the file you're working on. Watch your communication bandwidth improve.
 * Teaching tool. RCF helps beginners experiment and check their work.
 
-RCF was specifically engineered for the test requirements of our upcoming asynchronous dialect of Clojure that we intend to document and teach through RCF inline example usages. Maybe RCF is also a valuable communication tool to you.
+RCF is specifically engineered to support our upcoming reactive dialect of Clojure, that we intend to test, document and teach with RCF.
 
 # Dependency
 
