@@ -231,20 +231,29 @@
           (recur (conj acc (rewrite-infix a)) (rest form))
           (recur (conj acc a) (rest form)))))))
 
-(def ^:dynamic *1)
-(def ^:dynamic *2)
-(def ^:dynamic *3)
+(defn binding-queue [] (atom [nil nil nil]))
 
-(defn push-value! [expr exprs]
-  `((let [x# ~expr]
-      (binding [*3 *2,
-                *2 *1,
-                *1 x#]
-        x#
-        ~@exprs))))
+(defn push-binding [q v] (let [[a b _c] q] [v a b]))
+
+(defn get-binding! [q idx] (get @q idx))
+
+(defn push-binding! [expr exprs]
+  (let [x (gensym "x")]
+    `((let [~x ~expr]
+        (swap! ~'RCF__bindings #(push-binding % ~x))
+        ~@(if (empty? exprs)
+            `(~x)
+            exprs)))))
 
 (defn rewrite-stars [body]
-  (walk/postwalk #(case % *1 `*1, *2 `*2, *3 `*3, %) body))
+  (walk/postwalk #(case %
+                    *1 `(get-binding! ~'RCF__bindings 0),
+                    *2 `(get-binding! ~'RCF__bindings 1),
+                    *3 `(get-binding! ~'RCF__bindings 2),
+                    %) body))
+
+(defn phantom-effect? [expr]
+  (#{`get-binding!} (first expr)))
 
 (defn rewrite-wildcards [body]
   (let [counter (let [x (volatile! 0)] (fn [] (vswap! x inc)))]
@@ -332,9 +341,13 @@
                                       (rewrite-body menv symf q (cons [type val] xs))))
                              expr (or (:form val) (step (:body val)))]
                          (if (has-%? menv expr)
-                           (poll-n menv (count (persents menv expr)) q
-                                   (push-value! expr (rewrite-body menv symf q exprs)))
-                           (push-value! expr (rewrite-body menv symf q exprs))))
+                           (poll-n menv (count (persents menv expr))
+                                   (if (phantom-effect? expr)
+                                     (cons expr (rewrite-body menv symf q exprs))
+                                     `(push-binding! expr (rewrite-body menv symf q exprs))))
+                           (if (phantom-effect? expr)
+                             (cons expr (rewrite-body menv symf q exprs))
+                             (push-binding! expr (rewrite-body menv symf q exprs)))))
       :string          `((testing' ~val ~@(rewrite-body menv symf q exprs)))
       :let             (let [{:keys [bindings body]} val
                              step                    (fn step [[[k v] & bindings] body]
@@ -343,7 +356,7 @@
                                                          `(let [~k ~v] ~@(if (empty? bindings) body (list (step bindings body))))))]
                          (concat (list (step (partition 2 bindings) (rewrite-body menv symf q body)))
                                  (rewrite-body menv symf q exprs)))
-      :value             (push-value! val (rewrite-body menv symf q exprs))
+      :value             (push-binding! val (rewrite-body menv symf q exprs))
       :expr              (rewrite-body menv symf q (cons val exprs)))))
 
 (defn filename->name [file]
@@ -368,7 +381,8 @@
                                       #_(~(symf 'do-report) {:type :end-test-var, :var '~nom})
                                       ~(when cljs?
                                          `(cljs.test/update-current-env! [:testing-contexts] clojure.core/empty))
-                                      (~'RCF__async__done)))]
+                                      (~'RCF__async__done)))
+                     ~'RCF__bindings (binding-queue)]
                  (binding [~@(when-not cljs? [(symf '*testing-vars*) `(conj ~(symf '*testing-vars*) '~nom)])]
                    (~(symf 'do-report) {:type :begin-test-var, :var '~nom})
                    (try (do ~@(replace-var &env {`! !, `q `(q/get-queue ~q)} body))
