@@ -14,7 +14,7 @@
     (prn)
     (print "❌ ")
     (println (str (testing-vars-str m) " "))
-    (when (seq t/*testing-contexts*) (println (t/testing-contexts-str) (:doc m)))
+    (when (seq t/*testing-contexts*) (println (t/testing-contexts-str) (:doc m "")))
     (when-let [message (:message m)] (println message))
     (prn)
     (pprint (:actual m))
@@ -34,7 +34,7 @@
     (print "🔥 ")
     (print (str (testing-vars-str m) " "))
     (prn)
-    (when (seq t/*testing-contexts*) (println (t/testing-contexts-str) (:doc m)))
+    (when (seq t/*testing-contexts*) (println (t/testing-contexts-str) (:doc m "")))
     (when-let [message (:message m)] (println message))
     (let [actual (:actual m)]
       (if (instance? Throwable actual)
@@ -47,7 +47,7 @@
     (prn)
     ))
 
-(defmethod t/report :begin-test-var [_m] (prn))
+(defmethod t/report :begin-test-var [_m])
 
 (defmethod t/report :end-test-var [_m]
   (print \.))

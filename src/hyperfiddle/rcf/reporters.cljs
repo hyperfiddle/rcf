@@ -13,15 +13,17 @@
 ;; For js console.
 (defmethod t/report [::t/default :pass] [m]
   (t/inc-report-counter! :pass)
-  (js/console.groupCollapsed "✅" (testing-vars-str m))
-  (let [[a b] (utils/extract-comparison m)]
-    (when (seq (:testing-contexts (t/get-current-env)))
-      (js/console.log (t/testing-contexts-str) (:doc (t/get-current-env))))
-    (js/console.log "  actual:" (pprint-str a))
-    (js/console.log "expected:" (pprint-str b))
-    (js/console.groupEnd)
-    (when-let [message (:message m)]
-      (println message))))
+  (if-not (exists? js/window) ;; NodeJS
+    (js/console.log "✅")
+    (do (js/console.groupCollapsed "✅" (testing-vars-str m))
+        (let [[a b] (utils/extract-comparison m)]
+          (when (seq (:testing-contexts (t/get-current-env)))
+            (js/console.log (t/testing-contexts-str) (:doc (t/get-current-env))))
+          (js/console.log "  actual:" (pprint-str a))
+          (js/console.log "expected:" (pprint-str b))
+          (js/console.groupEnd)
+          (when-let [message (:message m)]
+            (println message))))))
 
 (defmethod t/report [::t/default :fail] [m]
   (t/inc-report-counter! :fail)
