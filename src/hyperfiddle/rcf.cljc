@@ -35,14 +35,11 @@
   #?(:clj (alter-var-root #'*timeout* (constantly ms))
      :cljs (set! *timeout* ms)))
 
-(def ^{:doc "Function. Use it to push a value onto the RCF queue `(! 1)`"}
-  !)
+(def ^{:doc "Function. Use it to push a value onto the RCF queue `(! 1)`"} !)
 
-(def ^{:doc "Queue behaving as a value. Assert `% := _` to pop from the it. Async, will time out after `:timeout` option, default to 1000 (ms)."}
-  %)
+(def ^{:doc "Queue behaving as a value. Assert `% := _` to pop from the it. Async, will time out after `:timeout` option, default to 1000 (ms)."} %)
 
-(def ^{:doc "Queue backing `%`. Exposed to help you debug timing out tests."}
-  q)
+(def ^{:doc "Queue backing `%`. Exposed to help you debug timing out tests."} q)
 
 (def ^:dynamic *doc* nil)
 
@@ -50,60 +47,51 @@
                        #(not (#{'let 'let* := :<> 'tests} (first %)))
                        (s/cat :body (s/+ ::expr))))
 
-(s/def ::expr (s/or :tests (s/cat :tests #{'tests} :opts (s/? map?) :body (s/* (s/or :effect ::effect, :expr ::expr)))
-                    :assert (s/cat :eq #{:= :<>} :actual any? :expected any?)
-                    :let (s/cat :let #{'let 'let*} :bindings vector? :body (s/* ::expr))
+(s/def ::expr (s/or :tests  (s/cat :tests #{'tests}     :opts (s/? map?)  :body (s/* (s/or :effect ::effect, :expr ::expr)))
+                    :assert (s/cat :eq    #{:= :<>}     :actual any?      :expected any?)
+                    :let    (s/cat :let   #{'let 'let*} :bindings vector? :body (s/* ::expr))
                     :string string?
-                    :value any?))
+                    :value  any?))
 
-(defn prefix-sym [cljs? x]
-  (symbol (if cljs? "cljs.test" "clojure.test")
-          (name x)))
+(defn cljs? [env] (some? (:js-globals env)))
+
+(defn prefix-sym [env x]
+  (symbol (if (cljs? env) "cljs.test" "clojure.test") (name x)))
 
 (defn rewrite-stars [body]
   (walk/postwalk #(case %
-                    *1 `(get-binding! ~'RCF__bindings 0)
-                    *2 `(get-binding! ~'RCF__bindings 1)
-                    *3 `(get-binding! ~'RCF__bindings 2)
+                    *1 `(get @~'RCF__bindings 0)
+                    *2 `(get @~'RCF__bindings 1)
+                    *3 `(get @~'RCF__bindings 2)
                     %)
                  body))
-
-(defn assert-expr [menv msg form]
-  (let [{:keys [file line end-line column end-column]} menv
-        [_ type left right]                            form
-        left (::form (meta left) left)
-        left#                                          (gensym "left")]
-    `(let [~left#  ~(rewrite-stars left)
-           result# (unifies? ~type ~left# ~(rewrite-stars right))]
-       (if result#
-         (~(prefix-sym (:cljs menv) 'do-report)
-          {:type     :pass,   :message ~msg,
-           :file     ~file    :line    ~line :end-line ~end-line :column ~column :end-column ~end-column
-           :expected '~right, :actual  ~left#
-           :doc      *doc*})
-         (~(prefix-sym (:cljs menv) 'do-report)
-          {:type     :fail,   :message ~(str msg " in " left),
-           :file     ~file    :line    ~line  :end-line    ~end-line :column ~column :end-column ~end-column
-           :expected '~right, :actual  ~left# :assert-type ~type
-           :doc      *doc*}))
-       ~left#)))
-
-(defn cljs? [env] (some? (:js-globals env)))
 
 (defmacro try-expr
   "Used by the 'is' macro to catch unexpected exceptions.
   You don't call this."
   [menv msg form]
-  (let [cljs?                                          (cljs? &env)
-        err                                            (if cljs? :default 'Throwable)
-        {:keys [file line end-line column end-column]} menv
-        left                                           (nth form 1)]
+  (let [{:keys [file line end-line column end-column]} menv
+        [_ type left right]                            form
+        left#                                          (gensym "left")]
     `(let [!done#      (volatile! false)
            ~'RCF__done (fn [] (when-not @!done# (vswap! !done# not) (~'RCF__done)))]
        (try
-         ~(assert-expr menv msg form)
-         (catch ~err t#
-           (~(prefix-sym cljs? 'do-report)
+         (let [~left#  ~(rewrite-stars left)
+               result# (unifies? ~type ~left# ~(rewrite-stars right))]
+           (if result#
+             (~(prefix-sym &env 'do-report)
+              {:type     :pass,   :message ~msg,
+               :file     ~file    :line    ~line :end-line ~end-line :column ~column :end-column ~end-column
+               :expected '~right, :actual  ~left#
+               :doc      *doc*})
+             (~(prefix-sym &env 'do-report)
+              {:type     :fail,   :message ~(str msg " in " left),
+               :file     ~file    :line    ~line  :end-line    ~end-line :column ~column :end-column ~end-column
+               :expected '~right, :actual  ~left# :assert-type ~type
+               :doc      *doc*}))
+           ~left#)
+         (catch ~(if (cljs? &env) :default 'Throwable) t#
+           (~(prefix-sym &env 'do-report)
             {:type       :error, :message ~(str msg " in " (::form (meta left) left)),
              :file       ~file
              :line       ~line
@@ -116,21 +104,18 @@
          (finally
            (~'RCF__done))))))
 
-(defmacro is
-  ([menv form]     `(is ~menv ~form nil))
-  ([menv form msg] `(try-expr ~menv ~msg ~form)))
-
 (defn quoted? [x] (and (sequential? x) (= 'quote (first x))))
 
+(defn rewrite-lvars [form]
+  (walk/postwalk
+   (fn [x]
+     (if (and (symbol? x) (or (= '_ x) (= \? (first (name x)))))
+       (list 'quote x)
+       x))
+   form))
+
 (defmacro unifies? [type x pattern]
-  (let [pattern (if (quoted? pattern)
-                  pattern
-                  (clojure.walk/postwalk
-                   (fn [x]
-                     (if (and (symbol? x) (or (= '_ x) (= \? (first (name x)))))
-                       (list 'quote x)
-                       x))
-                   pattern))]
+  (let [pattern (if (quoted? pattern) pattern (rewrite-lvars pattern))]
     `(let [x# ~x]
        (~(case type
            :=  `=
@@ -159,12 +144,9 @@
 
 (defn binding-queue [] (atom [nil nil nil]))
 
-(defn push-binding [q v] (let [[a b _c] q] [v a b]))
+(defn push-binding [q d] (let [[c b _a] q] [d c b]))
 
-(defn get-binding! [q idx] (get @q idx))
-
-(defn phantom-effect? [expr]
-  (#{'*1 '*2 '*3} expr))
+(def phantom-effect? #{'*1 '*2 '*3})
 
 (defn push-binding! [expr exprs]
   (if (empty? exprs)
@@ -177,11 +159,11 @@
           ~@exprs)))))
 
 (defn rewrite-wildcards [body]
-  (let [counter (let [x (volatile! 0)] (fn [] (vswap! x inc)))]
+  (let [counter (let [x (volatile! 0)] #(vswap! x inc))]
     (walk/postwalk #(case % _ (symbol (str "?_" (counter))) %) body)))
 
 (defn rewrite-assert [menv type actual expected]
-  `(is ~(select-keys menv [:file :line :end-line :column :end-column :cljs]) (unifies? ~type ~actual ~(rewrite-wildcards expected))))
+  `(try-expr ~(select-keys menv [:file :line :end-line :column :end-column :cljs]) nil (unifies? ~type ~actual ~(rewrite-wildcards expected))))
 
 (defn var-name [var]
   (when var
@@ -194,17 +176,17 @@
 
 (defn persents [env form]
   (let [resolver (if (cljs? env) (partial resolve' env) resolve')
-        form (walk/prewalk (fn [x]
+        form     (walk/prewalk (fn [x]
                              (if (and (sequential? x) (#{'fn 'fn*} (first x)))
                                nil
                                x))
                            form)]
     (->> (tree-seq coll? identity form)
-         (filter symbol?)
-         (map resolver)
-         (filter #{`%}))))
-
-(def has-%? (comp seq persents))
+         (sequence (comp
+                    (filter symbol?)
+                    (map resolver)
+                    (filter #{`%})))
+         (seq))))
 
 (defn replace-var
   ([env var-sym-map form]
@@ -213,10 +195,9 @@
    (let [!n-found (volatile! 0)]
      (walk/postwalk (fn [x]
                       (if-not (= stop @!n-found)
-                        (if-some [var' (and (symbol? x) (or (#{'def} x)
-                                                            (if (cljs? env)
-                                                              (resolve' env x)
-                                                              (resolve' x))))]
+                        (if-some [var' (and (symbol? x) (if (cljs? env)
+                                                          (resolve' env x)
+                                                          (resolve' x)))]
                           (if-let [sym (get var-sym-map var')]
                             (do (vswap! !n-found inc) sym)
                             x)
@@ -241,50 +222,50 @@
     `(binding [*doc* ~doc]
        ~@body)))
 
-(defn rewrite-body [menv symf q exprs]
+(defn rewrite-body [menv q exprs]
   (when-some [[[type val] & exprs] (seq exprs)]
     (case type
       :tests           (if-let [opts (:opts val)]
                          `((let [~'RCF__timeout_prev ~'RCF__timeout
                                  ~'RCF__timeout      ~(:timeout opts 1000)]
-                             ~@(rewrite-body menv symf q (cons [type (dissoc val :opts)] exprs))))
-                         (rewrite-body menv symf q (concat (:body val) exprs)))
+                             ~@(rewrite-body menv q (cons [type (dissoc val :opts)] exprs))))
+                         (rewrite-body menv q (concat (:body val) exprs)))
       :assert          (let [{:keys [eq actual expected]} val]
-                         (if (or (has-%? menv actual) (has-%? menv expected))
+                         (if (or (persents menv actual) (persents menv expected))
                            `(~(poll-n menv (count (persents menv actual)) q (if (phantom-effect? actual)
                                                                               (cons (rewrite-assert menv eq actual expected)
-                                                                                    (rewrite-body menv symf q exprs))
+                                                                                    (rewrite-body menv q exprs))
                                                                               (push-binding! (rewrite-assert menv eq actual expected)
-                                                                                             (rewrite-body menv symf q exprs)))))
+                                                                                             (rewrite-body menv q exprs)))))
                            (if (phantom-effect? actual)
                              (cons (rewrite-assert menv eq actual expected)
-                                   (rewrite-body menv symf q exprs))
+                                   (rewrite-body menv q exprs))
                              (push-binding! (rewrite-assert menv eq actual expected)
-                                            (rewrite-body menv symf q exprs)))))
+                                            (rewrite-body menv q exprs)))))
       :effect          (let [step (fn step [[[type val] & xs]]
                                     (case type
                                       (:string :value) (if (seq xs)
                                                          (cons val (step xs))
                                                          (list val))
-                                      (rewrite-body menv symf q (cons [type val] xs))))
+                                      (rewrite-body menv q (cons [type val] xs))))
                              expr (or (:form val) (step (:body val)))]
-                         (if (has-%? menv expr)
+                         (if (persents menv expr)
                            (list (poll-n menv (count (persents menv expr)) q
-                                         (push-binding! (rewrite-stars expr) (rewrite-body menv symf q exprs))))
-                           (push-binding! (rewrite-stars expr) (rewrite-body menv symf q exprs))))
-      :string          `((testing' ~val ~@(rewrite-body menv symf q exprs)))
+                                         (push-binding! (rewrite-stars expr) (rewrite-body menv q exprs))))
+                           (push-binding! (rewrite-stars expr) (rewrite-body menv q exprs))))
+      :string          `((testing' ~val ~@(rewrite-body menv q exprs)))
       :let             (let [{:keys [bindings body]} val
                              step                    (fn step [[[k v] & bindings] body]
-                                                       (if (has-%? menv v)
+                                                       (if (persents menv v)
                                                          (poll-n menv (count (persents menv v)) q `((let [~k ~v] ~@(if (empty? bindings) body (list (step bindings body))))))
                                                          `(let [~k ~v] ~@(if (empty? bindings) body (list (step bindings body))))))]
-                         (concat (list (step (partition 2 bindings) (rewrite-body menv symf q body)))
-                                 (rewrite-body menv symf q exprs)))
-      :value             (if (has-%? menv val)
+                         (concat (list (step (partition 2 bindings) (rewrite-body menv q body)))
+                                 (rewrite-body menv q exprs)))
+      :value             (if (persents menv val)
                            (list (poll-n menv (count (persents menv val)) q
-                                         (push-binding! (rewrite-stars val) (rewrite-body menv symf q exprs))))
-                           (push-binding! (rewrite-stars val) (rewrite-body menv symf q exprs)))
-      :expr              (rewrite-body menv symf q (cons val exprs)))))
+                                         (push-binding! (rewrite-stars val) (rewrite-body menv q exprs))))
+                           (push-binding! (rewrite-stars val) (rewrite-body menv q exprs)))
+      :expr              (rewrite-body menv q (cons val exprs)))))
 
 (defn filename->name [file]
   (-> (str/split file #"\.")
@@ -294,7 +275,6 @@
 
 (defmacro deftest [nom q assert-count & body]
   (let [cljs? (cljs? &env)
-        symf  (partial prefix-sym cljs?)
         !     (gensym "!")
         body  `(let [!done-count# (atom 0)
                      ~q           (q/queue)
@@ -305,24 +285,24 @@
                      ~'RCF__done  (fn []
                                     (swap! !done-count# inc)
                                     (when (= ~assert-count @!done-count#)
-                                      #_(~(symf 'do-report) {:type :end-test-var, :var '~nom})
+                                      #_(~(prefix-sym &env 'do-report) {:type :end-test-var, :var '~nom})
                                       ~(when cljs?
                                          `(cljs.test/update-current-env! [:testing-contexts] clojure.core/empty))
                                       (~'RCF__async__done)))
                      ~'RCF__bindings (binding-queue)]
-                 (binding [~@(when-not cljs? [(symf '*testing-vars*) `(conj ~(symf '*testing-vars*) '~nom)])]
-                   (~(symf 'do-report) {:type :begin-test-var, :var '~nom})
+                 (binding [~@(when-not cljs? [(prefix-sym &env '*testing-vars*) `(conj ~(prefix-sym &env '*testing-vars*) '~nom)])]
+                   (~(prefix-sym &env 'do-report) {:type :begin-test-var, :var '~nom})
                    (try (do ~@(replace-var &env {`! !, `q `(q/get-queue ~q)} body))
                         (catch ~(if cljs? 'js/Error 'Throwable) e#
-                          (~(symf 'do-report) {:type     :error,
+                          (~(prefix-sym &env 'do-report) {:type     :error,
                                                :message  "Uncaught exception, not in assertion."
                                                :expected nil,
                                                :actual   e#})))))]
     (cond
-      cljs?            `(do (~(symf 'deftest) ~nom (cljs.test/async ~'RCF__async__done ~body))
+      cljs?            `(do (~(prefix-sym &env 'deftest) ~nom (cljs.test/async ~'RCF__async__done ~body))
                             (when *enabled*
                               (~nom)))
-      *generate-tests* `(do (~(symf 'deftest) ~nom
+      *generate-tests* `(do (~(prefix-sym &env 'deftest) ~nom
                                               (let [~'RCF__async__done #()]
                                                 ~body))
                             (when *enabled*
@@ -345,9 +325,7 @@
         (:body val)))
     (:body x)))
 
-(defn asserts [[exprs]]
-  (->> (tree-seq nav-body nav-body exprs)
-       (filter #{:assert})))
+(defn asserts [[exprs]] (filter #{:assert} (tree-seq nav-body nav-body exprs)))
 
 (defmacro tests
   {:style/indent [:defn]}
@@ -364,10 +342,8 @@
                             (symbol)
                             (with-meta (assoc (meta &form)
                                               :ns (str *ns*))))
-          cljs?         (cljs? &env)
-          symf          (partial prefix-sym cljs?)
           menv          (-> (meta &form)
-                            (assoc :cljs cljs?)
+                            (assoc :cljs (cljs? &env))
                             (update :file #(or % (str *ns*)))
                             (merge &env))
           parsed        [(->> (cons 'tests body)
@@ -377,4 +353,4 @@
       (if (= ::s/invalid (first parsed))
         (throw (ex-info "Invalid syntax" (s/explain-data ::expr body)))
         `(deftest ~test-name-sym ~q ~(count (asserts parsed))
-           ~@(rewrite-body menv symf q parsed))))))
+           ~@(rewrite-body menv q parsed))))))
