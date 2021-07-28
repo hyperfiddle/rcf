@@ -168,11 +168,7 @@
 
 (defn push-binding! [expr exprs]
   (if (empty? exprs)
-    (if (phantom-effect? expr)
-      `(~expr)
-      `((let [x# ~expr] ;; compute once, swap! might retry
-          (swap! ~'RCF__bindings #(push-binding % x#))
-          x#)))
+    `(~expr)
     (if (phantom-effect? expr)
       `((do ~expr
             ~@exprs))
