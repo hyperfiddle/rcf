@@ -1,7 +1,7 @@
 #!/bin/bash
 
 echo "Clojure"
-clojure -X:test:example :dirs [\"example\"] :patterns [\"example.*\"]
+clojure -X:test:example :dirs "[\"example\" \"src\"]" :patterns "[\"example.*\" \"hyperfiddle.rcf.tests\"]"
 
 echo "Node"
 ./node_modules/.bin/shadow-cljs release :test

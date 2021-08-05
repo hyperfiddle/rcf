@@ -5,7 +5,7 @@
                       :output-dir "out/js"}
             :test    {:target    :node-test
                       :output-to "out/node-tests.js"
-                      :ns-regexp "^example.*"}
+                      :ns-regexp "^(hyperfiddle.rcf.tests|example.*)"}
             :browser-test {:target    :karma
                            :output-to "out/karma-tests.js"
-                           :ns-regexp "^example.*"}}}
+                           :ns-regexp "^(hyperfiddle.rcf.tests|example.*)"}}}

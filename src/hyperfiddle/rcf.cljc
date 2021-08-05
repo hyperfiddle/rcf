@@ -163,7 +163,7 @@
     (walk/postwalk #(case % _ (symbol (str "?_" (counter))) %) body)))
 
 (defn rewrite-assert [menv type actual expected]
-  `(try-expr ~(select-keys menv [:file :line :end-line :column :end-column :cljs]) nil (unifies? ~type ~actual ~(rewrite-wildcards expected))))
+  `(try-expr ~(select-keys menv [:file :line :end-line :column :end-column :cljs]) nil (unifies? ~type ~actual ~expected)))
 
 (defn var-name [var]
   (when var
