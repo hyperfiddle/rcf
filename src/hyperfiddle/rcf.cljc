@@ -35,7 +35,10 @@
   #?(:clj (alter-var-root #'*timeout* (constantly ms))
      :cljs (set! *timeout* ms)))
 
-(def ^{:doc "Function. Use it to push a value onto the RCF queue `(! 1)`"} !)
+(def ^{:doc "
+Function to push value to async queue, e.g. `(! 42)`. RCF redefines this var in tests context. For REPL
+convenience, defaults to println outside of tests context."}
+  ! println)
 
 (def ^{:doc "Queue behaving as a value. Assert `% := _` to pop from the it. Async, will time out after `:timeout` option, default to 1000 (ms)."} %)
 
