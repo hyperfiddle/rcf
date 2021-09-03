@@ -69,6 +69,11 @@ convenience, defaults to println outside of tests context."}
                     %)
                  body))
 
+(defn replace* [smap coll] (walk/prewalk #(get smap % %) coll))
+
+(defn spec->rcf [x] (replace* {::s/invalid ::invalid} x))
+(defn rcf->spec [x] (replace* {::invalid ::s/invalid} x))
+
 (defmacro try-expr
   "Used by the 'is' macro to catch unexpected exceptions.
   You don't call this."
@@ -80,22 +85,22 @@ convenience, defaults to println outside of tests context."}
            ~'RCF__done (fn [] (when-not @!done# (vswap! !done# not) (~'RCF__done)))]
        (try
          (let [~left#  ~(rewrite-stars left)
-               result# (unifies? ~type ~left# ~(rewrite-stars right))]
+               result# (unifies? ~type (spec->rcf ~left#) ~(rewrite-stars right))]
            (if result#
              (~(prefix-sym &env 'do-report)
               {:type     :pass,   :message ~msg,
                :file     ~file    :line    ~line :end-line ~end-line :column ~column :end-column ~end-column
-               :expected '~right, :actual  ~left#
+               :expected '~(rcf->spec right), :actual  ~(rcf->spec left#)
                :doc      *doc*})
              (~(prefix-sym &env 'do-report)
-              {:type     :fail,   :message ~(str msg " in " left),
+              {:type     :fail,   :message ~(str msg " in " (rcf->spec left)),
                :file     ~file    :line    ~line  :end-line    ~end-line :column ~column :end-column ~end-column
-               :expected '~right, :actual  ~left# :assert-type ~type
+               :expected '~(rcf->spec right), :actual  (rcf->spec ~left#) :assert-type ~type
                :doc      *doc*}))
            ~left#)
          (catch ~(if (cljs? &env) :default 'Throwable) t#
            (~(prefix-sym &env 'do-report)
-            {:type       :error, :message ~(str msg " in " (::form (meta left) left)),
+            {:type       :error, :message ~(str msg " in " (::form (meta left) (rcf->spec left))),
              :file       ~file
              :line       ~line
              :end-line   ~end-line
@@ -351,9 +356,10 @@ convenience, defaults to println outside of tests context."}
                             (merge &env))
           parsed        [(->> (cons 'tests body)
                               rewrite-infix
+                              (spec->rcf)
                               (s/conform ::expr))]
           q             (gensym "q")]
       (if (= ::s/invalid (first parsed))
         (throw (ex-info "Invalid syntax" (s/explain-data ::expr body)))
         `(deftest ~test-name-sym ~q ~(count (asserts parsed))
-           ~@(rewrite-body menv q parsed))))))
+           (rcf->spec (do ~@(rewrite-body menv q parsed))))))))
