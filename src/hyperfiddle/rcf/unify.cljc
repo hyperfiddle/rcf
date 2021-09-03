@@ -59,7 +59,10 @@
                                env)
      (lvar? x)               (unify-in-env x y env)
      (lvar? y)               (unify-in-env y x env)
-     (every? seqable? [x y]) (unify (rest x) (rest y) (unify (first x) (first y) env))
+     (every? seqable? [x y]) (let [env (unify (first x) (first y) env)]
+                               (if (= ::fail env)
+                                 ::fail
+                                 (unify (rest x) (rest y) env)))
      :else                   ::fail)))
 
 (defn subst [form env]
