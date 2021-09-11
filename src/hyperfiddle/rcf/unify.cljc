@@ -11,6 +11,7 @@
   hyperfiddle.rcf.unify
   (:require [clojure.walk :as walk]
             #?(:clj [hyperfiddle.rcf.unify-macro :refer [create-var-unification-fn]])
+            #?(:cljs [hyperfiddle.rcf.unify-macro :refer [->Char]])
             #?(:cljs [hyperfiddle.rcf.unify-macro :refer-macros [create-var-unification-fn]])))
 
 (defn ignore-variable? [sym] (= '_ sym))
@@ -59,6 +60,13 @@
   (and (composite? form)
        (#{'&} (first form))))
 
+
+(defn first-in-coll [sequable]
+  #?(:clj (first sequable)
+     :cljs (if (string? sequable)
+             (->Char (first sequable))
+             (first sequable))))
+
 (defn- garner-unifiers
   "Attempt to unify x and y with the given bindings (if any). Potentially returns a map of the
    unifiers (bindings) found.  Will throw an `IllegalStateException` if the expressions
@@ -81,8 +89,8 @@
                                                  (rest y)
                                                  (garner-unifiers uv-fn
                                                                   variable?
-                                                                  (first x)
-                                                                  (first y)
+                                                                  (first-in-coll x)
+                                                                  (first-in-coll y)
                                                                   binds)))))
 
 (defn flatten-bindings

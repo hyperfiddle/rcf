@@ -14,10 +14,21 @@
 
 (def composite? seqable?)
 
+#?(:cljs
+   (deftype Char [c]
+     IEquiv
+     (-equiv [^Char this ^Char other]
+       (and (= (type this) (type other))
+            (= (.-c this) (.-c other))))))
+
+(defn seq* [coll]
+  #?(:clj (seq coll)
+     :cljs (if (string? coll) (map ->Char coll) (seq coll))))
+
 (defn occurs?
   "Does v occur anywhere inside expr?"
   [variable? v expr binds]
-  (loop [z (zip/zipper composite? seq #(do % %2) [expr])]
+  (loop [z (zip/zipper composite? seq* #(do % %2) [expr])]
     (let [current (zip/node z)]
       (cond
         (zip/end? z) false
