@@ -88,19 +88,19 @@ convenience, defaults to println outside of tests context."}
                result# (unifies? ~type (spec->rcf ~left#) ~(rewrite-stars right))]
            (if result#
              (~(prefix-sym &env 'do-report)
-              {:type     :pass,   :message ~msg,
+              {:type     ::pass,   :message ~msg,
                :file     ~file    :line    ~line :end-line ~end-line :column ~column :end-column ~end-column
                :expected '~(rcf->spec right), :actual  ~(rcf->spec left#)
                :doc      *doc*})
              (~(prefix-sym &env 'do-report)
-              {:type     :fail,   :message ~(str msg " in " (rcf->spec left)),
+              {:type     ::fail,   :message ~(str msg " in " (rcf->spec left)),
                :file     ~file    :line    ~line  :end-line    ~end-line :column ~column :end-column ~end-column
                :expected '~(rcf->spec right), :actual  (rcf->spec ~left#) :assert-type ~type
                :doc      *doc*}))
            ~left#)
          (catch ~(if (cljs? &env) :default 'Throwable) t#
            (~(prefix-sym &env 'do-report)
-            {:type       :error, :message ~(str msg " in " (::form (meta left) (rcf->spec left))),
+            {:type       ::error, :message ~(str msg " in " (::form (meta left) (rcf->spec left))),
              :file       ~file
              :line       ~line
              :end-line   ~end-line
@@ -302,7 +302,7 @@ convenience, defaults to println outside of tests context."}
                    (~(prefix-sym &env 'do-report) {:type :begin-test-var, :var '~nom})
                    (try (do ~@(replace-var &env {`! !, `q `(q/get-queue ~q)} body))
                         (catch ~(if cljs? 'js/Error 'Throwable) e#
-                          (~(prefix-sym &env 'do-report) {:type     :error,
+                          (~(prefix-sym &env 'do-report) {:type     ::error,
                                                :message  "Uncaught exception, not in assertion."
                                                :expected nil,
                                                :actual   e#})))))]

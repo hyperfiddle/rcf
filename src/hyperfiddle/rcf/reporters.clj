@@ -3,12 +3,12 @@
             [clojure.test :as t]
             [hyperfiddle.rcf.utils :as utils :refer [pprint testing-vars-str]]))
 
-(defmethod t/report :pass [_m]
+(defmethod t/report :hyperfiddle.rcf/pass [_m]
   (t/with-test-out
     (t/inc-report-counter :pass)
     (print "✅")))
 
-(defmethod t/report :fail [m]
+(defmethod t/report :hyperfiddle.rcf/fail [m]
   (t/with-test-out
     (t/inc-report-counter :fail)
     (prn)
@@ -27,7 +27,7 @@
     (prn)
     (prn)))
 
-(defmethod t/report :error [m]
+(defmethod t/report :hyperfiddle.rcf/error [m]
   (t/with-test-out
     (t/inc-report-counter :error)
     (prn)

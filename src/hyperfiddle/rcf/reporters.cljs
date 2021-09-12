@@ -11,7 +11,7 @@
     (str file ":" line (when column (str ":" column)) )))
 
 ;; For js console.
-(defmethod t/report [::t/default :pass] [m]
+(defmethod t/report [::t/default :hyperfiddle.rcf/pass] [m]
   (t/inc-report-counter! :pass)
   (if-not (exists? js/window) ;; NodeJS
     (js/console.log "✅")
@@ -25,7 +25,7 @@
           (when-let [message (:message m)]
             (println message))))))
 
-(defmethod t/report [::t/default :fail] [m]
+(defmethod t/report [::t/default :hyperfiddle.rcf/fail] [m]
   (t/inc-report-counter! :fail)
   (js/console.group (str "❌ " (testing-vars-str m)))
   (when (seq (:testing-contexts (t/get-current-env)))
@@ -34,7 +34,7 @@
   (t/print-comparison m)
   (js/console.groupEnd))
 
-(defmethod t/report [::t/default :error] [m]
+(defmethod t/report [::t/default :hyperfiddle.rcf/error] [m]
   (let [formatter-fn (or (:formatter (t/get-current-env)) pr-str)]
     (t/inc-report-counter! :error)
     (js/console.group (str "🔥" (testing-vars-str m)))
