@@ -193,6 +193,8 @@ Ran 1 tests containing 8 assertions.
 
 *Emacs has no output and tests are enabled* — check if your emacs supports emojis
 
+*How do I customize what’s printed at the REPL?* — copy interesting bits from default reporters ([clj](https://github.com/hyperfiddle/rcf/blob/03c821c3875c3dfe647c945430ecdc5a7c8b594f/src/hyperfiddle/rcf/reporters.clj), [cljs](https://github.com/hyperfiddle/rcf/blob/03c821c3875c3dfe647c945430ecdc5a7c8b594f/src/hyperfiddle/rcf/reporters.cljs)), and customize them.
+
 # Community
 
 &#35;hyperfiddle @ clojurians.net
