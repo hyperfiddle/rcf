@@ -27,6 +27,9 @@ Project maturity: experimental. The current development priority is great async 
 {:deps {hyperfiddle/rcf {:git/url "https://github.com/hyperfiddle/rcf.git" :sha ...}}}
 ```
 
+Breaking changes:
+ * 2021 Oct 20: custom reporters now dispatch on qualified keywords, see [#19](https://github.com/hyperfiddle/rcf/issues/19#issuecomment-946757852)
+
 [![JVM](https://github.com/hyperfiddle/rcf/actions/workflows/tests_clj.yml/badge.svg?branch=master)](https://github.com/hyperfiddle/rcf/actions/workflows/tests_clj.yml)
 [![NodeJS](https://github.com/hyperfiddle/rcf/actions/workflows/tests_node.yml/badge.svg?branch=master)](https://github.com/hyperfiddle/rcf/actions/workflows/tests_node.yml)
 [![Browser](https://github.com/hyperfiddle/rcf/actions/workflows/tests_browser.yml/badge.svg?branch=master)](https://github.com/hyperfiddle/rcf/actions/workflows/tests_browser.yml)
