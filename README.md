@@ -1,4 +1,4 @@
-# RCF – a REPL-first test macro for Clojure/Script
+# RCF – a REPL-first test macro for Clojure/Script (now with async tests!)
 
 RCF turns your Rich Comment Forms into tests (in the same file as your functions). Send form or file to REPL to run tests and it squirts dopamine ✅✅✅. It's good, try it!
 
@@ -6,7 +6,7 @@ RCF turns your Rich Comment Forms into tests (in the same file as your functions
 
 Features
 * Clojure/Script
-* Async tests (coming soon)
+* Async tests (new!)
 * No file watchers, no extra windows, no beeping, no latency
 * Natural REPL workflow
 * One key-chord to run tests
@@ -33,17 +33,17 @@ Project maturity: experimental. The current development priority is great async 
 
 # Usage
 
-`(tests)` blocks erase by default (macroexpanding to nothing), which avoids a startup time performance penalty as well as keeps them out of prod.
+`(tests)` blocks erase by default (macroexpanding to nothing), which avoids a startup time performance penalty as well as keeps tests out of prod.
 
 It's an easy one-liner to turn on tests in your entrypoint:
 
 ```clojure
-(ns user ; user is the default namespace loaded by REPL startup
+(ns user                                     ; user ns is loaded by REPL startup
   (:require [hyperfiddle.rcf]))
 
 (hyperfiddle.rcf/enable!)
 ```
-Tests are run when you send a file or form to your Clojure/Script REPL. In Cursive, that's cmd-shift-L to re-run the file.
+Tests are run when you send a file or form to your Clojure/Script REPL. In Cursive, that's cmd-shift-L to load the file.
 
 ```clojure
 (ns example
@@ -63,13 +63,11 @@ Tests are run when you send a file or form to your Clojure/Script REPL. In Cursi
   (def x (atom nil))
   {:a x, :b x} := {:a ?x, :b ?x}
 
-  "the usual REPL bindings"
-  :foo
-  :bar
-  :baz
-  *3 := :foo
-  *2 := :bar
-  *1 := :baz
+  "REPL bindings work"
+  (inc 1)
+  := 2
+  (dec *1)
+  := 1
 
   (tests
     "nested tests for convenience"
@@ -80,9 +78,7 @@ Loading src/example.cljc...
 ✅✅✅✅✅✅✅✅Loaded
 ```
 
-# Async tests (experimental)
-
-Coming soon
+# Async tests
 
 ```Clojure
 (ns example
@@ -96,10 +92,10 @@ Coming soon
   "async tests"
   #?(:clj  (tests
              (future
-               (rcf/! 1) (Thread/sleep 10)
+               (rcf/! 1) (Thread/sleep 10)        ; tap value to queue
                (rcf/! 2) (Thread/sleep 200)
                (rcf/! 3))
-             % := 1
+             % := 1                               ; pop queue
              % := 2
              % := ::rcf/timeout)
      :cljs (tests
@@ -145,10 +141,8 @@ Coming soon
             [hyperfiddle.rcf :refer [tests]]))
 
 ; wait to enable tests until after app namespaces are loaded (intended for subsequent REPL interactions) 
-#?(:clj  (alter-var-root #'hyperfiddle.rcf/*enabled* (constantly true))
-   :cljs (set! hyperfiddle.rcf/*enabled* true))
-
-Coming soon!
+(hyperfiddle.rcf/enable!)
+```
 
 # CI
 
@@ -189,11 +183,11 @@ Ran 1 tests containing 8 assertions.
 
 *One of my tests threw an exception, but the stack trace is empty?* — you want `{:jvm-opts ["-XX:-OmitStackTraceInFastThrow"]}` [explanation](https://web.archive.org/web/20190416091616/http://yellerapp.com/posts/2015-05-11-clojure-no-stacktrace.html) (this may be JVM specific)
 
-*I see no output* — RCF is off by default, run `(hyperfiddle.rcf/enable!)` to turn them on
+*I see no output* — RCF is off by default, run `(hyperfiddle.rcf/enable!)`
 
 *Emacs has no output and tests are enabled* — check if your emacs supports emojis
 
-*How do I customize what’s printed at the REPL?* — copy interesting bits from default reporters ([clj](https://github.com/hyperfiddle/rcf/blob/03c821c3875c3dfe647c945430ecdc5a7c8b594f/src/hyperfiddle/rcf/reporters.clj), [cljs](https://github.com/hyperfiddle/rcf/blob/03c821c3875c3dfe647c945430ecdc5a7c8b594f/src/hyperfiddle/rcf/reporters.cljs)), and customize them.
+*How do I customize what’s printed at the REPL?* — see [reporters.clj](https://github.com/hyperfiddle/rcf/blob/03c821c3875c3dfe647c945430ecdc5a7c8b594f/src/hyperfiddle/rcf/reporters.clj), [reporters.cljs](https://github.com/hyperfiddle/rcf/blob/03c821c3875c3dfe647c945430ecdc5a7c8b594f/src/hyperfiddle/rcf/reporters.cljs)
 
 # Community
 
