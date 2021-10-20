@@ -14,6 +14,8 @@
             [hyperfiddle.rcf.time :as time]))
 
 #?(:cljs (goog-define ^boolean ENABLED false))
+#?(:cljs (goog-define ^boolean TIMEOUT 1000))
+#?(:cljs (goog-define ^boolean GENERATE-TESTS false))
 
 ;; "Set this to true if you want to generate clojure.test compatible tests. This
 ;; will define testing functions in your namespace using `deftest`. Defaults to
@@ -26,10 +28,10 @@
      :cljs (set! *enabled* (if (some? v) v true))))
 
 #?(:clj  (def ^:dynamic *generate-tests* (= "true" (System/getProperty "hyperfiddle.rcf.generate-tests")))
-   :cljs (goog-define ^boolean ^:dynamic *generate-tests* false))
+   :cljs (def ^boolean ^:dynamic *generate-tests* GENERATE-TESTS))
 
 #?(:clj (def ^:dynamic *timeout* (or (System/getProperty "hyperfiddle.rcf.timeout") 1000))
-   :cljs (goog-define ^:dynamic *timeout* 1000))
+   :cljs (def ^:dynamic *timeout* TIMEOUT))
 
 (defn set-timeout! [ms]
   #?(:clj (alter-var-root #'*timeout* (constantly ms))
