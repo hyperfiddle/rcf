@@ -44,8 +44,6 @@ convenience, defaults to println outside of tests context."}
 
 (def ^{:doc "Queue backing `%`. Exposed to help you debug timing out tests."} q)
 
-(def ^:dynamic *doc* nil)
-
 (s/def ::effect (s/and seq?
                        #(not (#{'let 'let* := :<> 'tests} (first %)))
                        (s/cat :body (s/+ ::expr))))
@@ -90,25 +88,22 @@ convenience, defaults to println outside of tests context."}
              (~(prefix-sym &env 'do-report)
               {:type     ::pass,   :message ~msg,
                :file     ~file    :line    ~line :end-line ~end-line :column ~column :end-column ~end-column
-               :expected '~(rcf->spec right), :actual  ~(rcf->spec left#)
-               :doc      *doc*})
+               :expected '~(rcf->spec right), :actual  ~(rcf->spec left#)})
              (~(prefix-sym &env 'do-report)
-              {:type     ::fail,   :message ~(str msg " in " (rcf->spec left)),
+              {:type     ::fail,   :message ~(str/triml (str msg " in " (rcf->spec left))),
                :file     ~file    :line    ~line  :end-line    ~end-line :column ~column :end-column ~end-column
-               :expected '~(rcf->spec right), :actual  (rcf->spec ~left#) :assert-type ~type
-               :doc      *doc*}))
+               :expected '~(rcf->spec right), :actual  (rcf->spec ~left#) :assert-type ~type}))
            ~left#)
          (catch ~(if (cljs? &env) :default 'Throwable) t#
            (~(prefix-sym &env 'do-report)
-            {:type       ::error, :message ~(str msg " in " (::form (meta left) (rcf->spec left))),
+            {:type       ::error, :message ~(str/triml (str msg " in " (::form (meta left) (rcf->spec left)))),
              :file       ~file
              :line       ~line
              :end-line   ~end-line
              :column     ~column
              :end-column ~end-column
              :expected   '~form,
-             :actual     t#
-             :doc        *doc*}))
+             :actual     t#}))
          (finally
            (~'RCF__done))))))
 
@@ -225,9 +220,9 @@ convenience, defaults to println outside of tests context."}
 
 (defmacro testing' [doc & body]
   (if (cljs? &env)
-    `(do (cljs.test/update-current-env! [:doc] (constantly ~doc))
+    `(do (cljs.test/update-current-env! [:testing-contexts] (constantly (list ~doc)))
          ~@body)
-    `(binding [*doc* ~doc]
+    `(binding [t/*testing-contexts* (list ~doc)]
        ~@body)))
 
 (defn rewrite-body [menv q exprs]
