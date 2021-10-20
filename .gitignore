@@ -5,5 +5,7 @@
 .rebel_readline_history
 .idea
 out/js
-/out/main.js
-/node_modules
+*.js
+*.js.map
+*.DS_Store
+node_modules
