@@ -196,8 +196,4 @@ Ran 1 tests containing 8 assertions.
 
 &#35;hyperfiddle @ clojurians.net
 
-# Acknowledgments
-
-Thank you to https://github.com/tristefigure for discovery and exploration of various ClojureScript compiler monkey patches that we considered in order to avoid the flag. RCF was not easy to make.
-
-![Scroll Of Truth meme saying "you do not really understand something until you can explain it as a passing test".](./doc/meme.png)
+![Scroll Of Truth meme saying "you do not really understand something until you can explain it as a passing test".](./doc/meme.jpg)
