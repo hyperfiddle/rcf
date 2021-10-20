@@ -6,3 +6,4 @@
 .idea
 out/js
 /out/main.js
+/node_modules
