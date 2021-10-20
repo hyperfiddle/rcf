@@ -38,20 +38,15 @@
   (def x (atom nil))
   {:a x, :b x} := {:a ?x, :b ?x}
 
-  "the usual REPL bindings"
-  :foo
-  :bar
-  :baz
-  *3 := :foo
-  *2 := :bar
-  *1 := :baz
+  "REPL bindings work"
+  (inc 1)
+  := 2
+  (dec *1)
+  := 1
 
   (tests
     "nested tests are sometimes convenient"
-    1 := 1)
-
-  "inequality"
-  1 :<> 2)
+    1 := 1))
 
 (tests {:timeout 100}
   "async tests"
