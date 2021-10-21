@@ -20,7 +20,7 @@ Deeper goal: **a notation for communication**
 RCF is specifically engineered to support [hyperfiddle/photon, our upcoming reactive dialect of Clojure](https://hyperfiddle.notion.site/Reactive-Clojure-You-don-t-need-a-web-framework-you-need-a-web-language-44b5bfa526be4af282863f34fa1cfffc), that we intend to test, document and teach with RCF.
 
 Hype quotes:
-* "I used hyperfiddle/RCF in a recent successful interview. RCF was a massive help in communication and a fast tool for thought whilst under the conditions of technical interview. Without rcf I wouldn't have done half as well!"
+* "I used hyperfiddle/RCF in a recent successful interview. RCF was a massive help in communication and a fast tool for thought whilst under the conditions of technical interview."
 * "I currently use this to do leetcode style questions as 'fun practice.' It certainly didn't feel fun before!"
 * "I think people make the mistake of comparing this with other methods of inlining tests near their function definitions (which has been possible, though uncommon, for a long time). The integration with the REPL, low syntax/interface, reduces friction and makes testing more attractive as a language of communication and verification."
 
