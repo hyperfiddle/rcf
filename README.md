@@ -134,19 +134,6 @@ Loading src/example.cljc...
   (dispose))
 ```
 
-# Configuration
-
-`(tests)` blocks erase by default (macroexpanding to nothing). They will only run and assert under a flag:
-
-```Clojure
-(ns dev-entrypoint
-  (:require [example] ; transitive inline tests will erase
-            [hyperfiddle.rcf :refer [tests]]))
-
-; wait to enable tests until after app namespaces are loaded (intended for subsequent REPL interactions) 
-(hyperfiddle.rcf/enable!)
-```
-
 # CI
 
 To run in CI, configure a JVM flag for RCF to generate clojure.test deftests, and then run them with clojure.test. [Github actions example](https://github.com/hyperfiddle/rcf/tree/master/.github/workflows).
