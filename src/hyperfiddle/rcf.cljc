@@ -47,12 +47,12 @@ convenience, defaults to println outside of tests context."}
 (def ^{:doc "Queue backing `%`. Exposed to help you debug timing out tests."} q)
 
 (s/def ::effect (s/and seq?
-                       #(not (#{'let 'let* := :<> 'tests} (first %)))
+                       #(not (#{`let `let* := :<> 'tests} (first %)))
                        (s/cat :body (s/+ ::expr))))
 
 (s/def ::expr (s/or :tests  (s/cat :tests #{'tests}     :opts (s/? map?)  :body (s/* (s/or :effect ::effect, :expr ::expr)))
                     :assert (s/cat :eq    #{:= :<>}     :actual any?      :expected any?)
-                    :let    (s/cat :let   #{'let 'let*} :bindings vector? :body (s/* ::expr))
+                    :let    (s/cat :let   #{`let `let*} :bindings vector? :body (s/* ::expr))
                     :string string?
                     :value  any?))
 
