@@ -34,6 +34,7 @@ Project maturity: experimental. The current development priority is great async 
 ```
 
 Breaking changes:
+ * 2021 Dec 18: clojurescript dependency is now under the :cljs alias, see #25.
  * 2021 Oct 20: custom reporters now dispatch on qualified keywords, see [#19](https://github.com/hyperfiddle/rcf/issues/19#issuecomment-946757852)
 
 [![JVM](https://github.com/hyperfiddle/rcf/actions/workflows/tests_clj.yml/badge.svg?branch=master)](https://github.com/hyperfiddle/rcf/actions/workflows/tests_clj.yml)

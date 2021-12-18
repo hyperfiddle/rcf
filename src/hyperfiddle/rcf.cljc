@@ -3,11 +3,10 @@
   #?(:cljs (:require-macros [hyperfiddle.rcf :refer [tests]]))
   (:require #?(:clj [clojure.test :as t]
                :cljs [cljs.test :as t])
-            [cljs.analyzer.api :as ana-api]
-            [cljs.analyzer :as ana]
             [clojure.spec.alpha :as s]
             [clojure.string :as str]
             [clojure.walk :as walk]
+            [hyperfiddle.rcf.cljs-analyzer :as ana]
             [hyperfiddle.rcf.reporters]
             [hyperfiddle.rcf.unify :refer [unifier]]
             [hyperfiddle.rcf.queue :as q]
@@ -177,7 +176,7 @@ convenience, defaults to println outside of tests context."}
 
 (defn resolve'
   ([x] #?(:clj (var-name (resolve x))))
-  ([env x] (:name (ana-api/resolve env x))))
+  ([env x] (:name (ana/resolve env x))))
 
 (defn persents [env form]
   (let [resolver (if (cljs? env) (partial resolve' env) resolve')
@@ -317,7 +316,7 @@ convenience, defaults to println outside of tests context."}
 
 (defn should-run-tests? [menv]
   (if (cljs? menv)
-    ana/*load-tests*
+    (ana/load-tests?)
     #?(:clj (and t/*load-tests* ; standard clojure.test way of skipping tests
                  (not *compile-files*) ; no tests in AOT compiled code
                  (or *enabled* *generate-tests*)))))

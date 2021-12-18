@@ -1,4 +1,4 @@
-{:deps     {:aliases [:example]}
+{:deps     {:aliases [:cljs]}
  :dev-http {8000 "out"}
  :builds   {:browser {:target     :browser
                       :modules    {:main {:entries [dev-entrypoint]}}
