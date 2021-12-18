@@ -26,7 +26,7 @@ jobs:
         run: npm install shadow-cljs
 
       - name: Compile Tests
-        run: ./node_modules/.bin/shadow-cljs compile :test
+        run: ./node_modules/.bin/shadow-cljs -A:cljs:test compile :test
 
       - name: Run Tests
         run: node out/node-tests.js

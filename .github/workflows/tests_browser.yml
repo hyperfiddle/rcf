@@ -26,7 +26,7 @@ jobs:
         run: npm install --also dev
 
       - name: Compile Tests
-        run: ./node_modules/.bin/shadow-cljs compile :browser-test
+        run: ./node_modules/.bin/shadow-cljs -A:cljs:test compile :browser-test
 
       - name: Run Tests
         run: ./node_modules/.bin/karma start --single-run
