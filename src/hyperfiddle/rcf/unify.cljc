@@ -2,7 +2,8 @@
 ;; compatible out of the box.
 
 (ns hyperfiddle.rcf.unify
-  (:require [clojure.walk :as walk]))
+  (:require [clojure.walk :as walk]
+            [clojure.set :as set]))
 
 (defn wildcard? [x] (= '_ x))
 
@@ -38,11 +39,44 @@
 
 (defn ground [env]
   (if (map? env)
-    (let [env (reduce-kv (fn [env k v] (assoc env k (resolve* env k))) env env)]
+    (let [env (reduce-kv (fn [env k _v] (assoc env k (resolve* env k))) env env)]
       (if (contains? env '_)
         (update env '_ (fn [xs] (mapv (fn [x] (if (lvar? x) (get env x) x)) xs)))
         env))
     env))
+
+(declare unify)
+
+(defn unify-set [xs ys env]
+  (if (seq (set/intersection xs ys))
+    (unify-set (set/difference xs ys) (set/difference ys xs) env)
+    (let [env (unify (first xs) (first ys) env)]
+      (if (= ::fail env)
+        ::fail
+        (unify (rest xs) (rest ys) env)))))
+
+(defn replace-keys [m ks-map]
+  (reduce-kv (fn [r k v]
+               (-> (dissoc r k)
+                   (assoc (if (= k '_)
+                            (or (first (set/difference (set (get ks-map '_)) (set (keys r))))
+                                '_)
+                            (get ks-map k k))
+                          v)))
+             m m))
+
+(defn unify-map [xs ys env]
+  (let [env (unify-set (set (keys xs)) (set (keys ys)) env)
+        xs  (replace-keys xs env)
+        ys  (replace-keys ys env)]
+    (if (= xs ys)
+      env
+      (reduce (fn [env k]
+                (let [env (unify (find xs k) (find ys k) env)]
+                  (if (= ::fail env)
+                    (reduced ::fail)
+                    env)))
+              env (set/union (set (keys xs)) (set (keys ys)))))))
 
 (defn unify
   ([x y] (unify x y {}))
@@ -59,6 +93,8 @@
                                env)
      (lvar? x)               (unify-in-env x y env)
      (lvar? y)               (unify-in-env y x env)
+     (and (set? x) (set y))  (unify-set x y env)
+     (and (map? x) (map? y)) (unify-map x y env)
      (every? seqable? [x y]) (let [env (unify (first x) (first y) env)]
                                (if (= ::fail env)
                                  ::fail
