@@ -1,13 +1,16 @@
 {:paths   ["src"]
- :deps    {org.clojure/clojure {:mvn/version "1.10.3"}}
+ :deps    {org.clojure/clojure            {:mvn/version "1.10.3"}
+           meander/epsilon                {:mvn/version "0.0.650"}
+           org.clojure/tools.analyzer     {:mvn/version "1.1.0"}
+           org.clojure/tools.analyzer.jvm {:mvn/version "1.2.2"}}
  :aliases {:cljs {:extra-deps {org.clojure/clojurescript {:mvn/version "1.10.896"}}}
+           :dev  {:extra-deps {thheller/shadow-cljs {:mvn/version "2.16.8"}}}
            :test {:jvm-opts    ["-XX:-OmitStackTraceInFastThrow"
                                 "-Dhyperfiddle.rcf.generate-tests=true"]
                   :extra-paths ["example"]
-                  :extra-deps  {thheller/shadow-cljs   {:mvn/version "2.16.8"}
-                                missionary/missionary  {:mvn/version "b.24"}
-                                org.clojure/core.async {:mvn/version "1.5.648"}
-                                io.github.cognitect-labs/test-runner
-                                {:git/url "https://github.com/cognitect-labs/test-runner.git"
-                                 :sha     "cc75980b43011773162b485f46f939dc5fba91e4"}}
+                  :extra-deps  {thheller/shadow-cljs                 {:mvn/version "2.16.8"}
+                                missionary/missionary                {:mvn/version "b.24"}
+                                org.clojure/core.async               {:mvn/version "1.5.648"}
+                                io.github.cognitect-labs/test-runner {:git/url "https://github.com/cognitect-labs/test-runner.git"
+                                                                      :sha     "cc75980b43011773162b485f46f939dc5fba91e4"}}
                   :exec-fn     cognitect.test-runner.api/test}}}

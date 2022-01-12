@@ -1,6 +1,7 @@
 (ns example
-  (:require [hyperfiddle.rcf :as rcf :refer [tests ! %]]
-            [clojure.core.async :refer [chan >! go go-loop <! timeout close!]]
+  (:require [clojure.core.async :refer [chan >! go go-loop <! timeout close!]]
+            [clojure.test :as t]
+            [hyperfiddle.rcf :as rcf :refer [tests ! %]]
             [missionary.core :as m]))
 
 (defn get-extension [path]
@@ -22,64 +23,66 @@
   (get-extension "image.blah.png") := "png"
   (get-extension "image.blah..png") := "png")
 
-; features
 
 (tests
   "equality"
   (inc 1) := 2
 
   "wildcards"
-  {:a :b, :b [2 :b]} := {:a _, _ [2 _]}
+  {:a :b, :b [2 :b]} := '{:a _, _ [2 _]}
 
   "unification"
-  {:a :b, :b [2 :b]} := {:a ?b, ?b [2 ?b]}
+  {:a :b, :b [2 :b]} := '{:a ?b, ?b [2 ?b]}
 
   "unification on reference types"
   (def x (atom nil))
-  {:a x, :b x} := {:a ?x, :b ?x}
+  {:a x, :b x} := '{:a ?x, :b ?x}
 
   "REPL bindings work"
   (inc 1)
   := 2
-  (dec *1)
-  := 1
+  ;; (dec *1) := 1 ;; FIXME
 
   (tests
-    "nested tests are sometimes convenient"
-    1 := 1))
+   "nested tests are sometimes convenient"
+   1 := 1))
 
-(tests {:timeout 100}
+(tests
+  (rcf/set-timeout! 100)
   "async tests"
   #?(:clj  (tests
-             (future
-               (rcf/! 1) (Thread/sleep 10)
-               (rcf/! 2) (Thread/sleep 200)
-               (rcf/! 3))
-             % := 1
-             % := 2
-             % := ::rcf/timeout)
+            (future
+              (rcf/! 1) (Thread/sleep 10)
+              (rcf/! 2) (Thread/sleep 200)
+              (rcf/! 3))
+            % := 1
+            % := 2
+            % := ::rcf/timeout)
      :cljs (tests
-             (defn setTimeout [f ms] (js/setTimeout ms f))
-             (rcf/! 1) (setTimeout 10 (fn []
-             (rcf/! 2) (setTimeout 200 (fn []
-             (rcf/! 3)))))
-             % := 1
-             % := 2
-             % := ::rcf/timeout)))
+            (defn set-timeout [f ms] (js/setTimeout ms f))
+            (rcf/! 1) (set-timeout 10 (fn []
+                                       (rcf/! 2) (set-timeout 200 (fn []
+                                                                   (rcf/! 3)))))
+            % := 1
+            % := 2
+            % := ::rcf/timeout
+            )))
+
 
 (tests
   "core.async"
   (def c (chan))
   (go-loop [x (<! c)]
-           (when x
-             (<! (timeout 10))
-             (! x)
-             (recur (<! c))))
+    (when x
+      (<! (timeout 10))
+      (! x)
+      (recur (<! c))))
   (go (>! c :hello) (>! c :world))
   % := :hello
   % := :world
-  (close! c)
+  (close! c))
 
+(tests
   "missionary"
   (def !x (atom 0))
   (def dispose ((m/reactor (m/stream! (m/ap (! (inc (m/?< (m/watch !x)))))))

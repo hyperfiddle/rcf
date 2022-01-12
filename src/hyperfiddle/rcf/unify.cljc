@@ -11,6 +11,12 @@
 
 (defn lvar? [x] (and (symbol? x) (= \? (first (name x)))))
 
+(defrecord Fail [env])
+
+(defn failed? [env] (instance? Fail env))
+
+#?(:clj (defmethod print-method Fail [o w] (.write w (pr-str (.env o)))))
+
 (defn unify-in-env [x y env]
   (if (contains? env x)
     (let [y' (get env x)]
@@ -18,7 +24,7 @@
         env
         (if (lvar? y')
           (unify-in-env y' y env)
-          (assoc env x ::fail))))
+          (Fail. (assoc env x ::fail)))))
     (assoc env x y)))
 
 (defn wildcard-in-env [v env]
@@ -51,8 +57,8 @@
   (if (seq (set/intersection xs ys))
     (unify-set (set/difference xs ys) (set/difference ys xs) env)
     (let [env (unify (first xs) (first ys) env)]
-      (if (= ::fail env)
-        ::fail
+      (if (failed? env)
+        env
         (unify (rest xs) (rest ys) env)))))
 
 (defn replace-keys [m ks-map]
@@ -73,33 +79,37 @@
       env
       (reduce (fn [env k]
                 (let [env (unify (find xs k) (find ys k) env)]
-                  (if (= ::fail env)
-                    (reduced ::fail)
+                  (if (failed? env)
+                    (reduced env)
                     env)))
               env (set/union (set (keys xs)) (set (keys ys)))))))
+
+;; Javascript do not have chars. So iterating a string always produce more strings -> StackOverflow.
+(defn collection? [x] (and (seqable? x) (not (string? x))))
 
 (defn unify
   ([x y] (unify x y {}))
   ([x y env]
    (cond
-     (wildcard? x)           (wildcard-in-env y env)
-     (wildcard? y)           (wildcard-in-env x env)
-     (= x y)                 env
-     (&? x)                  (if (seq y)
-                               (unify (second x) (seq y) env)
-                               env)
-     (&? y)                  (if (seq x)
-                               (unify (second y) (seq x) env)
-                               env)
-     (lvar? x)               (unify-in-env x y env)
-     (lvar? y)               (unify-in-env y x env)
-     (and (set? x) (set y))  (unify-set x y env)
-     (and (map? x) (map? y)) (unify-map x y env)
-     (every? seqable? [x y]) (let [env (unify (first x) (first y) env)]
-                               (if (= ::fail env)
-                                 ::fail
-                                 (unify (rest x) (rest y) env)))
-     :else                   ::fail)))
+     (failed? env)              env
+     (wildcard? x)              (wildcard-in-env y env)
+     (wildcard? y)              (wildcard-in-env x env)
+     (= x y)                    env
+     (&? x)                     (if (seq y)
+                                  (unify (second x) (seq y) env)
+                                  env)
+     (&? y)                     (if (seq x)
+                                  (unify (second y) (seq x) env)
+                                  env)
+     (lvar? x)                  (unify-in-env x y env)
+     (lvar? y)                  (unify-in-env y x env)
+     (and (set? x) (set y))     (unify-set x y env)
+     (and (map? x) (map? y))    (unify-map x y env)
+     (every? collection? [x y]) (let [env (unify (first x) (first y) env)]
+                                  (if (failed? env)
+                                    env
+                                    (unify (rest x) (rest y) env)))
+     :else                      (Fail. env))))
 
 (defn subst [form env]
   (let [idx      (volatile! -1)
@@ -114,9 +124,10 @@
 
 (defn unifier* [x y]
   (let [env (unify x y)]
-    (if (= ::fail env)
-      [::fail ::fail]
+    (if (failed? env)
+      [::fail env]
       (let [env (ground env)]
         [(subst y env) env]))))
 
 (def unifier (comp first unifier*))
+

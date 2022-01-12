@@ -9,10 +9,6 @@
 (defn pprint [x]
   (print (str/trimr (pprint-str x))))
 
-(defn testing-vars-str [m]
-  (let [{:keys [file line]} m]
-    (str file ":" line )))
-
 (defn cleanup [form]
   (walk/postwalk (fn [x]
                    (cond

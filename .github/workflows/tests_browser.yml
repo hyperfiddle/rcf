@@ -1,7 +1,7 @@
 name: Browser
 on: [push]
 jobs:
-  node:
+  browser:
     runs-on: [ubuntu-latest]
     steps:
       - name: Checkout

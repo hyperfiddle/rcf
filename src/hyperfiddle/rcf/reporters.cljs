@@ -15,6 +15,7 @@
   (t/inc-report-counter! :pass)
   (if-not (exists? js/window) ;; NodeJS
     (js/console.log "✅")
+    #_(js/console.log "\n✅" (pr-str (:expected m)) "=>" (pr-str (:actual m)))
     (do (js/console.groupCollapsed "✅" (testing-vars-str m))
         (let [[a b] (utils/extract-comparison m)]
           (when (seq (:testing-contexts (t/get-current-env)))
