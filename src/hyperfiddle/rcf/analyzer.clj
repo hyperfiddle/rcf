@@ -95,6 +95,7 @@
          macroexpanded (if (cljs? env)
                          (let [ast (binding [a/*cljs-warnings* a/*cljs-warnings* #_(assoc a/*cljs-warnings* :undeclared-var false)]
                                      (with-redefs [;; a/elide-analyzer-meta (fn [m] (dissoc m ::a/analyzed ::form))
+                                                   a/resolve-existing-var (fn [env sym] (a/resolve-var env sym)) ;; disable warnings
                                                    a/macroexpand-1 (fn [env form]
                                                                      (let [form' (a/macroexpand-1* env form)]
                                                                        (when (not= form form')
@@ -145,3 +146,8 @@
   [{:keys [expr]} opts]
   (let [form (list 'quote (default/-emit-form* expr opts))]
     (with-meta form {::form form})))
+
+(defmethod default/-emit-form :let
+  [{:keys [bindings body]} opts]
+  `(let* [~@(default/emit-bindings bindings opts)]
+     (do ~(default/-emit-form* body opts))))

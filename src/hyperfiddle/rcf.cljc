@@ -43,7 +43,7 @@ convenience, defaults to println outside of tests context."}
   (if *generate-tests*
     `(deftest ~(gensym "rcf") ~@body)
     (when *enabled*
-      (apply impl/tests-clj &env body))))
+      (apply impl/tests &env body))))
 
 (defmacro deftest
   "Like `clojure.test/deftest`, but:
@@ -54,5 +54,9 @@ convenience, defaults to println outside of tests context."}
   [name & body]
   (apply impl/deftest &env name body))
 
-#?(:clj (defmethod t/assert-expr := [msg form] (impl/assert-unify `= msg form)))
-#?(:clj (defmethod t/assert-expr :<> [msg form] (impl/assert-unify `not= msg form)))
+(defn- push-binding [q d] (let [[c b _a] q] [d c b]))
+
+(defn push! [bindings val] (swap! bindings push-binding val))
+
+#?(:clj (defmethod t/assert-expr := [msg form] (impl/assert-unify {:message msg} `= form)))
+#?(:clj (defmethod t/assert-expr :<> [msg form] (impl/assert-unify {:message msg} `not= form)))

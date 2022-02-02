@@ -7,14 +7,14 @@
  '(do 1) := '(do 1))
 
 (tests
- (u/unify 1 '_) := '{_ [1]})
+ (u/unify 1 _) := '{_ [1]})
 
 (tests
  "Basics"
  (u/unify 1 1) := {}
  (u/unify 1 2) := (u/->Fail {})
- (u/unify 1 '_) := '{_ [1]}
- (u/unify 1 '?a) := '{?a 1}
+ (u/unify 1 _) := '{_ [1]}
+ (u/unify 1 ?a) := '{?a 1}
  (u/unify [1 2 3] '[_ _ ?a]) := '{_ [1 2], ?a 3}
 
  "Both sides"
@@ -38,7 +38,7 @@
 
 (tests
  "Composite"
- (u/unify {:first '?first  :last '?last    :genre :giallo}
+ (u/unify {:first ?first  :last ?last    :genre :giallo}
           {:first "Dario"  :last "Argento" :genre :giallo}) := '{?first "Dario", ?last "Argento"}
  (u/unify '[(?a * ?x | 2) + (?b * ?x) + ?c]
           '[?z + (4 * 5) + 3])                              := '{?c 3, ?x 5, ?b 4, ?z (?a * ?x | 2)}
@@ -57,13 +57,13 @@
  )
 
 (tests
- (u/unifier ['?first "Argento"]
-            ["Dario" '?last])             := ["Dario" "Argento"]
+ (u/unifier '[?first "Argento"]
+            '["Dario" ?last])             := ["Dario" "Argento"]
 
  (u/unifier '[(?a * ?x | 2) + (?b * ?x) + ?c]
             '[?z + (4 * 5) + 3])          := '[(?a * 5 | 2) + (4 * 5) + 3]
 
  (u/unifier '{?a 1 :b :a} '{?b 1 :b ?a})  := {:a 1, :b :a}
  (u/unifier {:a 1, :b 2} '{?a ?b, ?b ?a}) := ::u/fail
- (u/unifier '[?a ?b] '[?b ?a])           := [::u/cycle ::u/cycle]
+ (u/unifier '[?a ?b] '[?b ?a])            := [::u/cycle ::u/cycle]
  )

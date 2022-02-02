@@ -39,7 +39,20 @@
   (t/with-test-out
     (t/inc-report-counter :fail)
     (println "\n❌ FAIL in" (testing-vars-str m))
-    (when (seq t/*testing-contexts*) (println (t/testing-contexts-str)))
+    (when-let [doc (:testing-contexts m)] (println doc))
+    (when-let [message (:message m)] (println message))
+    (println "expected:" (pr-str (:rhs-value (:actual m))))
+    (println "  actual:" (pr-str (:lhs-value (:actual m))))
+    (println "      in:" (pr-str (:expected m)))
+    (if (not= :hyperfiddle.rcf.unify/fail (:env (:actual m)))
+      (println "     env:" (pr-str (:env (:actual m)))))))
+
+(defmethod t/report :hyperfiddle.rcf/expected-to-fail [m]
+  (t/with-test-out
+    (t/inc-report-counter :fail)
+    (println "\n🟠 expected failure in" (testing-vars-str m))
+    ;; (when (seq t/*testing-contexts*) (println (t/testing-contexts-str)))
+    (when-let [doc (:testing-contexts m)] (println doc))
     (when-let [message (:message m)] (println message))
     (println "expected:" (pr-str (:rhs-value (:actual m))))
     (println "  actual:" (pr-str (:lhs-value (:actual m))))
@@ -54,7 +67,8 @@
     (print "🔥 ")
     (print (str (testing-vars-str m) " "))
     (prn)
-    (when (seq t/*testing-contexts*) (println (t/testing-contexts-str)))
+    ;; (when (seq t/*testing-contexts*) (println (t/testing-contexts-str)))
+    (when-let [doc (:testing-contexts m)] (println doc))
     (when-let [message (:message m)] (println message))
     (let [actual (:actual m)]
       (if (instance? Throwable actual)

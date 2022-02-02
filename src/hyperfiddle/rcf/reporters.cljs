@@ -18,8 +18,9 @@
     #_(js/console.log "\n✅" (pr-str (:expected m)) "=>" (pr-str (:actual m)))
     (do (js/console.groupCollapsed "✅" (testing-vars-str m))
         (let [[a b] (utils/extract-comparison m)]
-          (when (seq (:testing-contexts (t/get-current-env)))
+          #_(when (seq (:testing-contexts (t/get-current-env)))
             (js/console.log (t/testing-contexts-str)))
+          (when-let [doc (:testing-contexts m)] (js/console.log doc))
           (js/console.log "  actual:" (pprint-str a))
           (js/console.log "expected:" (pprint-str b))
           (js/console.groupEnd)
@@ -29,8 +30,9 @@
 (defmethod t/report [::t/default :hyperfiddle.rcf/fail] [m]
   (t/inc-report-counter! :fail)
   (js/console.group (str "❌ " (testing-vars-str m)))
-  (when (seq (:testing-contexts (t/get-current-env)))
+  #_(when (seq (:testing-contexts (t/get-current-env)))
     (println (t/testing-contexts-str)))
+  (when-let [doc (:testing-contexts m)] (js/console.log doc))
   (when-let [message (:message m)] (println message))
   (t/print-comparison m)
   (js/console.groupEnd))
@@ -39,8 +41,9 @@
   (let [formatter-fn (or (:formatter (t/get-current-env)) pr-str)]
     (t/inc-report-counter! :error)
     (js/console.group (str "🔥" (testing-vars-str m)))
-    (when (seq (:testing-contexts (t/get-current-env)))
+    #_(when (seq (:testing-contexts (t/get-current-env)))
       (println (t/testing-contexts-str)))
+    (when-let [doc (:testing-contexts m)] (js/console.log doc))
     (when-let [message (:message m)] (println message))
     (println "  actual:")
     (js/console.error (:actual m))

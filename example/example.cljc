@@ -41,7 +41,7 @@
   "REPL bindings work"
   (inc 1)
   := 2
-  ;; (dec *1) := 1 ;; FIXME
+  (dec *1) := 1
 
   (tests
    "nested tests are sometimes convenient"
