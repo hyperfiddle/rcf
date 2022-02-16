@@ -5,7 +5,8 @@
             [clojure.tools.analyzer.jvm :as jvm]
             [clojure.tools.analyzer.passes.emit-form :as default]
             [clojure.tools.analyzer.passes.jvm.emit-form :as emit-form])
-  (:import (clojure.lang Compiler$LocalBinding)))
+  (:import (clojure.lang Compiler$LocalBinding)
+           #_(clojure.lang Var)))
 
 (defn cljs? [env] (some? (:js-globals env)))
 
@@ -87,6 +88,20 @@
     (create-ns ns)
     ns))
 
+#_(defn create-var
+  "Creates a Var for sym and returns it.
+   The Var gets interned in the env namespace."
+  [sym {:keys [ns]}]
+  (let [v (get-in (env/deref-env) [:namespaces ns :mappings (symbol (name sym))])]
+    (if (and v (or (class? v)
+                   (= ns (ns-name (.ns ^Var v) ))))
+      v
+      (let [meta (dissoc (meta sym) :inline :inline-arities #_:macro)
+            meta (if-let [arglists (:arglists meta)]
+                   (assoc meta :arglists (jvm/qualify-arglists arglists))
+                   meta)]
+        (intern ns (with-meta sym meta))))))
+
 ;; env is {:locals &env, :ns <some-ns>}
 (defn macroexpand-all
   ([env form] (macroexpand-all [] env form))
@@ -95,8 +110,8 @@
          macroexpanded (if (cljs? env)
                          (let [ast (binding [a/*cljs-warnings* a/*cljs-warnings* #_(assoc a/*cljs-warnings* :undeclared-var false)]
                                      (with-redefs [;; a/elide-analyzer-meta (fn [m] (dissoc m ::a/analyzed ::form))
-                                                   a/resolve-existing-var (fn [env sym] (a/resolve-var env sym)) ;; disable warnings
-                                                   a/macroexpand-1 (fn [env form]
+                                                   a/resolve-existing-var (fn resolve [env sym] (a/resolve-var env sym)) ;; disable warnings
+                                                   a/macroexpand-1 (fn macroexpand-1 [env form]
                                                                      (let [form' (a/macroexpand-1* env form)]
                                                                        (when (not= form form')
                                                                          (swap! forms assoc form' form))

@@ -60,3 +60,15 @@ convenience, defaults to println outside of tests context."}
 
 #?(:clj (defmethod t/assert-expr := [msg form] (impl/assert-unify {:message msg} `= form)))
 #?(:clj (defmethod t/assert-expr :<> [msg form] (impl/assert-unify {:message msg} `not= form)))
+
+#?(:clj (defmethod t/assert-expr ::fails-with [msg form] (impl/assert-unify {:message msg
+                                                                             :type    :hyperfiddle.rcf/expected-to-fail} `= form)))
+
+#_(defn run-ns-tests [ns]
+  (remove-ns ns)
+  (binding [*generate-tests* true
+            *enabled*        false]
+    (prn "Compiling…")
+    (require ns :reload)
+    (prn "Running tests…")
+    (clojure.test/run-tests ns)))

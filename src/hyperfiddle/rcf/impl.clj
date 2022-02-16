@@ -15,12 +15,12 @@
 
 (defn walk [inner outer form]
   (cond
-    (list? form)                            (outer form (apply list (map inner form)))
-    (instance? clojure.lang.IMapEntry form) (outer form (clojure.lang.MapEntry/create (inner (key form)) (inner (val form))))
-    (seq? form)                             (outer form (doall (map inner form)))
-    (instance? clojure.lang.IRecord form)   (outer form (reduce (fn [r x] (conj r (inner x))) form form))
-    (coll? form)                            (outer form (into (empty form) (map inner form)))
-    :else                                   (outer form form)))
+    (list? form)      (outer form (apply list (map inner form)))
+    (map-entry? form) (outer form (clojure.lang.MapEntry/create (inner (key form)) (inner (val form))))
+    (seq? form)       (outer form (doall (map inner form))) ;; Must be after `list?` and `map-entry?`
+    (record? form)    (outer form (reduce (fn [r x] (conj r (inner x))) form form))
+    (coll? form)      (outer form (into (empty form) (map inner form)))
+    :else             (outer form form)))
 
 (defn forward-metas [form form']
   (if (has-meta? form')
@@ -109,21 +109,27 @@
     ((m*/top-down-until done? (m*/attempt (m*/rewrite ~from ~to)))
      form)))
 
-(declare rewrite-%)
-
-(defn poll-n [body]
+(defn poll-n [step body]
   (let [% (gensym "%")]
     `(q/poll! ~'RCF__q ~'RCF__time_start (deref ~'RCF__timeout) :hyperfiddle.rcf/timeout
-              (fn [~%] ~(rewrite-% (replace-n `hyperfiddle.rcf/% % 1 `(do ~@body)))))))
+              (fn [~%] ~@(step (replace-n `hyperfiddle.rcf/% % 1 body))))))
 
 (defn count-%? [form] (count (filter #{`hyperfiddle.rcf/%} (tree-seq coll? identity form))))
 
+(defn has-%? [form]
+  (loop [xs (tree-seq coll? identity form)]
+    (cond
+      (empty? xs)                       false
+      (= `hyperfiddle.rcf/% (first xs)) true
+      :else                             (recur (rest xs)))))
+
+;; FIXME postwalk in postwalk, O(n²)
 (defn rewrite-% [form]
   (letfn [(step [exprs]
-            (cond (empty? exprs)                  exprs
-                  (pos? (count-%? (first exprs))) (list (poll-n exprs))
-                  :else                           (cons (first exprs) (step (rest exprs)))))]
-    (postwalk (fn [form]
+            (cond (empty? exprs)         exprs
+                  (has-%? (first exprs)) (list (poll-n step exprs))
+                  :else                  (cons (first exprs) (step (rest exprs)))))]
+    (prewalk (fn [form]
                 (if (seq? form)
                   (let [[op & exprs] form]
                     (if (do-op? op)
@@ -131,6 +137,12 @@
                       form))
                   form))
               form)))
+
+;; (hyperfiddle.rcf/tests
+;;  (hyperfiddle.rcf/! 1)
+;;  (hyperfiddle.rcf/! 2)
+;;  hyperfiddle.rcf/% := 1
+;;  hyperfiddle.rcf/% := 2)
 
 (defmacro binding-queue [] `(atom [nil nil nil]))
 
@@ -190,7 +202,7 @@
                    :else        (conj r x)))
                [] form)))
 
-(defn do*->do [form] (postwalk (fn [form] (if (= 'do* form) 'do form)) form))
+(defn do*->do [form] (prewalk (fn [form] (if (= 'do* form) 'do form)) form))
 
 (defn simplify-do [form]
   (with-meta
@@ -373,8 +385,8 @@
 
 (defn assert-unify [m pred [_op lhs rhs :as form]]
   (let [{:keys [:message :type]} m]
-    `(let [lhs#           ~lhs
-           rhs#           ~rhs
+    `(let [lhs#           (identity ~lhs) ;; guard against `clojure.core/let` spec invalid on `(let [_ ::s/invalid])``
+           rhs#           (identity ~rhs)
            [result# env#] (unifier* lhs# rhs#)]
        (if (~pred true (u/failed? env#))
          (do (do-report {:type     ~(or type :hyperfiddle.rcf/fail), :message ~message,
