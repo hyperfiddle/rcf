@@ -9,3 +9,6 @@ out/js
 *.js.map
 *.DS_Store
 node_modules
+.clj-kondo/
+.lsp/
+scratch/
