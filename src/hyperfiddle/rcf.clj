@@ -28,16 +28,14 @@
                                     (recur ss (conj r s))))))))
    ast))
 
-(defn star? [var-ast] (and (= :var (:op var-ast))
-                           (#{#'*1 #'*2 #'*3} (:var var-ast))))
-
 (defn rewrite-star [env ast]
   (ana/postwalk
    (ana/only-nodes #{:var}
                    (fn [var-ast]
                      (if-let [index (condp = (:var var-ast) #'*1 0, #'*2, 1 #'*3 2, nil)]
                        (-> (ana/analyze env `(~'RCF__peek! ~index))
-                           (assoc :raw-forms (list (:form var-ast))))
+                           (assoc :raw-forms (list (:form var-ast)))
+                           (assoc ::star true))
                        var-ast)))
    ast))
 
