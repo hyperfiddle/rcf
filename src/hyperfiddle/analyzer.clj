@@ -170,7 +170,7 @@
       (if (= form mform) ;; special-form invocation (can’t macroexpand further)
         (parse env mform)
         (-> (analyze env mform)
-            (update-in [:raw-forms] (fnil conj ()) form))))
+            (update-in [:raw-forms] (fnil conj ()) (list 'quote form)))))
     (analyze-const env form)))
 
 (defmethod -analyze :symbol [env sym]
@@ -479,7 +479,7 @@
   (let [form (-emit ast)]
     (if-let [original-forms (seq (:raw-forms ast))]
       (if (has-meta? form)
-        (vary-meta form assoc ::macroexpanded original-forms)
+        (vary-meta form assoc ::macroexpanded (vec original-forms))
         form)
       form)))
 
