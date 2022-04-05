@@ -3,7 +3,8 @@
             [clojure.test :as t]
             [clojure.walk :as walk]
             [hyperfiddle.analyzer :as ana]
-            [hyperfiddle.rcf.unify :as u]))
+            [hyperfiddle.rcf.unify :as u]
+            [hyperfiddle.rcf.reporters]))
 
 (def ^:dynamic *enabled* true)
 
@@ -182,11 +183,11 @@
     `(let [values# (list ~@args)
            result# (apply = values#)]
        (if result#
-         (t/do-report {:type     :pass
+         (t/do-report {:type     ::pass
                        :message  ~msg,
                        :expected '~form
                        :actual   (cons '= values#)})
-         (t/do-report {:type     :fail
+         (t/do-report {:type     ::fail
                        :message  ~msg,
                        :expected '~form
                        :actual   (list '~'not (cons '~'= values#))}))
@@ -199,12 +200,12 @@
            rhs#           (identity ~(second args))
            [result# env#] (u/unifier* lhs# rhs#)]
        (if-not (u/failed? env#)
-         (do (t/do-report {:type     :pass
+         (do (t/do-report {:type     ::pass
                            :message  ~msg,
                            :expected '~form
                            :actual   result#})
              result#)
-         (do (t/do-report {:type     :fail
+         (do (t/do-report {:type     ::fail
                            :message  ~msg,
                            :expected '~form
                            :actual   env#})
