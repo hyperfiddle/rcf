@@ -445,63 +445,68 @@
 
 (def ^:dynamic *emit-options* {})
 
-(defmulti emit (fn [ast] (:op ast)))
+(defmulti -emit (fn [ast] (:op ast)))
 
-(defmethod emit :const [ast] (:form ast))
+(defn emit [ast]
+  (if-let [original-forms (seq (:raw-forms ast))]
+    (vary-meta (-emit ast) assoc ::macroexpanded original-forms)
+    (-emit ast)))
 
-(defmethod emit :symbol [ast] (:form ast))
-(defmethod emit :var [ast] (:form ast))
+(defmethod -emit :const [ast] (:form ast))
 
-(defmethod emit :invoke [ast] (list* (emit (:fn ast)) (mapv emit (:args ast))))
+(defmethod -emit :symbol [ast] (:form ast))
+(defmethod -emit :var [ast] (:form ast))
 
-(defmethod emit :do [ast]
+(defmethod -emit :invoke [ast] (list* (emit (:fn ast)) (mapv emit (:args ast))))
+
+(defmethod -emit :do [ast]
   (if (and (:simplify-do *emit-options*)
            (= 1 (count (:statements ast))))
     (emit (first (:statements ast)))
     (list* 'do (mapv emit (:statements ast)))))
 
-(defmethod emit :vector [ast] (mapv emit (:items ast)))
-(defmethod emit :set [ast] (set (mapv emit (:items ast))))
-(defmethod emit :map [ast] (zipmap (mapv emit (:keys ast))
+(defmethod -emit :vector [ast] (mapv emit (:items ast)))
+(defmethod -emit :set [ast] (set (mapv emit (:items ast))))
+(defmethod -emit :map [ast] (zipmap (mapv emit (:keys ast))
                                    (mapv emit (:vals ast))))
 
-(defmethod emit :with-meta [ast] (with-meta (emit (:expr ast)) (:meta ast)))
+(defmethod -emit :with-meta [ast] (with-meta (emit (:expr ast)) (:meta ast)))
 
-(defmethod emit :try [ast] (list* 'try (emit (:body ast))
+(defmethod -emit :try [ast] (list* 'try (emit (:body ast))
                                   (concat (mapv emit (:catches ast))
                                           (mapv emit (:finally ast)))))
-(defmethod emit :catch [ast] (list 'catch (emit (:class ast)) (emit (:local ast)) (emit (:body ast))))
+(defmethod -emit :catch [ast] (list 'catch (emit (:class ast)) (emit (:local ast)) (emit (:body ast))))
 
-(defmethod emit :binding [ast]
+(defmethod -emit :binding [ast]
   (case (:local ast)
     :catch        (:form ast)
     (:let :letfn) [(:name ast) (emit (:init ast))]
     (:fn :arg)    (:name ast)))
 
-(defmethod emit :quote [ast] (:form ast))
+(defmethod -emit :quote [ast] (:form ast))
 
-(defmethod emit :if [ast] (list 'if (emit (:test ast)) (emit (:then ast)) (emit (:else ast))))
+(defmethod -emit :if [ast] (list 'if (emit (:test ast)) (emit (:then ast)) (emit (:else ast))))
 
-(defmethod emit :def [ast]
+(defmethod -emit :def [ast]
   (if-let [init (:init ast)]
     (list 'def (:name ast) (emit init))
     (list 'def (:name ast))))
 
-(defmethod emit :let [ast]
+(defmethod -emit :let [ast]
   (list 'let* (vec (mapcat identity (mapv emit (:bindings ast)))) (emit (:body ast))))
 
-(defmethod emit :loop [ast]
+(defmethod -emit :loop [ast]
   (list 'loop* (vec (mapcat identity (mapv emit (:bindings ast)))) (emit (:body ast))))
 
-(defmethod emit :fn [ast]
+(defmethod -emit :fn [ast]
   (if-let [name (some-> (:local ast) emit)]
     `(~'fn* ~name ~@(mapv emit (:methods ast)))
     `(~'fn* ~@(mapv emit (:methods ast)))))
 
-(defmethod emit :fn-method [ast]
+(defmethod -emit :fn-method [ast]
   (list (mapv emit (:params ast)) (emit (:body ast))))
 
-(defmethod emit :letfn [ast]
+(defmethod -emit :letfn [ast]
   (list 'letfn* (vec (mapcat identity (mapv emit (:bindings ast)))) (emit (:body ast))))
 
 
@@ -521,3 +526,17 @@
 (defn only-nodes [pred f] ;; use with *walk to skip some nodes
   (let [pred (if (set? pred) (comp pred :op) pred)]
     (fn [ast] (if (pred ast) (f ast) ast))))
+
+(defn children [ast]
+  (when (some? ast)
+    (mapcat (fn [child]
+              (let [child-ast (get ast child)]
+                (if (sequential? child-ast)
+                  child-ast
+                  (list child-ast))))
+            (:children ast))))
+(defn ast-seq
+  "Equivalent of `cc/tree-seq` on AST nodes"
+  [ast]
+  (when (some? ast)
+    (cons ast (mapcat ast-seq (children ast)))))

@@ -37,12 +37,14 @@
 (tests
  ((fn [a] a := 1) 1) := 1)
 
+(tests
+ "REPL bindings work"
+ (inc 1) := 2
+ (dec *1) := 1
+ 
+ (tests 1 2 3 *1 := 3, *2 := 3, *3 := 3))
 
-;;(tests
-;; "REPL bindings work"
-;; (inc 1) := 2
-;; (dec *1) := 1)
-;;
+
 ;;
 ;;(comment
 ;;  (tests
