@@ -1,6 +1,9 @@
 (ns hyperfiddle.rcf
-  (:require [hyperfiddle.analyzer :as ana]
-            [clojure.test :as t]))
+  (:require [clojure.string :as str]
+            [clojure.test :as t]
+            [clojure.walk :as walk]
+            [hyperfiddle.analyzer :as ana]
+            [hyperfiddle.rcf.unify :as u]))
 
 (def ^:dynamic *enabled* true)
 
@@ -56,22 +59,25 @@
 (defn rewrite-repl [env ast]
   (ana/prewalk (ana/only-nodes #{:do}
                                (fn [do-ast]
-                                 (assoc do-ast :statements
-                                        (loop [[s & ss] (:statements do-ast)
-                                               r        []]
-                                          (cond
-                                            (nil? s) r
-                                            (empty? ss) (recur ss (conj r s))
-                                            :else
-                                            (let [invoke-ast (-> (ana/analyze env '(RCF__push!))
-                                                                 (update :args conj s))]
-                                              (recur ss (conj r invoke-ast))))))))
+                                 (if-not (has-stars? do-ast)
+                                   do-ast
+                                   (assoc do-ast :statements
+                                          (loop [[s & ss] (:statements do-ast)
+                                                 r        []]
+                                            (cond
+                                              (nil? s) r
+                                              (empty? ss) (recur ss (conj r s))
+                                              :else
+                                              (let [invoke-ast (-> (ana/analyze env '(RCF__push!))
+                                                                   (update :args conj s))]
+                                                (recur ss (conj r invoke-ast)))))))))
                ast))
 
 
 (defmulti replace-sigil identity)
 (defmethod replace-sigil :default [sym] sym)
 (defmethod replace-sigil := [_sym] ::=)
+(defmethod replace-sigil '= [_sym] 'hyperfiddle.rcf/=)
 
 (defn make-is [env a b c]
   (let [sigil     (replace-sigil (:form b))
@@ -80,13 +86,31 @@
     (-> (make-macro-call env `(t/is))
         (update :args conj inner-ast))))
 
-;; (def rewrite-infix nil)
+(defn lvar? [ast]
+  (and (#{:var :symbol} (:op ast))
+       (or (= '_ (:form ast))
+           (str/starts-with? (str (:form ast)) "?"))))
+(defn has-lvars? [ast] (some? (first (filter lvar? (ana/ast-seq ast)))))
+
+(defn simplify-sigil [left center right]
+  (cond
+    (and (= :var (:op center))
+         (= 'hyperfiddle.rcf/= (ana/var-sym (:var center)))) '=
+    (and (= := (:form center))
+         (not (has-lvars? left))
+         (not (has-lvars? right))) '=
+    :else (:form center)))
+
 (defmulti rewrite-infix (fn [_env _left center _right] (:form center)))
-(defmethod rewrite-infix :default [env l c r] 
-  (let [sigil-ast (ana/analyze env (replace-sigil (:form c)))]
+(defmethod rewrite-infix :default [env l c r]
+  (let [sigil-ast  (ana/analyze env (replace-sigil (simplify-sigil l c r)))]
     (make-is env l sigil-ast r)))
 
-(defn sigil? [a] (contains? (methods t/assert-expr) (replace-sigil a)))
+(defn sigil? [ast]
+  (let [form (if (= :var (:op ast))
+               (ana/var-sym (:var ast))
+               (:form ast))]
+    (contains? (methods t/assert-expr) (replace-sigil form))))
 
 (defn rewrite-infix-pass [env ast]
   (ana/prewalk
@@ -97,10 +121,20 @@
                                    r []]
                               (if (>= (count ss) 3)
                                 (let [[a b c] ss]
-                                  (if (sigil? (:form b))
+                                  (if (sigil? b)
                                     (recur (drop 3 ss) (conj r (rewrite-infix env a b c)))
                                     (recur (rest ss) (conj r a))))
                                 (into r ss))))))
+   ast))
+
+(defn autoquote-lvars [env ast]
+  (ana/postwalk
+   (ana/only-nodes #{:var :symbol}
+                   (fn [ast]
+                     (if (lvar? ast)
+                       (-> (update ast :form #(list 'quote %))
+                           (update :raw-forms (fnil conj ()) (:form ast)))
+                       ast)))
    ast))
 
 (defn rewrite [env ast]
@@ -110,9 +144,9 @@
        (rewrite-doc env)
        (rewrite-star env)
        (rewrite-repl env)
-       ))
+       (autoquote-lvars env)))
 
-(defn tests* 
+(defn tests*
   ([exprs] (tests* nil exprs))
   ([env exprs]
    (when *enabled*
@@ -129,29 +163,52 @@
 ;; Nested test support
 (defmethod ana/macroexpand-hook `tests [_the-var _&form _&env args] `(do ~@args))
 
-(defn has-meta? [o] (instance? clojure.lang.IMeta o))
-
 (defn original-form [form]
-  (if (has-meta? form)
-    (or (first (::ana/macroexpanded (meta form)))
-        form)
-    form))
+  (walk/prewalk (fn [form]
+                  (if (ana/has-meta? form)
+                    (or (first (::ana/macroexpanded (meta form)))
+                        form)
+                    form))
+                form))
 
-(defmethod t/assert-expr ::= [msg form]
+;; We can use '= to prevent unification (ignore wildcards and ?vars)
+;; To avoid conflicts with cc/=, RCF symbolicaly desugares cc/= to rcf/=.
+;; So rcf/= need a var to resolve to.
+(def = clojure.core/=)
+
+(defmethod t/assert-expr 'hyperfiddle.rcf/= [msg form]
   (let [[_= & args] form
-        form        (cons := (map original-form args))]
+        form        (cons '= (map original-form args))]
     `(let [values# (list ~@args)
            result# (apply = values#)]
        (if result#
          (t/do-report {:type     :pass
                        :message  ~msg,
                        :expected '~form
-                       :actual   (cons := values#)})
+                       :actual   (cons '= values#)})
          (t/do-report {:type     :fail
                        :message  ~msg,
                        :expected '~form
-                       :actual   (list '~'not (cons := values#))}))
+                       :actual   (list '~'not (cons '~'= values#))}))
        (first values#))))
+
+(defmethod t/assert-expr ::= [msg form]
+  (let [[_= & args] form
+        form        (cons := (map original-form args))]
+    `(let [lhs#           (identity ~(first args))
+           rhs#           (identity ~(second args))
+           [result# env#] (u/unifier* lhs# rhs#)]
+       (if-not (u/failed? env#)
+         (do (t/do-report {:type     :pass
+                           :message  ~msg,
+                           :expected '~form
+                           :actual   result#})
+             result#)
+         (do (t/do-report {:type     :fail
+                           :message  ~msg,
+                           :expected '~form
+                           :actual   env#})
+             lhs#)))))
 
 
 (comment

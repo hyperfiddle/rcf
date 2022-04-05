@@ -29,8 +29,8 @@
     (is (= `(t/is (:default 1 1))
            (macroexpand-1 '(tests 1 :default 1)))))
   (testing "RCF rewrites some sigils to avoid conflicts" ;; extensible by a multimethod
-    (is (= `(t/is (::rcf/= 1 1))
-           (macroexpand-1 '(tests 1 := 1))))))
+    (is (= '(clojure.test/is (:hyperfiddle.rcf/= '_ '_))
+           (macroexpand-1 '(tests _ := _))))))
 
 ;; (comment
 ;;   (alter-var-root #'rcf/*generate-tests* (constantly false))

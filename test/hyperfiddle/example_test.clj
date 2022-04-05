@@ -44,20 +44,21 @@
  
  (tests 1 2 3 *1 := 3, *2 := 3, *3 := 3))
 
+(tests
+ "wildcards"
+ {:a :b, :b [2 :b]} := {:a _, _ [2 _]})
 
-;;
+(tests
+ "unification"
+ {:a :b, :b [2 :b]} := {:a ?b, ?b [2 ?b]})
+
+(tests
+ "unification on reference types"
+ (def x (atom nil))
+ {:a x, :b x} := {:a ?x, :b ?x})
+
+
 ;;(comment
-;;  (tests
-;;   "wildcards"
-;;   {:a :b, :b [2 :b]} := '{:a _, _ [2 _]})
-;;
-;;  (tests
-;;   "unification"
-;;   {:a :b, :b [2 :b]} := '{:a ?b, ?b [2 ?b]}
-;;
-;;   "unification on reference types"
-;;   (def x (atom nil))
-;;   {:a x, :b x} := '{:a ?x, :b ?x}
 ;;
 ;;  (tests
 ;;   (rcf/set-timeout! 100)

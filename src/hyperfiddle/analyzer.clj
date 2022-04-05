@@ -7,13 +7,69 @@
 (defn empty-env
   "Returns an empty env"
   []
-  {:locals  {}
-   :ns      *ns*})
+  {:locals     {}
+   :namespaces {}
+   :ns         (ns-name *ns*)})
 
 (defn to-env [&env]
   (if (:js-globals &env)
     &env
     (assoc (empty-env) :locals (or &env {}))))
+
+(defn build-ns-map []
+  (into {} (mapv #(vector (ns-name %)
+                          {:mappings (merge (ns-map %) {'in-ns #'clojure.core/in-ns
+                                                        'ns    #'clojure.core/ns})
+                           :aliases  (reduce-kv (fn [a k v] (assoc a k (ns-name v)))
+                                                {} (ns-aliases %))
+                           :ns       (ns-name %)})
+                 (all-ns))))
+
+(defn global-env [] {:namespaces (build-ns-map)})
+
+(defn resolve-local [env sym] (get-in env [:locals sym]))
+
+(defn resolve-ns
+  "Resolves the ns mapped by the given sym in the global env"
+  [ns-sym {:keys [ns]}]
+  (when ns-sym
+    (let [namespaces (:namespaces (global-env))]
+      (or (get-in namespaces [ns :aliases ns-sym])
+          (:ns (namespaces ns-sym))))))
+
+(defn resolve-sym
+  "Resolves the value mapped by the given sym in the global env"
+  [sym {:keys [ns] :as env}]
+  (when (symbol? sym)
+    (let [sym-ns (when-let [ns (namespace sym)]
+                   (symbol ns))
+          full-ns (resolve-ns sym-ns env)]
+      (when (or (not sym-ns) full-ns)
+        (let [name (if sym-ns (-> sym name symbol) sym)]
+          (-> (global-env) :namespaces (get (or full-ns ns)) :mappings (get name)))))))
+
+(def specials "Set of special forms common to every clojure variant"
+  '#{do if new quote set! try var catch throw finally def . let* letfn* loop* recur fn*})
+
+(defn var-sym [v] (when v (symbol (name (.name (.ns v))) (name (.sym v)))))
+
+(defmulti macroexpand-hook (fn [the-var _&form _&env _args] (var-sym the-var)))
+(defmethod macroexpand-hook :default [the-var &form &env args] (apply the-var &form &env args))
+
+(defn macroexpand-1 [env form]
+  (if (seq? form)
+    (let [[f & args] form]
+      (cond
+        (specials f) form
+        (symbol? f) (if (resolve-local env f)
+                      form
+                      (if-let [the-var (resolve-sym f env)]
+                        (if (:macro (meta the-var))
+                          (macroexpand-hook the-var form env args) ;; TODO env in wrong shape
+                          form)
+                        form))
+        :else form))
+    form))
 
 (defmulti -parse (fn [_env form] (first form)))
 
@@ -106,36 +162,6 @@
     :form     form
     :children [:items]}))
 
-(defn resolve-local [env sym] (get-in env [:locals sym]))
-(defn resolve-ns [env sym] (clojure.core/ns-resolve (:ns env) sym))
-
-#_(defn resolve [env sym]
-  (or (resolve-local env sym)
-      (when-let [?var (resolve-ns env sym)]
-        (analyze env ?var))))
-
-(def specials "Set of special forms common to every clojure variant"
-  '#{do if new quote set! try var catch throw finally def . let* letfn* loop* recur fn*})
-
-(defn var-sym [v] (symbol (name (.name (.ns v))) (name (.sym v))))
-
-(defmulti macroexpand-hook (fn [the-var _&form _&env _args] (var-sym the-var)))
-(defmethod macroexpand-hook :default [the-var &form &env args] (apply the-var &form &env args))
-
-(defn macroexpand-1 [env form]
-  (if (seq? form)
-    (let [[f & args] form]
-      (cond
-        (specials f) form
-        (symbol? f) (cond (resolve-local env f) form
-                          (resolve-ns env f) (let [the-var (resolve-ns env f)]
-                                               (if (:macro (meta the-var))
-                                                 (macroexpand-hook the-var form env args) ;; TODO env in wrong shape
-                                                 form))
-                          :else form)
-        :else form))
-    form))
-
 (def ^:dynamic *analyze-options* {:macroexpand true})
 
 (defmethod -analyze :seq [env form]
@@ -150,7 +176,7 @@
 (defmethod -analyze :symbol [env sym]
   (let [local? (some? (resolve-local env sym))
         ?var   (when-not local?
-                 (when-let [v (resolve-ns env sym)]
+                 (when-let [v (resolve-sym sym env)]
                    (and (var? v) v)))]
     (merge (if ?var
              {:op  :var
@@ -443,14 +469,19 @@
 ;; EMIT ;;
 ;;;;;;;;;;
 
+(defn has-meta? [o] (instance? clojure.lang.IMeta o))
+
 (def ^:dynamic *emit-options* {})
 
 (defmulti -emit (fn [ast] (:op ast)))
 
 (defn emit [ast]
-  (if-let [original-forms (seq (:raw-forms ast))]
-    (vary-meta (-emit ast) assoc ::macroexpanded original-forms)
-    (-emit ast)))
+  (let [form (-emit ast)]
+    (if-let [original-forms (seq (:raw-forms ast))]
+      (if (has-meta? form)
+        (vary-meta form assoc ::macroexpanded original-forms)
+        form)
+      form)))
 
 (defmethod -emit :const [ast] (:form ast))
 
