@@ -3,8 +3,7 @@
 
 (def defaults
   {:src-pom "pom.xml"
-   :lib 'com.hyperfiddle/rcf
-   :version "20220405"})
+   :lib     'com.hyperfiddle/rcf})                          ; maven group-id and library name
 
 (defn clean [opts]
   (bb/clean opts))

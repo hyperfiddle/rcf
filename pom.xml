@@ -2,18 +2,19 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <packaging>jar</packaging>
-  <groupId></groupId>
-  <artifactId></artifactId>
-  <version></version>
+  <groupId>><!-- generated --></groupId>
+  <artifactId>><!-- generated --></artifactId>
+  <version>><!-- generated --></version>
   <name>rcf</name>
   <description>RCF – a REPL-first, async test macro for Clojure/Script</description>
   <scm>
     <url>https://github.com/hyperfiddle/rcf</url>
     <connection>scm:git:git://github.com/hyperfiddle/rcf.git</connection>
     <developerConnection>scm:git:ssh://git@github.com/hyperfiddle/rcf.git</developerConnection>
-    <tag></tag>
+    <tag><!-- generated --></tag>
   </scm>
   <dependencies>
+    <!-- list regenerated from deps.edn -->
     <dependency>
       <groupId>org.clojure</groupId>
       <artifactId>clojure</artifactId>
@@ -22,6 +23,7 @@
   </dependencies>
   <build>
     <sourceDirectory>src</sourceDirectory>
+    <!--<sourceDirectory>examples</sourceDirectory>-->
   </build>
   <repositories>
     <repository>

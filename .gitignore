@@ -9,3 +9,4 @@ out/js
 *.js.map
 *.DS_Store
 node_modules
+/target
