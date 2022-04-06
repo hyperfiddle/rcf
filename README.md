@@ -27,16 +27,23 @@ Hype quotes:
 
 # Dependency
 
-Project maturity: experimental. The current development priority is great async tests.
+Project maturity: the stable release has external users.
 
-```Clojure
-{:deps {hyperfiddle/rcf {:git/url "https://github.com/hyperfiddle/rcf.git" :sha ...}}}
+```clojure 
+; stable
+{:deps {com.hyperfiddle/rcf {:mvn/version "20220405"}}}
 ```
 
 Breaking changes:
- * 2021 Dec 18: clojurescript dependency is now under the :cljs alias, see #25.
- * 2021 Oct 20: custom reporters now dispatch on qualified keywords, see [#19](https://github.com/hyperfiddle/rcf/issues/19#issuecomment-946757852)
+ * 2021 Dec 18: clojurescript dependency is now under the :cljs alias, see #25
+ * 2021 Oct 20: custom reporters now dispatch on qualified keywords, see #19
 
+We occasionally publish experimental technical alphas on master. The current development priority is improved support for deep assertions, including deep async assertions, which enables end-user macros to leverage RCF syntax in composed ways (e.g. resource disposal).
+
+```Clojure
+; experimental - currently not published
+;{:deps {com.hyperfiddle/rcf {:git/url "https://github.com/hyperfiddle/rcf.git" :sha ...}}}
+```
 [![JVM](https://github.com/hyperfiddle/rcf/actions/workflows/tests_clj.yml/badge.svg?branch=master)](https://github.com/hyperfiddle/rcf/actions/workflows/tests_clj.yml)
 [![NodeJS](https://github.com/hyperfiddle/rcf/actions/workflows/tests_node.yml/badge.svg?branch=master)](https://github.com/hyperfiddle/rcf/actions/workflows/tests_node.yml)
 [![Browser](https://github.com/hyperfiddle/rcf/actions/workflows/tests_browser.yml/badge.svg?branch=master)](https://github.com/hyperfiddle/rcf/actions/workflows/tests_browser.yml)
@@ -48,7 +55,7 @@ Breaking changes:
 It's an easy one-liner to turn on tests in your entrypoint:
 
 ```clojure
-(ns user                                     ; user ns is loaded by REPL startup
+(ns user                           ; user ns is loaded by REPL startup
   (:require [hyperfiddle.rcf]))
 
 (hyperfiddle.rcf/enable!)
