@@ -3,10 +3,15 @@
             [clojure.test :as t]
             [clojure.walk :as walk]
             [hyperfiddle.analyzer :as ana]
+            [hyperfiddle.rcf.queue :as q]
+            [hyperfiddle.rcf.time :as time]
             [hyperfiddle.rcf.unify :as u]
             [hyperfiddle.rcf.reporters]))
 
 (def ^:dynamic *enabled* true)
+
+(def ! #(doto % prn))
+(def %)
 
 (defn make-macro-call [env form]
   (binding [ana/*analyze-options* (assoc ana/*analyze-options* :macroexpand false)]
@@ -47,6 +52,10 @@
         peek! #(get (deref !q) %)]
     [push! peek!]))
 
+(defn star? [ast] (or (::star ast)
+                      (and (= :var (:op ast))
+                           (#{#'*1 #'*2 #'*3} (:var ast)))))
+
 (defn has-stars? [ast] (some? (first (filter star? (ana/ast-seq ast)))))
 
 (defn maybe-add-stars-support [env ast]
@@ -54,6 +63,38 @@
     (-> (ana/analyze env `(let [[~'RCF__push! ~'RCF__peek!] (binding-queue)]))
         (update-in [:body :statements] conj ast))
     ast))
+
+
+(def ^:dynamic *timeout* 400)
+
+(defmacro make-queue [timeout-value]
+  `(let [q#       (q/queue)
+         start#   (time/current-time)
+         timeout# (atom *timeout*)]
+     [(fn [x#] (q/offer! q# x#) x#)
+      (fn [] (q/poll! q# start# (deref timeout#) ~timeout-value))
+      (partial reset! timeout#)]))
+
+(defn %? [ast] (and (= :var (:op ast)) (= #'% (:var ast))))
+(defn has-%? [ast] (some? (first (filter %? (ana/ast-seq ast)))))
+(defn maybe-add-queue-support [env ast]
+  (if (has-%? ast)
+    (-> (ana/analyze env `(let [[~'RCF__! ~'RCF__% ~'RCF__set-timeout!] (make-queue ::timeout)]))
+        (update-in [:body :statements] conj ast))
+    ast))
+
+(defn rewrite-!-% [env ast]
+  (if-not (has-%? ast)
+    ast
+    (ana/postwalk
+     (ana/only-nodes #{:var}
+                     (fn [var-ast]
+                       (condp = (:var var-ast)
+                         #'! (assoc var-ast :form 'RCF__!)
+                         #'% (-> (ana/analyze env `(~'RCF__%))
+                                 (assoc :raw-forms (list (:form var-ast))))
+                         var-ast)))
+     ast)))
 
 (defn rewrite-repl [env ast]
   (ana/prewalk (ana/only-nodes #{:do}
@@ -139,6 +180,8 @@
 (defn rewrite [env ast]
   (->> ast
        (maybe-add-stars-support env)
+       (maybe-add-queue-support env)
+       (rewrite-!-% env)
        (rewrite-infix-pass env)
        (rewrite-doc env)
        (rewrite-star env)
@@ -175,6 +218,7 @@
 ;; So rcf/= need a var to resolve to.
 (def = clojure.core/=)
 
+;; Same as default `=` behavior, but returns the first argument instead of a boolean.
 (defmethod t/assert-expr 'hyperfiddle.rcf/= [msg form]
   (let [[_= & args] form
         form        (cons '= (map original-form args))]

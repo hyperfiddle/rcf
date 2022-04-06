@@ -57,6 +57,14 @@
  (def x (atom nil))
  {:a x, :b x} := {:a ?x, :b ?x})
 
+(tests
+ "Async queue"
+ (! 1) % := 1
+ (future (Thread/sleep 300) (! 2))
+ % := 3
+ )
+
+
 
 ;;(comment
 ;;
