@@ -82,7 +82,10 @@ Tests are run when you send a file or form to your Clojure/Script REPL. In Cursi
 
   (tests
     "nested tests (is there a strong use case?)"
-    1 := 1)
+    1 := 1
+
+    "tests form returns final result"
+    (tests (inc 1) := 2 (inc *1)) := 3)
 
   (tests
     "REPL bindings work"
@@ -103,7 +106,7 @@ Tests are run when you send a file or form to your Clojure/Script REPL. In Cursi
 ```
 ```text
 Loading src/example.cljc...
-✅✅✅✅✅✅✅✅Loaded
+✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅✅Loaded
 ```
 
 # Async tests
@@ -157,6 +160,18 @@ Loading src/example.cljc...
   % := 2
   % := 3
   (dispose))
+
+; Async (tests) forms block and run serially. 
+; They are async internally but the top (tests) form will block the thread until it completes (possibly by timeout).
+; This is super convenient; it means you can use RCF to play with async forms at the REPL and bind the result:
+(tests 
+  (future (Thread/sleep 800) (! :a))
+  %)
+*1
+=> :a
+
+; Only the top (tests) form blocks, so this does not currently work
+(tests (tests (future (Thread/sleep 800) (! :a)) %) := :a)
 ```
 
 # CI

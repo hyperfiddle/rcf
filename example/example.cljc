@@ -40,7 +40,10 @@
 
   (tests
     "nested tests (is there a strong use case?)"
-    1 := 1)
+    1 := 1
+
+    "tests form returns final result"
+    (tests (inc 1) := 2 (inc *1)) := 3)
 
   (tests
     "REPL bindings work"
@@ -82,10 +85,10 @@
   "core.async"
   (def c (chan))
   (go-loop [x (<! c)]
-           (when x
-             (<! (timeout 10))
-             (! x)
-             (recur (<! c))))
+    (when x
+      (<! (timeout 10))
+      (! x)
+      (recur (<! c))))
   (go (>! c :hello) (>! c :world))
   % := :hello
   % := :world
