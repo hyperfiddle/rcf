@@ -38,15 +38,26 @@
   (def x (atom nil))
   {:a x, :b x} := {:a ?x, :b ?x}
 
-  "REPL bindings work"
-  (inc 1)
-  := 2
-  (dec *1)
-  := 1
+  (tests
+    "nested tests (is there a strong use case?)"
+    1 := 1)
 
   (tests
-    "nested tests are sometimes convenient"
-    1 := 1))
+    "REPL bindings work"
+    (keyword "a") := :a
+    (keyword "b") := :b
+    (keyword "c") := :c
+    *1 := :c
+    *2 := :b
+    *3 := :a
+    *1 := :c                                                  ; inspecting history does not affect history
+
+    (keyword "d") := :d
+    *1 := :d
+    *2 := :c
+    *3 := :b
+    (symbol *2) := 'c                                         ; this does affect history
+    (symbol *2) := 'd))
 
 (tests {:timeout 100}
   "async tests"
