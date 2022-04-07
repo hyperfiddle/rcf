@@ -35,6 +35,7 @@ Project maturity: the stable release has external users.
 ```
 
 Breaking changes:
+ * 2022 April 5: maven group-id renamed from `hyperfiddle` to `com.hyperfiddle` for security
  * 2021 Dec 18: clojurescript dependency is now under the :cljs alias, see #25
  * 2021 Oct 20: custom reporters now dispatch on qualified keywords, see #19
 
