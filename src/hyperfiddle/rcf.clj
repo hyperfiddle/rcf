@@ -191,16 +191,23 @@
 (defn tests*
   ([exprs] (tests* nil exprs))
   ([env exprs]
-   (when *enabled*
-     (let [env (ana/to-env env)]
-       (binding [ana/*emit-options* {:simplify-do true}]
-         (->> (cons 'do exprs)
-              (ana/analyze env)
-              (rewrite env)
-              (ana/emit)))))))
+   (let [env (ana/to-env env)]
+     (binding [ana/*emit-options* {:simplify-do true}]
+       (->> (cons 'do exprs)
+            (ana/analyze env)
+            (rewrite env)
+            (ana/emit))))))
+
+(defn gen-name [form]
+  (let [{:keys [line _column]} (meta form)
+        file (name (ns-name *ns*))]
+    (symbol (str file ":" line))))
 
 (defmacro tests [& body]
-  (tests* (ana/to-env &env) body))
+  (cond
+    *generate-tests* `(deftest ~(gen-name &form) ~(tests* &env body))
+    *enabled*        (tests* &env body)
+    :else             nil))
 
 ;; Nested test support
 (defmethod ana/macroexpand-hook `tests [_the-var _&form _&env args] `(do ~@args))
@@ -254,6 +261,27 @@
              lhs#)))))
 
 
+
+(defn test-var
+  "Like `clojure.test/test-var` but return actual result."
+  [v]
+  (when-let [t (:test (meta v))]
+    (binding [t/*testing-vars* (conj t/*testing-vars* v)]
+      (t/do-report {:type :begin-test-var, :var v})
+      (t/inc-report-counter :test)
+      (try (t)
+           (catch Throwable e
+             (t/do-report {:type :error, :message "Uncaught exception, not in assertion."
+                           :expected nil, :actual e}))
+           (finally (t/do-report {:type :end-test-var, :var v}))))))
+
+(defmacro deftest
+  "When *load-tests* is false, deftest is ignored."
+  {:added "1.1"}
+  [name & body]
+  (when t/*load-tests*
+    `(def ~(vary-meta name assoc :test `(fn [] ~@body))
+       (fn [] (test-var (var ~name))))))
 (comment
   (ana/analyze (ana/empty-env) '(testing 1 2))
   (ana/analyze (ana/empty-env) '(do 1 2))

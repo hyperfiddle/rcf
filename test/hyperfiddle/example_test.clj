@@ -61,9 +61,12 @@
  "Async queue"
  (! 1) % := 1
  (future (Thread/sleep 300) (! 2))
- % := 3
+ % := 2
  )
 
+(tests
+ (tests (future (Thread/sleep 100) (! :a) :b) %)
+ := :a)
 
 
 ;;(comment
