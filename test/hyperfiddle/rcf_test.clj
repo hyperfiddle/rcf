@@ -1,7 +1,7 @@
 (ns hyperfiddle.rcf-test
   #_(:require [clojure.test :as t :refer [deftest is testing]]
             [hyperfiddle.rcf :as rcf :refer [tests]]
-            [hyperfiddle.analyzer :as ana]))
+            [hyperfiddle.rcf.analyzer :as ana]))
 
 
 ;; For an unknown reason, `macroexpand-1` acts as identity when runnning

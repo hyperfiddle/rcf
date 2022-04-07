@@ -1,5 +1,5 @@
 (ns hyperfiddle.analyzer-test
-  (:require [hyperfiddle.analyzer :as ana]
+  (:require [hyperfiddle.rcf.analyzer :as ana]
             [clojure.test :as t :refer [deftest are testing]]))
 
 (defn roundtrip

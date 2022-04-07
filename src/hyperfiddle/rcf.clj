@@ -2,7 +2,7 @@
   (:require [clojure.string :as str]
             [clojure.test :as t]
             [clojure.walk :as walk]
-            [hyperfiddle.analyzer :as ana]
+            [hyperfiddle.rcf.analyzer :as ana]
             [hyperfiddle.rcf.queue :as q]
             [hyperfiddle.rcf.time :as time]
             [hyperfiddle.rcf.unify :as u]
@@ -196,12 +196,14 @@
 (defn tests*
   ([exprs] (tests* nil exprs))
   ([env exprs]
-   (let [env (ana/to-env env)]
-     (binding [ana/*emit-options* {:simplify-do true}]
-       (->> (cons 'do exprs)
-            (ana/analyze env)
-            (rewrite env)
-            (ana/emit))))))
+   `(binding [*ns* ~*ns*]
+      ~
+      (let [env (ana/to-env env)]
+        (binding [ana/*emit-options* {:simplify-do true}]
+          (->> (cons 'do exprs)
+               (ana/analyze env)
+               (rewrite env)
+               (ana/emit)))))))
 
 (defn gen-name [form]
   (let [{:keys [line _column]} (meta form)

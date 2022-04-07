@@ -1,6 +1,6 @@
 ;; A simpler tools.analyzer for the restricted use case of RCF
 ;; Adapted from  https://github.com/clojure/tools.analyzer
-(ns hyperfiddle.analyzer
+(ns hyperfiddle.rcf.analyzer
   (:refer-clojure :exclude [macroexpand-1 update-vals resolve])
   (:import (clojure.lang IObj)))
 
@@ -72,10 +72,10 @@
                        form
                        (if-let [the-var (resolve-sym f env)]
                          (let [expanded (if (:macro (meta the-var))
-                                          (macroexpand-hook the-var form env args) ;; TODO env in wrong shape
+                                          (macroexpand-hook the-var form env args)
                                           form)]
                            (if (has-meta? expanded)
-                             (vary-meta expanded merge (meta form))
+                             (vary-meta expanded merge (meta form) {::expanded true})
                              expanded))
                          form))
          :else form))
@@ -177,7 +177,8 @@
 (defmethod -analyze :seq [env form]
   (if-let [form (seq form)] ;; () ?
     (let [mform (if (:macroexpand *analyze-options*) (macroexpand-1 env form) form)]
-      (if (= form mform) ;; special-form invocation (can’t macroexpand further)
+      (if (or (= form mform) ;; special-form invocation (can’t macroexpand further)
+              (::expanded (meta mform)))
         (parse env mform)
         (-> (analyze env mform)
             (update-in [:raw-forms] (fnil conj ()) (list 'quote form)))))
@@ -300,7 +301,8 @@
         fixed-arity  (if variadic?
                        (dec arity)
                        arity)
-        body         (analyze-body env body)]
+        body-env (update-in env [:locals] merge (zipmap params-names (map dissoc-env params-expr)))
+        body         (analyze-body body-env body)]
     (when variadic?
       (let [x (drop-while #(not= % '&) params)]
         (when (contains? #{nil '&} (second x))
@@ -422,8 +424,10 @@
                 {:pre [(string? doc)]}
                 {:init init :doc doc}))
         args (apply pfn expr)
-        var  (create-var sym env) ;; side effect
-        env  (assoc-in env [:namespaces ns :mappings sym] var)
+        env (if (some? (namespace sym))
+              env ;; Can't intern namespace-qualified symbol, ignore
+              (let [var (create-var sym env)] ;; side effect
+                (assoc-in env [:namespaces ns :mappings sym] var)))
         args (when-let [[_ init] (find args :init)]
                (assoc args :init (analyze env init)))]
     (merge {:op       :def
@@ -547,7 +551,10 @@
     (list 'def (:name ast))))
 
 (defmethod -emit :let [ast]
-  (list 'let* (vec (mapcat identity (mapv emit (:bindings ast)))) (emit (:body ast))))
+  (list* 'let* (vec (mapcat identity (mapv emit (:bindings ast))))
+         (if (:simplify-do *emit-options*) ;; FIXME should be a pass
+           (mapv emit (:statements (:body ast)))
+           (list (emit (:body ast))))))
 
 (defmethod -emit :loop [ast]
   (list 'loop* (vec (mapcat identity (mapv emit (:bindings ast)))) (emit (:body ast))))
