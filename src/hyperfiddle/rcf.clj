@@ -8,7 +8,12 @@
             [hyperfiddle.rcf.unify :as u]
             [hyperfiddle.rcf.reporters]))
 
-(def ^:dynamic *enabled* true)
+(def ^:dynamic *enabled* (= "true" (System/getProperty "hyperfiddle.rcf.enabled")))
+
+(defn enable! [& [v]]
+  (alter-var-root #'*enabled* (constantly (if (some? v) v true))))
+
+(def ^:dynamic *generate-tests* (= "true" (System/getProperty "hyperfiddle.rcf.generate-tests")))
 
 (def ! #(doto % prn))
 (def %)
@@ -211,6 +216,10 @@
 
 ;; Nested test support
 (defmethod ana/macroexpand-hook `tests [_the-var _&form _&env args] `(do ~@args))
+
+;; Skip these DSLs, their macroexpansion is not rewritable as clojure. 
+;; No need to pay the cost of analyzing their output.
+(defmethod ana/macroexpand-hook 'clojure.core/case [_ _ _ args] `(case ~@args))
 
 (defn original-form [form]
   (walk/prewalk (fn [form]

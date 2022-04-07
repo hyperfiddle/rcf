@@ -54,22 +54,32 @@
 (defn var-sym [v] (when v (symbol (name (.name (.ns v))) (name (.sym v)))))
 
 (defmulti macroexpand-hook (fn [the-var _&form _&env _args] (var-sym the-var)))
-(defmethod macroexpand-hook :default [the-var &form &env args] (apply the-var &form &env args))
+(defmethod macroexpand-hook :default [the-var &form &env args] 
+  ;; TODO in cljs, pass whole env, in clj, pass only locals
+  ;; (prn "macroexpand" (var-sym the-var))
+  (apply the-var &form (:locals &env) args))
 
-(defn macroexpand-1 [env form]
-  (if (seq? form)
-    (let [[f & args] form]
-      (cond
-        (specials f) form
-        (symbol? f) (if (resolve-local env f)
-                      form
-                      (if-let [the-var (resolve-sym f env)]
-                        (if (:macro (meta the-var))
-                          (macroexpand-hook the-var form env args) ;; TODO env in wrong shape
-                          form)
-                        form))
-        :else form))
-    form))
+(defn has-meta? [o] (instance? clojure.lang.IMeta o))
+
+(defn macroexpand-1 
+  ([form] (macroexpand-1 (empty-env) form))
+  ([env form]
+   (if (seq? form)
+     (let [[f & args] form]
+       (cond
+         (specials f) form
+         (symbol? f) (if (resolve-local env f)
+                       form
+                       (if-let [the-var (resolve-sym f env)]
+                         (let [expanded (if (:macro (meta the-var))
+                                          (macroexpand-hook the-var form env args) ;; TODO env in wrong shape
+                                          form)]
+                           (if (has-meta? expanded)
+                             (vary-meta expanded merge (meta form))
+                             expanded))
+                         form))
+         :else form))
+     form)))
 
 (defmulti -parse (fn [_env form] (first form)))
 
@@ -388,6 +398,21 @@
    :args     (mapv (analyze env) args)
    :children [:fn :args]})
 
+
+(defn create-var
+  "Creates a Var for sym and returns it.
+   The Var gets interned in the env namespace."
+  [sym {:keys [ns] :as env}]
+  (let [v (get-in (global-env) [:namespaces ns :mappings (symbol (name sym))])]
+    (if (and v (or (class? v)
+                   (= ns (ns-name (.ns ^clojure.lang.Var v) ))))
+      v
+      (let [meta (dissoc (meta sym) :inline :inline-arities :macro)
+            #_#_meta (if-let [arglists (:arglists meta)]
+                   (assoc meta :arglists (qualify-arglists arglists))
+                   meta)]
+       (intern ns (with-meta sym meta))))))
+
 (defmethod -parse 'def [{:keys [ns] :as env} [_ sym & expr :as form]]
   (let [pfn  (fn
                ([])
@@ -397,8 +422,8 @@
                 {:pre [(string? doc)]}
                 {:init init :doc doc}))
         args (apply pfn expr)
-        ;; TODO
-        ;; _ (swap! env/*env* assoc-in [:namespaces ns :mappings sym] var)
+        var  (create-var sym env) ;; side effect
+        env  (assoc-in env [:namespaces ns :mappings sym] var)
         args (when-let [[_ init] (find args :init)]
                (assoc args :init (analyze env init)))]
     (merge {:op       :def
@@ -469,9 +494,7 @@
 ;; EMIT ;;
 ;;;;;;;;;;
 
-(defn has-meta? [o] (instance? clojure.lang.IMeta o))
-
-(def ^:dynamic *emit-options* {})
+(def ^:dynamic *emit-options* {:simplify-do false}) ;; FIXME :simplify-* should be passes
 
 (defmulti -emit (fn [ast] (:op ast)))
 
@@ -479,7 +502,7 @@
   (let [form (-emit ast)]
     (if-let [original-forms (seq (:raw-forms ast))]
       (if (has-meta? form)
-        (vary-meta form assoc ::macroexpanded (vec original-forms))
+        form #_(vary-meta form assoc ::macroexpanded (vec original-forms)) ;; breaks clojure compiler with MetaExpr is not a ObjExpr
         form)
       form)))
 
@@ -530,9 +553,10 @@
   (list 'loop* (vec (mapcat identity (mapv emit (:bindings ast)))) (emit (:body ast))))
 
 (defmethod -emit :fn [ast]
-  (if-let [name (some-> (:local ast) emit)]
-    `(~'fn* ~name ~@(mapv emit (:methods ast)))
-    `(~'fn* ~@(mapv emit (:methods ast)))))
+  (let [methods (mapv emit (:methods ast))]
+    (if-let [name (some-> (:local ast) emit)]
+      `(~'fn* ~name ~@methods)
+      `(~'fn* ~@methods))))
 
 (defmethod -emit :fn-method [ast]
   (list (mapv emit (:params ast)) (emit (:body ast))))
@@ -540,6 +564,10 @@
 (defmethod -emit :letfn [ast]
   (list 'letfn* (vec (mapcat identity (mapv emit (:bindings ast)))) (emit (:body ast))))
 
+
+(defn macroexpand
+  ([form] (macroexpand (empty-env) form))
+  ([env form] (emit (analyze env form))))
 
 ;; AST walk
 
