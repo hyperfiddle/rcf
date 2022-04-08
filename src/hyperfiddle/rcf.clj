@@ -24,6 +24,11 @@
 (def ! #(doto % prn))
 (def %)
 
+(def ^:dynamic *timeout* (or (System/getProperty "hyperfiddle.rcf.timeout") 400))
+
+(defn set-timeout! [ms]
+  (alter-var-root #'*timeout* (constantly ms)))
+
 (defn rewrite-doc [env ast]
   (ana/prewalk
    (ana/only-nodes #{:do}
@@ -71,9 +76,6 @@
         (update-in [:body :statements] conj ast))
     ast))
 
-
-(def ^:dynamic *timeout* 400)
-
 (defmacro make-queue [timeout-value]
   `(let [q#       (q/queue)
          start#   (time/current-time)
@@ -100,6 +102,7 @@
                      (fn [var-ast]
                        (condp = (:var var-ast)
                          #'! (assoc var-ast :form 'RCF__!)
+                         #'set-timeout! (assoc var-ast :form 'RCF__set-timeout!)
                          #'% (-> (ana/analyze env `(~'RCF__%))
                                  (assoc :raw-forms (list (:form var-ast))))
                          var-ast)))
