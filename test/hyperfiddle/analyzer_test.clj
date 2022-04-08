@@ -30,7 +30,7 @@
       (roundtrip '(if true a b)) '(if true a b)
       (roundtrip '(if true a)) '(if true a nil)
       (roundtrip '(let [a 1
-                        b 2] a)) '(let* [a 1, b 2] (do a))
+                        b 2] a)) '(let [a 1, b 2] a)
 
       (roundtrip '(loop* [a 1] (recur a))) '(loop* [a 1] (do (recur a)))
 
@@ -40,8 +40,8 @@
 
       (roundtrip '(fn* ([a] a) ([a b] a))) '(fn* ([a] (do a)) ([a b] (do a)))
 
-      (roundtrip '(fn [a] a)) '(fn* ([a] (do a)))
-      (roundtrip '(fn f [])) '(fn* f ([] (do)))
+      (roundtrip '(fn [a] a)) '(fn [a] a)
+      (roundtrip '(fn f [])) '(fn f [])
 
       (roundtrip '(letfn* [foo (fn* foo ([a] (inc a)))] 1)) '(letfn* [foo (fn* foo ([a] (do (inc a))))] (do 1))
 

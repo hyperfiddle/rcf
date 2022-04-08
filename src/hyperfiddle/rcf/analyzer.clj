@@ -1,7 +1,7 @@
 ;; A simpler tools.analyzer for the restricted use case of RCF
 ;; Adapted from  https://github.com/clojure/tools.analyzer
 (ns hyperfiddle.rcf.analyzer
-  (:refer-clojure :exclude [macroexpand-1 update-vals resolve])
+  (:refer-clojure :exclude [macroexpand-1 macroexpand update-vals resolve])
   (:import (clojure.lang IObj)))
 
 (defn empty-env
@@ -16,16 +16,20 @@
     &env
     (assoc (empty-env) :locals (or &env {}))))
 
-(defn build-ns-map []
-  (into {} (mapv #(vector (ns-name %)
-                          {:mappings (merge (ns-map %) {'in-ns #'clojure.core/in-ns
-                                                        'ns    #'clojure.core/ns})
-                           :aliases  (reduce-kv (fn [a k v] (assoc a k (ns-name v)))
-                                                {} (ns-aliases %))
-                           :ns       (ns-name %)})
-                 (all-ns))))
 
-(defn global-env [] {:namespaces (build-ns-map)})
+
+(defn build-ns-map []
+  {:namespaces (into {} (mapv #(vector (ns-name %)
+                                       {:mappings (merge (ns-map %) {'in-ns #'clojure.core/in-ns
+                                                                     'ns    #'clojure.core/ns})
+                                        :aliases  (reduce-kv (fn [a k v] (assoc a k (ns-name v)))
+                                                             {} (ns-aliases %))
+                                        :ns       (ns-name %)})
+                              (all-ns)))})
+
+(def ^:dynamic *global-env* nil)
+
+(defn global-env [] (or *global-env* (build-ns-map)))
 
 (defn resolve-local [env sym] (get-in env [:locals sym]))
 
@@ -54,34 +58,14 @@
 (defn var-sym [v] (when v (symbol (name (.name (.ns v))) (name (.sym v)))))
 
 (defmulti macroexpand-hook (fn [the-var _&form _&env _args] (var-sym the-var)))
-(defmethod macroexpand-hook :default [the-var &form &env args] 
+(defmethod macroexpand-hook :default [the-var &form &env args]
   ;; TODO in cljs, pass whole env, in clj, pass only locals
   ;; (prn "macroexpand" (var-sym the-var))
   (apply the-var &form (:locals &env) args))
 
 (defn has-meta? [o] (instance? clojure.lang.IMeta o))
 
-(defn macroexpand-1 
-  ([form] (macroexpand-1 (empty-env) form))
-  ([env form]
-   (if (seq? form)
-     (let [[f & args] form]
-       (cond
-         (specials f) form
-         (symbol? f) (if (resolve-local env f)
-                       form
-                       (if-let [the-var (resolve-sym f env)]
-                         (let [expanded (if (:macro (meta the-var))
-                                          (macroexpand-hook the-var form env args)
-                                          form)]
-                           (if (has-meta? expanded)
-                             (vary-meta expanded merge (meta form) {::expanded true})
-                             expanded))
-                         form))
-         :else form))
-     form)))
-
-(defmulti -parse (fn [_env form] (first form)))
+(defmulti -parse (fn [_env form] (and (seq? form) (first form))))
 
 (defn parse
   ([]    (parse (empty-env)))
@@ -172,33 +156,19 @@
     :form     form
     :children [:items]}))
 
-(def ^:dynamic *analyze-options* {:macroexpand true})
-
 (defmethod -analyze :seq [env form]
-  (if-let [form (seq form)] ;; () ?
-    (let [mform (if (:macroexpand *analyze-options*) (macroexpand-1 env form) form)]
-      (if (or (= form mform) ;; special-form invocation (can’t macroexpand further)
-              (::expanded (meta mform)))
-        (parse env mform)
-        (-> (analyze env mform)
-            (update-in [:raw-forms] (fnil conj ()) (list 'quote form)))))
-    (analyze-const env form)))
+  (if (not (seq form))
+    (analyze-const env form)
+    (parse env form)))
 
 (defmethod -analyze :symbol [env sym]
-  (let [local? (some? (resolve-local env sym))
-        ?var   (when-not local?
-                 (when-let [v (resolve-sym sym env)]
-                   (and (var? v) v)))]
-    (merge (if ?var
-             {:op  :var
-              :var ?var}
-             {:op     :symbol
-              :local? local?})
-           {:env  env
-            :form sym
-            :ns   (namespace sym)
-            :name (name sym)})))
-
+  (let [local? (some? (resolve-local env sym))]
+    {:op :symbol
+     :local? local?
+     :env  env
+     :form sym
+     :ns   (namespace sym)
+     :name (name sym)}))
 
 (defmethod -analyze :var [env form]
   {:op :the-var
@@ -392,14 +362,16 @@
          :env     env}
         (analyze-let env form)))
 
-(defmethod -parse :default [env [f & args :as form]]
-  {:op       :invoke
-   :form     form
-   :env      env
-   :fn       (analyze env f)
-   :args     (mapv (analyze env) args)
-   :children [:fn :args]})
-
+(defmethod -parse :default [env form]
+  (if (seq? form)
+    (let [[f & args] form]
+      {:op       :invoke
+       :form     form
+       :env      env
+       :fn       (analyze env f)
+       :args     (mapv (analyze env) args)
+       :children [:fn :args]})
+    (analyze env form)))
 
 (defn create-var
   "Creates a Var for sym and returns it.
@@ -411,9 +383,9 @@
       v
       (let [meta (dissoc (meta sym) :inline :inline-arities :macro)
             #_#_meta (if-let [arglists (:arglists meta)]
-                   (assoc meta :arglists (qualify-arglists arglists))
-                   meta)]
-       (intern ns (with-meta sym meta))))))
+                       (assoc meta :arglists (qualify-arglists arglists))
+                       meta)]
+        (intern ns (with-meta sym meta))))))
 
 (defmethod -parse 'def [{:keys [ns] :as env} [_ sym & expr :as form]]
   (let [pfn  (fn
@@ -426,7 +398,7 @@
         args (apply pfn expr)
         env (if (some? (namespace sym))
               env ;; Can't intern namespace-qualified symbol, ignore
-              (let [var (create-var sym env)] ;; side effect
+              (let [var (create-var sym env)] ;; side effect, FIXME should be a pass
                 (assoc-in env [:namespaces ns :mappings sym] var)))
         args (when-let [[_ init] (find args :init)]
                (assoc args :init (analyze env init)))]
@@ -571,23 +543,19 @@
 (defmethod -emit :letfn [ast]
   (list 'letfn* (vec (mapcat identity (mapv emit (:bindings ast)))) (emit (:body ast))))
 
-
-(defn macroexpand
-  ([form] (macroexpand (empty-env) form))
-  ([env form] (emit (analyze env form))))
-
 ;; AST walk
 
 (defn walk [inner outer ast]
   (when (some? ast)
-    (outer (reduce (fn [ast child-key]
-                     (if (sequential? (get ast child-key))
-                       (update ast child-key (partial mapv inner))
-                       (update ast child-key inner)))
-                   ast (:children ast)))))
+    (if (reduced? ast) ast
+        (outer (reduce (fn [ast child-key]
+                         (if (sequential? (get ast child-key))
+                           (update ast child-key (partial mapv inner))
+                           (update ast child-key inner)))
+                       ast (:children ast))))))
 
-(defn postwalk [f ast] (walk (partial postwalk f) f ast))
-(defn prewalk [f ast] (walk (partial prewalk f) identity (f ast)))
+(defn postwalk [f ast] (unreduced (walk (partial postwalk f) f ast)))
+(defn prewalk [f ast] (unreduced (walk (partial prewalk f) identity (f ast))))
 
 (defn only-nodes [pred f] ;; use with *walk to skip some nodes
   (let [pred (if (set? pred) (comp pred :op) pred)]
@@ -606,3 +574,70 @@
   [ast]
   (when (some? ast)
     (cons ast (mapcat ast-seq (children ast)))))
+
+;; Passes
+
+(defn resolve-sym-node [{:keys [env] :as ast}]
+  (assert (= :symbol (:op ast)))
+  (if (:local? ast)
+    ast
+    (if-let [v (resolve-sym (:form ast) env)]
+      (if (var? v)
+        (assoc ast :op :var, :var v)
+        ast)
+      ast)))
+
+(defn resolve-syms-pass [ast] (prewalk (only-nodes #{:symbol} resolve-sym-node) ast))
+
+(defn- tag-with-form [ast form] (update ast :raw-forms (fnil conj ()) (list 'quote form)))
+
+(defn macroexpand-node [{:keys [env] :as ast}]
+  (let [{:keys [op var]} (:fn ast)
+        [f & args :as form] (:form ast)]
+    (if (and (= :var op)
+             (:macro (meta var)))
+      (let [mform (macroexpand-hook var form env args)
+            mform (if (has-meta? mform)
+                    (vary-meta mform merge (meta form))
+                    mform)]
+        (if (= form mform)
+          (reduced ast)
+          (-> (if (reduced? mform)
+                (reduced (tag-with-form (parse env (unreduced mform)) form))
+                (tag-with-form (analyze env mform) form)))))
+      (reduced ast))))
+
+(defn macroexpand-pass
+  ([ast] (macroexpand-pass ##Inf ast))
+  ([n ast]
+   (let [state (atom n)]
+     (prewalk (only-nodes #{:invoke} (fn rec [ast]
+                                       (if-not (pos? @state)
+                                         (reduced ast) ;; stop walking
+                                         (let [ast (macroexpand-node ast)]
+                                           (binding [*global-env* (build-ns-map)]
+                                             (let [ast' (resolve-syms-pass (unreduced ast))]
+                                               (if (reduced? ast) ast'
+                                                   (if (pos? (swap! state dec))
+                                                     (if (= :invoke (:op ast'))
+                                                       (rec ast')
+                                                       ast')
+                                                     ast'))))))))
+              ast))))
+
+(defn macroexpand-n
+  ([n form] (macroexpand-n n (empty-env) form))
+  ([n env form]
+   (binding [*global-env* (build-ns-map)]
+     (->> (analyze env form)
+          (resolve-syms-pass)
+          (macroexpand-pass n)
+          (emit)))))
+
+(defn macroexpand-all
+  ([form] (macroexpand-all (empty-env) form))
+  ([env form] (macroexpand-n ##Inf env form)))
+
+(defn macroexpand-1
+  ([form] (macroexpand-1 (empty-env) form))
+  ([env form] (macroexpand-n 1 env form)))

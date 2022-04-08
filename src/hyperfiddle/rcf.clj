@@ -18,10 +18,6 @@
 (def ! #(doto % prn))
 (def %)
 
-(defn make-macro-call [env form]
-  (binding [ana/*analyze-options* (assoc ana/*analyze-options* :macroexpand false)]
-    (ana/analyze env form)))
-
 (defn rewrite-doc [env ast]
   (ana/prewalk
    (ana/only-nodes #{:do}
@@ -31,7 +27,7 @@
                                    r []]
                               (if (nil? s) r
                                   (if (string? (:form s))
-                                    (let [testing-ast (make-macro-call env `(~`t/testing ~(:form s)))]
+                                    (let [testing-ast (ana/analyze env `(~`t/testing ~(:form s)))]
                                       (->> (assoc do-ast :statements (vec ss))
                                            (update testing-ast :args conj)
                                            (conj r)))
@@ -85,6 +81,8 @@
 (defn maybe-add-queue-support [env ast]
   (if (has-%? ast)
     (-> (ana/analyze env `(let [[~'RCF__! ~'RCF__% ~'RCF__set-timeout!] (make-queue ::timeout)]))
+        (ana/resolve-syms-pass)
+        (ana/macroexpand-pass)
         (update-in [:body :statements] conj ast))
     ast))
 
@@ -128,7 +126,7 @@
   (let [sigil     (replace-sigil (:form b))
         inner-ast (-> (ana/analyze env `(~sigil))
                       (update :args conj a c))]
-    (-> (make-macro-call env `(t/is))
+    (-> (ana/analyze env `(t/is))
         (update :args conj inner-ast))))
 
 (defn lvar? [ast]
@@ -173,14 +171,21 @@
    ast))
 
 (defn autoquote-lvars [env ast]
-  (ana/postwalk
-   (ana/only-nodes #{:var :symbol}
+  ;; Rewrites ?a and _ in t/is assertions
+  ;; It could be handled by t/is directly, but we already have a full AST here, 
+  ;; no need to serialize it only to reparse it all on the next macroexpand.
+  (ana/prewalk
+   (ana/only-nodes #{:invoke}
                    (fn [ast]
-                     (if (lvar? ast)
-                       (-> (update ast :form #(list 'quote %))
-                           (update :raw-forms (fnil conj ()) (:form ast)))
-                       ast)))
-   ast))
+                     (if-not (= `t/is (:form (:fn ast)))
+                       ast
+                       (ana/postwalk
+                        (ana/only-nodes #{:var :symbol}
+                                        (fn [ast]
+                                          (if (lvar? ast)
+                                            (-> (update ast :form #(list 'quote %))
+                                                (update :raw-forms (fnil conj ()) (:form ast)))
+                                            ast))) ast)))) ast))
 
 (defn rewrite [env ast]
   (->> ast
@@ -197,13 +202,14 @@
   ([exprs] (tests* nil exprs))
   ([env exprs]
    `(binding [*ns* ~*ns*]
-      ~
-      (let [env (ana/to-env env)]
-        (binding [ana/*emit-options* {:simplify-do true}]
-          (->> (cons 'do exprs)
-               (ana/analyze env)
-               (rewrite env)
-               (ana/emit)))))))
+      ~(let [env (ana/to-env env)]
+         (binding [ana/*emit-options* {:simplify-do true}]
+           (->> (cons 'do exprs)
+                (ana/analyze env)
+                (ana/resolve-syms-pass)
+                (ana/macroexpand-pass)
+                (rewrite env)
+                (ana/emit)))))))
 
 (defn gen-name [form]
   (let [{:keys [line _column]} (meta form)
