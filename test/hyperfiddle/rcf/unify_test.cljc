@@ -1,4 +1,4 @@
-(ns hyperfiddle.rcf.tests
+(ns hyperfiddle.rcf.unify-test
   (:require [hyperfiddle.rcf :refer [deftest tests]]
             [hyperfiddle.rcf.unify :as u])
   #?(:cljs (:require-macros [hyperfiddle.rcf :refer [deftest tests]])))
@@ -32,8 +32,7 @@
  (u/ground (u/unify '[?a ?b] '[?b ?a])) := '{?a ::u/cycle, ?b ::u/cycle}
 
  "Transitive"
- (u/ground (u/unify '[?a ?b 1] '[?b _ ?a])) := '{?a 1, _ [1], ?b 1}
- )
+ (u/ground (u/unify '[?a ?b 1] '[?b _ ?a])) := '{?a 1, _ [1], ?b 1})
 
 
 (tests
@@ -53,8 +52,7 @@
  (u/unify [1 2 3] '[_ _ _ & ?more])                         := '{_ [1 2 3]}
  (u/unify [1 2 3 4 5] '[_ _ _ & ?more])                     := '{_ [1 2 3] ?more (4 5)}
  (u/unify [1 2 3 4 5] '[_ ?b _ & ?more])                    := '{_ [1 3], ?more (4 5), ?b 2}
- (u/unify [:foo 1 2] '[?head & _])                          := '{?head :foo, _ [(1 2)]}
- )
+ (u/unify [:foo 1 2] '[?head & _])                          := '{?head :foo, _ [(1 2)]})
 
 (tests
  (u/unifier '[?first "Argento"]
@@ -65,5 +63,4 @@
 
  (u/unifier '{?a 1 :b :a} '{?b 1 :b ?a})  := {:a 1, :b :a}
  (u/unifier {:a 1, :b 2} '{?a ?b, ?b ?a}) := ::u/fail
- (u/unifier '[?a ?b] '[?b ?a])            := [::u/cycle ::u/cycle]
- )
+ (u/unifier '[?a ?b] '[?b ?a])            := [::u/cycle ::u/cycle])
