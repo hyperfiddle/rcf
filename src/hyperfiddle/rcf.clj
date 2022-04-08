@@ -333,6 +333,12 @@
   (when t/*load-tests*
     `(def ~(vary-meta name assoc :test `(fn [] ~@body))
        (fn [] (test-var (var ~name))))))
+
+(defn comment->tests [form]
+  (if (seq? form)
+    (with-meta (cons `tests (rest form)) (meta form))
+    form))
+
 (comment
   (ana/analyze (ana/empty-env) '(testing 1 2))
   (ana/analyze (ana/empty-env) '(do 1 2))
