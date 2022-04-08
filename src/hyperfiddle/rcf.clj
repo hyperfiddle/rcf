@@ -258,11 +258,6 @@
                     form))
                 form))
 
-;; We can use '= to prevent unification (ignore wildcards and ?vars)
-;; To avoid conflicts with cc/=, RCF symbolicaly desugares cc/= to rcf/=.
-;; So rcf/= need a var to resolve to.
-(def = clojure.core/=)
-
 ;; Same as default `=` behavior, but returns the first argument instead of a boolean.
 (defmethod t/assert-expr 'hyperfiddle.rcf/= [msg form]
   (let [[_= & args] form
@@ -270,11 +265,11 @@
     `(let [values# (list ~@args)
            result# (apply = values#)]
        (if result#
-         (t/do-report {:type     ::pass
+         (do-report {:type     ::pass
                        :message  ~msg,
                        :expected '~form
                        :actual   (cons '= values#)})
-         (t/do-report {:type     ::fail
+         (do-report {:type     ::fail
                        :message  ~msg,
                        :expected '~form
                        :actual   (list '~'not (cons '~'= values#))}))
@@ -286,10 +281,10 @@
   ;; Returns the exception thrown.
   (let [[body klass] (rest form)]
     `(try ~body
-          (t/do-report {:type ::fail, :message ~msg,
+          (do-report {:type ::fail, :message ~msg,
                         :expected '~form, :actual nil})
           (catch ~klass e#
-            (t/do-report {:type ::pass, :message ~msg,
+            (do-report {:type ::pass, :message ~msg,
                           :expected '~form, :actual e#})
             e#))))
 
@@ -300,31 +295,52 @@
            rhs#           (identity ~(second args))
            [result# env#] (u/unifier* lhs# rhs#)]
        (if-not (u/failed? env#)
-         (do (t/do-report {:type     ::pass
+         (do (do-report {:type     ::pass
                            :message  ~msg,
                            :expected '~form
                            :actual   result#})
              result#)
-         (do (t/do-report {:type     ::fail
+         (do (do-report {:type     ::fail
                            :message  ~msg,
                            :expected '~form
                            :actual   env#})
              lhs#)))))
 
+(defn- stacktrace-file-and-line
+  [stacktrace]
+  (if (seq stacktrace)
+    (let [^StackTraceElement s (first stacktrace)
+          file-name (.getFileName s)
+          file-name (if (= "NO_SOURCE_FILE" file-name) (str (ns-name *ns*)) file-name)]
+      {:file file-name :line (.getLineNumber s)})
+    {:file nil :line nil}))
 
+(defn do-report [m]
+  (t/report
+   (case
+    (:type m)
+     (:fail ::fail) (merge (stacktrace-file-and-line (drop-while
+                                                      #(let [cl-name (.getClassName ^StackTraceElement %)]
+                                                         (or (str/starts-with? cl-name "java.lang.")
+                                                             (str/starts-with? cl-name "clojure.test$")
+                                                             (str/starts-with? cl-name "clojure.core$ex_info")
+                                                             (str/starts-with? cl-name "hyperfiddle.rcf")))
+                                                      (.getStackTrace (Thread/currentThread)))) m)
+     (:error ::error) (merge (stacktrace-file-and-line (.getStackTrace ^Throwable (:actual m))) m)
+     m)))
 
 (defn test-var
   "Like `clojure.test/test-var` but return actual result."
   [v]
   (when-let [t (:test (meta v))]
     (binding [t/*testing-vars* (conj t/*testing-vars* v)]
-      (t/do-report {:type :begin-test-var, :var v})
+      (do-report {:type :begin-test-var, :var v})
       (t/inc-report-counter :test)
       (try (t)
            (catch Throwable e
-             (t/do-report {:type :error, :message "Uncaught exception, not in assertion."
+             (do-report {:type :error, :message "Uncaught exception, not in assertion."
                            :expected nil, :actual e}))
-           (finally (t/do-report {:type :end-test-var, :var v}))))))
+           (finally (do-report {:type :end-test-var, :var v}))))))
 
 (defmacro deftest
   "When *load-tests* is false, deftest is ignored."
