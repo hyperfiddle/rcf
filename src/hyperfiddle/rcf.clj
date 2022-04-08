@@ -1,4 +1,5 @@
 (ns hyperfiddle.rcf
+  (:refer-clojure :exclude [=])
   (:require [clojure.string :as str]
             [clojure.test :as t]
             [clojure.walk :as walk]
@@ -7,6 +8,11 @@
             [hyperfiddle.rcf.time :as time]
             [hyperfiddle.rcf.unify :as u]
             [hyperfiddle.rcf.reporters]))
+
+;; We can use '= to prevent unification (ignore wildcards and ?vars)
+;; To avoid conflicts with cc/=, RCF desugares cc/= to rcf/=.
+;; So rcf/= need a var to resolve to.
+(def = clojure.core/=)
 
 (def ^:dynamic *enabled* (= "true" (System/getProperty "hyperfiddle.rcf.enabled")))
 
@@ -121,6 +127,7 @@
 (defmethod replace-sigil :default [sym] sym)
 (defmethod replace-sigil := [_sym] ::=)
 (defmethod replace-sigil '= [_sym] 'hyperfiddle.rcf/=)
+(defmethod replace-sigil 'thrown? [_sym] 'hyperfiddle.rcf/thrown?)
 
 (defn make-is [env a b c]
   (let [sigil     (replace-sigil (:form b))
@@ -269,6 +276,19 @@
                        :expected '~form
                        :actual   (list '~'not (cons '~'= values#))}))
        (first values#))))
+
+(defmethod t/assert-expr 'hyperfiddle.rcf/thrown? [msg form]
+  ;; (is (thrown? c expr))
+  ;; Asserts that evaluating expr throws an exception of class c.
+  ;; Returns the exception thrown.
+  (let [[body klass] (rest form)]
+    `(try ~body
+          (t/do-report {:type ::fail, :message ~msg,
+                        :expected '~form, :actual nil})
+          (catch ~klass e#
+            (t/do-report {:type ::pass, :message ~msg,
+                          :expected '~form, :actual e#})
+            e#))))
 
 (defmethod t/assert-expr ::= [msg form]
   (let [[_= & args] form
