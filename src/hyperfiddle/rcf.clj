@@ -187,6 +187,14 @@
                                                 (update :raw-forms (fnil conj ()) (:form ast)))
                                             ast))) ast)))) ast))
 
+(defn rewrite-is-support [env ast]
+  (ana/prewalk
+   (ana/only-nodes #{:invoke}
+                   (fn [ast]
+                     (if-not (= `t/is (:form (:fn ast)))
+                       ast
+                       (update-in ast [:args 0 :fn :form] replace-sigil)))) ast))
+
 (defn rewrite [env ast]
   (->> ast
        (maybe-add-stars-support env)
@@ -196,7 +204,8 @@
        (rewrite-doc env)
        (rewrite-star env)
        (rewrite-repl env)
-       (autoquote-lvars env)))
+       (autoquote-lvars env)
+       (rewrite-is-support env)))
 
 (defn tests*
   ([exprs] (tests* nil exprs))
@@ -224,6 +233,8 @@
 
 ;; Nested test support
 (defmethod ana/macroexpand-hook `tests [_the-var _&form _&env args] `(do ~@args))
+;; clojure.test/is support
+(defmethod ana/macroexpand-hook `t/is [_the-var _&form _&env args] `(t/is ~@args))
 
 ;; Skip these DSLs, their macroexpansion is not rewritable as clojure. 
 ;; No need to pay the cost of analyzing their output.
