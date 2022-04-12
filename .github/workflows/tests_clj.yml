@@ -18,6 +18,5 @@ jobs:
           cli: 1.10.1.727
 
       - name: Run tests
-        run: clojure -X:test :dirs "[\"example\" \"src\"]" :patterns "[\"example.*\" \"hyperfiddle.rcf.tests\"]"
-        shell: bash
+        run: clojure -X:test :dirs "[\"test\" \"example\"]" :patterns "[\"example.*\" \"hyperfiddle.rcf.*-test\"]"
 
