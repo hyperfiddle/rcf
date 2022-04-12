@@ -1,427 +1,379 @@
 (ns hyperfiddle.rcf.impl
-  (:require [clojure.tools.analyzer.ast :as ast]
-            [hyperfiddle.rcf.analyzer :as ana]
-            [cljs.analyzer :as a]
-            [clojure.string :as str]
+  (:require [clojure.string :as str]
             [clojure.test :as t]
+            [clojure.walk :as walk]
+            [hyperfiddle.rcf.analyzer :as ana]
             [hyperfiddle.rcf.queue :as q]
             [hyperfiddle.rcf.time :as time]
-            [hyperfiddle.rcf.unify :as u :refer [unifier*]]
-            [meander.epsilon :as m]
-            [meander.strategy.epsilon :as m*]
+            [hyperfiddle.rcf.unify :as u]
             [hyperfiddle.rcf.reporters]))
 
-(defn has-meta? [o] (instance? clojure.lang.IMeta o))
+(defn rewrite-doc [env ast]
+  (ana/prewalk
+   (ana/only-nodes #{:do}
+                   (fn [do-ast]
+                     (assoc do-ast :statements
+                            (loop [[s & ss] (:statements do-ast)
+                                   r []]
+                              (if (nil? s) r
+                                  (if (string? (:form s))
+                                    (let [testing-ast (ana/analyze env `(~`t/testing ~(:form s)))]
+                                      (->> (assoc do-ast :statements (vec ss))
+                                           (update testing-ast :args conj)
+                                           (conj r)))
+                                    (recur ss (conj r s))))))))
+   ast))
 
-(defn walk [inner outer form]
+(defn rewrite-star [env ast]
+  (ana/postwalk
+   (ana/only-nodes #{:var}
+                   (fn [var-ast]
+                     (if-let [index (condp = (:var var-ast) #'*1 0, #'*2, 1 #'*3 2, nil)]
+                       (-> (ana/analyze env `(~'RCF__peek! ~index))
+                           (assoc :raw-forms (list (:form var-ast)))
+                           (assoc ::star true))
+                       var-ast)))
+   ast))
+
+
+(defn star? [ast] (or (::star ast)
+                      (and (= :var (:op ast))
+                           (#{#'*1 #'*2 #'*3} (:var ast)))))
+
+(defn has-stars? [ast] (some? (first (filter star? (ana/ast-seq ast)))))
+
+(defn maybe-add-stars-support [env ast]
+  (if (has-stars? ast)
+    (-> (ana/analyze env `(let [[~'RCF__push! ~'RCF__peek!] (hyperfiddle.rcf/binding-queue)]))
+        (ana/resolve-syms-pass)
+        (ana/macroexpand-pass)
+        (update-in [:body :statements] conj ast))
+    ast))
+
+(defn make-queue [timeout-value]
+  `(let [q#       (q/queue)
+         start#   (time/current-time)
+         timeout# (atom hyperfiddle.rcf/*timeout*)]
+     [(fn [x#] (q/offer! q# x#) x#)
+      (fn
+        ([] (q/poll! q# start# (deref timeout#) ~timeout-value))          ; blocking
+        ([n# cb#] (q/poll-n! q# start# (deref timeout#) ~timeout-value n# cb#)) ; non blocking
+        )
+      (partial reset! timeout#)]))
+
+(defn %? [ast] (and (= :var (:op ast)) (= 'hyperfiddle.rcf/% (ana/var-sym (:var ast)))))
+(defn has-%? [ast] (some? (first (filter %? (ana/ast-seq ast)))))
+(defn maybe-add-queue-support [env ast]
+  (if (has-%? ast)
+    (-> (ana/analyze env `(let [[~'RCF__! ~'RCF__% ~'RCF__set-timeout!] (hyperfiddle.rcf/make-queue :hyperfiddle.rcf/timeout)]))
+        (ana/resolve-syms-pass)
+        (ana/macroexpand-pass)
+        (update-in [:body :statements] conj ast))
+    ast))
+
+(defn rewrite-!-% [env ast]
+  (if-not (has-%? ast)
+    ast
+    (ana/postwalk
+     (ana/only-nodes #{:var}
+                     (fn [var-ast]
+                       (condp = (ana/var-sym (:var var-ast))
+                         'hyperfiddle.rcf/! (assoc var-ast :form 'RCF__!)
+                         'hyperfiddle.rcf/set-timeout! (assoc var-ast :form 'RCF__set-timeout!)
+                         'hyperfiddle.rcf/%  (if (ana/cljs? env)
+                                               var-ast
+                                               (-> (ana/analyze env `(~'RCF__%))
+                                                   (assoc :raw-forms (list (:form var-ast)))))
+                         var-ast)))
+     ast)))
+
+(defn rewrite-repl [env ast]
+  (ana/prewalk (ana/only-nodes #{:do}
+                               (fn [do-ast]
+                                 (if-not (has-stars? do-ast)
+                                   do-ast
+                                   (assoc do-ast :statements
+                                          (loop [[s & ss] (:statements do-ast)
+                                                 r        []]
+                                            (cond
+                                              (nil? s) r
+                                              (empty? ss) (recur ss (conj r s))
+                                              :else
+                                              (let [invoke-ast (-> (ana/analyze env '(RCF__push!))
+                                                                   (update :args conj s))]
+                                                (recur ss (conj r invoke-ast)))))))))
+               ast))
+
+
+(defmulti replace-sigil identity)
+(defmethod replace-sigil :default [sym] sym)
+(defmethod replace-sigil := [_sym] :hyperfiddle.rcf/=)
+(defmethod replace-sigil '= [_sym] 'hyperfiddle.rcf/=)
+(defmethod replace-sigil 'thrown? [_sym] 'hyperfiddle.rcf/thrown?)
+
+(defn replace-sigil* [sym]
+  (let [sym' (replace-sigil sym)]
+    (if (= sym sym')
+      sym' (recur sym'))))
+
+(defn make-is [env a b c]
+  (let [sigil     (replace-sigil* (:form b))
+        inner-ast (-> (ana/analyze env `(~sigil))
+                      (update :args conj a c))]
+    (-> (ana/analyze env `(t/is))
+        (update :args conj inner-ast))))
+
+(defn lvar? [ast]
+  (and (#{:var :symbol} (:op ast))
+       (or (= '_ (:form ast))
+           (str/starts-with? (str (:form ast)) "?"))))
+(defn has-lvars? [ast] (some? (first (filter lvar? (ana/ast-seq ast)))))
+
+(defn simplify-sigil [left center right]
   (cond
-    (list? form)      (outer form (apply list (map inner form)))
-    (map-entry? form) (outer form (clojure.lang.MapEntry/create (inner (key form)) (inner (val form))))
-    (seq? form)       (outer form (doall (map inner form))) ;; Must be after `list?` and `map-entry?`
-    (record? form)    (outer form (reduce (fn [r x] (conj r (inner x))) form form))
-    (coll? form)      (outer form (into (empty form) (map inner form)))
-    :else             (outer form form)))
+    (and (= :var (:op center))
+         (= 'hyperfiddle.rcf/= (ana/var-sym (:var center)))) '=
+    (and (= := (:form center))
+         (not (has-lvars? left))
+         (not (has-lvars? right))) '=
+    :else (:form center)))
 
-(defn forward-metas [form form']
-  (if (has-meta? form')
-    (with-meta form' (merge (meta form) (meta form')))
-    form'))
+(defmulti rewrite-infix (fn [_env _left center _right] (:form center)))
+(defmethod rewrite-infix :default [env l c r]
+  (let [sigil-ast  (ana/analyze env (replace-sigil* (simplify-sigil l c r)))]
+    (make-is env l sigil-ast r)))
 
-(defn prewalk [f form]
-  (if (reduced? form)
-    (unreduced form)
-    (unreduced (walk (partial prewalk f) forward-metas (f form)))))
+(defn sigil? [ast]
+  (let [form (if (= :var (:op ast))
+               (ana/var-sym (:var ast))
+               (:form ast))]
+    (contains? (methods t/assert-expr) (replace-sigil* form))))
 
-(defn postwalk [f form]
-  (if (reduced? form)
-    (unreduced form)
-    (unreduced (walk (partial postwalk f) (fn [form form'] (forward-metas form (f (forward-metas form form'))))
-                     form))))
-
-;; Print an ast node. Filters noisy info before printing.
-#_(defn print-node [ast] (clojure.pprint/pprint (prewalk (fn [x] (if (and (map? x) (:op x)) (dissoc x :env :info) x)) ast)))
-
-(defn lvar? [form]
-  (or (= '_ form)
-      (and (simple-symbol? form)
-           (= \? (first (name form))))))
-
-(defn sigil? [form] (contains? (methods t/assert-expr) form))
-
-(def do-op? #{'tests 'do 'do* `cljs.test/async `testing})
-
-(defn rewrite-infix [form]
-  ;; NOTE (& !head ?x (m/pred sigil? ?sigil) ?y & !tail) (& !head (is (?sigil ?x ?y)) &  !tail)
-  (prewalk (fn [form]
-             (m/match form
-               ((m/pred do-op? ?op) & ?tail) (cons ?op (let [tail ?tail]
-                                                         (loop [r                []
-                                                                [a b c :as tail] tail]
-                                                           (if (empty? tail)
-                                                             (seq r)
-                                                             (if (sigil? b)
-                                                               (recur (conj r `(is (~b ~a ~c))) (drop 3 tail))
-                                                               (recur (conj r a) (rest tail)))))))
-               _ form))
-           form))
-
-(defn rewrite-doc* [form]
-  (cond (empty? form)          form
-        (string? (first form)) `((testing ~(str/join " " (take-while string? form))
-                                   ~@(take-while string? form)
-                                   ~@(rewrite-doc* (->> form (drop-while string?) (take-while (complement string?)))))
-                                 ~@(rewrite-doc* (->> form (drop-while string?) (drop-while (complement string?)))))
-        :else                  (cons (first form) (rewrite-doc* (rest form)))))
-
-(defn rewrite-doc [form]
-  (postwalk (fn [form]
-              (if (seq? form)
-                (let [[op & exprs] form]
-                  (if (#{'do 'do*} op)
-                    (cons op (rewrite-doc* (rest form)))
-                    form))
-                form))
-            form))
-
-(defn star-number [ns name]
-  (let [star-n (case name "*1" 1 "*2" 2 "*3" 3 nil)]
-    (if (some? ns)
-      (and (#{"cljs.core" "clojure.core"} ns)
-           star-n)
-      star-n)))
-
-(defn rewrite-star [form]
-  (m/match form
-    (m/symbol ?ns ?name) (if-let [num (star-number ?ns ?name)]
-                           (with-meta `(get @~'RCF__bindings ~(dec num))
-                             {::form form})
-                           form)
-    _ form))
-
-(def rewrite-stars (m*/top-down (m*/attempt rewrite-star)))
-
-(defn replace-n [from to n form]
-  (let [seen  (atom 0)
-        done? (fn [x] (if (= n @seen)
-                        true
-                        (do (when (= x from)  (swap! seen inc))
-                            false)))]
-    ((m*/top-down-until done? (m*/attempt (m*/rewrite ~from ~to)))
-     form)))
-
-(defn poll-n [step body]
-  (let [% (gensym "%")]
-    `(q/poll! ~'RCF__q ~'RCF__time_start (deref ~'RCF__timeout) :hyperfiddle.rcf/timeout
-              (fn [~%] ~@(step (replace-n `hyperfiddle.rcf/% % 1 body))))))
-
-(defn count-%? [form] (count (filter #{`hyperfiddle.rcf/%} (tree-seq coll? identity form))))
-
-(defn has-%? [form]
-  (loop [xs (tree-seq coll? identity form)]
-    (cond
-      (empty? xs)                       false
-      (= `hyperfiddle.rcf/% (first xs)) true
-      :else                             (recur (rest xs)))))
-
-;; FIXME postwalk in postwalk, O(n²)
-(defn rewrite-% [form]
-  (letfn [(step [exprs]
-            (cond (empty? exprs)         exprs
-                  (has-%? (first exprs)) (list (poll-n step exprs))
-                  :else                  (cons (first exprs) (step (rest exprs)))))]
-    (prewalk (fn [form]
-                (if (seq? form)
-                  (let [[op & exprs] form]
-                    (if (do-op? op)
-                      (cons op (step exprs))
-                      form))
-                  form))
-              form)))
-
-;; (hyperfiddle.rcf/tests
-;;  (hyperfiddle.rcf/! 1)
-;;  (hyperfiddle.rcf/! 2)
-;;  hyperfiddle.rcf/% := 1
-;;  hyperfiddle.rcf/% := 2)
-
-(defmacro binding-queue [] `(atom [nil nil nil]))
-
-(defn push-binding! [expr exprs]
-  (if (empty? exprs)
-    (list expr)
-    `((~'RCF__push! ~expr)
-      ~@exprs)))
-
-(defn do-not-push? [form]
-  (and (seq? form)
-       (#{'testing 'recur 'throw 'catch 'finally} (first form))))
-
-(defn rewrite-push [forms]
-  (if (empty? forms)
-    ()
-    (cond (do-not-push? (first forms)) (concat (list (first forms)) (rewrite-push (rest forms)))
-          :else                        (push-binding! (first forms) (rewrite-push (rest forms))))))
-
-;; TODO rework
-(defn rewrite-push-binding [form]
-  (postwalk (fn [form]
-              (if (seq? form)
-                (cond
-                  (do-op? (first form))
-                  ,, (m/match form
-                       (hyperfiddle.rcf.impl/testing (m/pred string? ?doc) & ?tail)
-                       ,, (cons `testing (cons ?doc (rewrite-push ?tail)))
-
-                       (cljs.test/async ?done & ?tail)
-                       ,, (cons `cljs.test/async (cons ?done (rewrite-push ?tail)))
-
-                       ((m/pred do-op? ?op) & ?tail) (cons ?op (rewrite-push ?tail))
-                       _ form)
-                  (= 'quote (first form)) (:hyperfiddle.rcf.analyzer/form (meta form) form)
-                  :else                   form)
-                form))
-            form))
-
-(defn rewrite-do [form]
-  (m/match form
-           ((m/pred do-op?) & _) (->> form
-                                      (rewrite-infix)
-                                      (rewrite-%)
-                                      (rewrite-doc)
-                                      (rewrite-push-binding)
-                                      (rewrite-stars))
-           _ form))
-
-(defn do-form? [form] (and (seq? form) (do-op? (first form))))
-
-(defn flatten-top-level [form]
-  (seq (reduce (fn [r x]
-                 (cond
-                   (do-form? x) (into r (flatten-top-level (rest x)))
-                   (= 'tests x) (conj r 'do*)
-                   :else        (conj r x)))
-               [] form)))
-
-(defn do*->do [form] (prewalk (fn [form] (if (= 'do* form) 'do form)) form))
-
-(defn simplify-do [form]
-  (with-meta
-    (seq (reduce (fn [r x]
-                   (cond
-                     (and (do-form? x) (= 1 (count (rest x)))) (into r (simplify-do (rest x)))
-                     (seq? x)                                  (conj r (simplify-do x))
-                     :else                                     (conj r x)))
-                 [] form))
-    (meta form)))
-
-(defn rewrite* [subst-map form]
-  (let [matches? #(contains? subst-map %)]
-    (prewalk (fn [form]
-               (if (matches? form)
-                 (get subst-map form)
-                 form))
-             form)))
-
-(defn recover-form-meta [form-map form]
-  (letfn [(recover-form [form]
-            (if-let [form' (or (get form-map form) (::form (meta form)))]
-              (recover-form form')
-              form))]
-    (prewalk (fn [form]
-               (if (has-meta? form)
-                 (if-let [form' (recover-form form)]
-                   (if (not= form form')
-                     (vary-meta form assoc ::form form')
-                     form)
-                   form)
-                 form))
-             form)))
+(defn rewrite-infix-pass [env ast]
+  (ana/prewalk
+   (ana/only-nodes #{:do}
+                   (fn [do-ast]
+                     (assoc do-ast :statements
+                            (loop [ss (:statements do-ast)
+                                   r []]
+                              (if (>= (count ss) 3)
+                                (let [[a b c] ss]
+                                  (if (sigil? b)
+                                    (recur (drop 3 ss) (conj r (rewrite-infix env a b c)))
+                                    (recur (rest ss) (conj r a))))
+                                (into r ss))))))
+   ast))
 
 (defn autoquote-lvars [env ast]
-  (ast/postwalk ast (fn [ast]
-                      ;; (prn (:op ast))
-                      (case (:op ast)
-                        :quote      (if (lvar? (:form (:expr ast)))
-                                      (update ast :expr update :form #(list 'quote %))
-                                      ast)
-                        :maybe-class (if (lvar? (:form ast))
-                                       (assoc ast :class (list 'quote (:form ast)))
-                                       ast)
-                        :var         (if (ana/cljs? env)
-                                       (if (lvar? (:form ast))
-                                         (try (a/resolve-var (:env ast) (:form ast)
-                                                             (a/confirm-var-exists-throw))
-                                              ast
-                                              (catch clojure.lang.ExceptionInfo _t
-                                                (assoc ast :op ::ana/lvar)))
-                                         ast)
-                                       ast)
-                        ast))))
+  ;; Rewrites ?a and _ in t/is assertions
+  ;; It could be handled by t/is directly, but we already have a full AST here, 
+  ;; no need to serialize it only to reparse it all on the next macroexpand.
+  (ana/prewalk
+   (ana/only-nodes #{:invoke}
+                   (fn [ast]
+                     (if-not (= `t/is (:form (:fn ast)))
+                       ast
+                       (ana/postwalk
+                        (ana/only-nodes #{:var :symbol}
+                                        (fn [ast]
+                                          (if (lvar? ast)
+                                            (-> (update ast :form #(list 'quote %))
+                                                (update :raw-forms (fnil conj ()) (:form ast)))
+                                            ast))) ast)))) ast))
 
-(def ast-passes [autoquote-lvars])
+(defn rewrite-is-support [env ast]
+  (ana/prewalk
+   (ana/only-nodes #{:invoke}
+                   (fn [ast]
+                     (if-not (= `t/is (:form (:fn ast)))
+                       ast
+                       (update-in ast [:args 0 :fn :form] replace-sigil*)))) ast))
 
-(defn tests-clj [&env & body]
-  (let [[forms macroexpanded] (ana/macroexpand-all ast-passes {:locals &env} (flatten-top-level (cons 'tests body)))
-        !                     (gensym "RCF__!")
-        set-timeout!          (gensym "RCF__set-timeout!")
-        rewritten             (->> macroexpanded
-                                   (rewrite* {`hyperfiddle.rcf/!            !
-                                              `hyperfiddle.rcf/set-timeout! set-timeout!})
-                                   (rewrite-do)
-                                   (do*->do)
-                                   (simplify-do)
-                                   ;; TODO *1 *2 *3 recover missing
-                                   (recover-form-meta forms))]
-    `(binding [*ns* (the-ns '~(symbol (str *ns*)))]
-       (let [~'RCF__q          (q/queue)
-             ~!                (~'fn [x#] #_(prn "!=>" x#) (q/offer! ~'RCF__q x#)) #_ (partial q/offer! ~'RCF__q)
-             ~'RCF__time_start (time/current-time)
-             ~'RCF__timeout    (atom hyperfiddle.rcf/*timeout*)
-             ~set-timeout!     (partial reset! ~'RCF__timeout)
-             ~'RCF__bindings   (binding-queue)
-             ~'RCF__push!      (partial hyperfiddle.rcf/push! ~'RCF__bindings)
-             ~'RCF__testing-contexts    nil]
-         ~rewritten))))
+(defn rewrite-cljs-test [env ast]
+  (if-not (ana/cljs? env)
+    ast
+    (ana/prewalk
+     (ana/only-nodes #{:var :symbol}
+                     (fn [ast]
+                       (if (and (symbol? (:form ast))
+                                (= "clojure.test" (namespace (:form ast))))
+                         (assoc ast :form (symbol "cljs.test" (name (:form ast))))
+                         ast))) ast)))
 
-(defn call-done-at-far-end [done form]
-  (cond
-    (empty? form)   form
-    (do-form? form) (if (do-form? (last form))
-                      (concat (butlast form) (list (call-done-at-far-end done (last form))))
-                      (concat form (list `(~done))))
-    :else           form))
+(defn make-poll-n [n env ast]
+  (let [syms (take n (map #(symbol (str "%-" (inc %))) (range n)))
+        ast  (let [!syms (atom syms)]
+               (ana/postwalk (ana/only-nodes #{:var}
+                                             (fn [var-ast]
+                                               (if (empty? @!syms)
+                                                 (reduced var-ast)
+                                                 (condp = (ana/var-sym (:var var-ast))
+                                                   'hyperfiddle.rcf/% (let [sym (first @!syms)]
+                                                                        (swap! !syms rest)
+                                                                        (-> (ana/analyze env sym)
+                                                                            (assoc :raw-forms (list (:form var-ast)))))
+                                                   var-ast))))
+                             ast))
+        f    (-> (ana/analyze env `(fn [~@syms]))
+                 (ana/resolve-syms-pass)
+                 (ana/macroexpand-pass)
+                 (update-in [:methods 0 :body :statements] conj ast))]
+    (-> (ana/analyze env `(~'RCF__% ~n))
+        (update-in [:args] conj f))))
 
-(defn tests-cljs [&env & body]
-  (let [async-done            (with-meta (gensym "async_done_") {:cljs.analyzer/no-resolve true})
-        [forms macroexpanded] (ana/macroexpand-all ast-passes (assoc-in &env [:locals async-done] async-done)
-                                                   (->> (cons 'do body)
-                                                        (call-done-at-far-end async-done)
-                                                        (flatten-top-level)))
-        !                     (gensym "RCF__!")
-        set-timeout!          (gensym "RCF__set-timeout!")
-        rewritten             (->> macroexpanded
-                                   (rewrite* {`hyperfiddle.rcf/!            !
-                                              `hyperfiddle.rcf/set-timeout! set-timeout!})
-                                   (rewrite-do)
-                                   (do*->do)
-                                   (simplify-do)
-                                   ;; TODO *1 *2 *3 recover missing
-                                   (recover-form-meta forms))]
-    `(let [~'RCF__q                (q/queue)
-           ~!                      (~'fn [x#] #_(prn "!=>" x#) (q/offer! ~'RCF__q x#)) #_ (partial q/offer! ~'RCF__q)
-           ~'RCF__time_start       (time/current-time)
-           ~'RCF__timeout          (atom hyperfiddle.rcf/*timeout*)
-           ~set-timeout!           (partial reset! ~'RCF__timeout)
-           ~'RCF__bindings         (binding-queue)
-           ~'RCF__push!            (partial hyperfiddle.rcf/push! ~'RCF__bindings)
-           ~'RCF__testing-contexts nil]
-       (cljs.test/async ~async-done ~rewritten))))
 
-(defn tests [&env & body]
-  (if (ana/cljs? &env)
-    (apply tests-cljs &env body)
-    (apply tests-clj &env body)))
+(defn assertion? [ast]
+  (and (= :invoke (:op ast))
+       (= `t/is (:form (:fn ast)))))
+
+(defn rewrite-async-assert [env ast]
+  (if-not (ana/cljs? env)
+    ast
+    (ana/prewalk
+     (ana/only-nodes #{:do}
+                     (fn [ast]
+                       (assoc ast :statements
+                              (loop [r        []
+                                     [s & ss] (:statements ast)]
+                                (cond
+                                  (nil? s)             r
+                                  (not (assertion? s)) (recur (conj r s) ss)
+                                  :else (let [%-count (count (filter %? (ana/ast-seq s)))]
+                                          (if (zero? %-count)
+                                            (recur (conj r s) ss)
+                                            (let [s' (-> (ana/analyze (ana/empty-env) '(do))
+                                                         (update :statements into (cons s ss)))]
+                                              (conj r (make-poll-n %-count env s')))))))))) ast)))
+
+(defn rewrite-overload-is [env ast]
+  (ana/prewalk
+   (ana/only-nodes #{:invoke}
+                   (fn [ast]
+                     (if (#{`t/is 'cljs.test/is} (:form (:fn ast)))
+                       (assoc-in ast [:fn :form] 'hyperfiddle.rcf/is)
+                       ast))) ast))
+
+(defn add-done-support [env ast]
+  (let [count-is  (count (filter (fn [ast] (and (= :invoke (:op ast)) (= `t/is (:form (:fn ast))))) (ana/ast-seq ast)))]
+    (if (zero? count-is)
+      ast
+      (let [done-sym (gensym "done-")
+            body (-> (ana/analyze env `(let [~'RCF__done! (hyperfiddle.rcf/async-notifier ~count-is ~done-sym)]))
+                     (ana/resolve-syms-pass)
+                     (ana/macroexpand-pass)
+                     (update-in [:body :statements] conj ast))]
+        (-> (ana/analyze env `(~'hyperfiddle.rcf/async ~done-sym))
+            (update-in [:args] conj body))))))
+
+(defn rewrite [env ast]
+  (->> ast
+       (maybe-add-stars-support env)
+       (maybe-add-queue-support env)
+       (rewrite-!-% env)
+       (rewrite-infix-pass env)
+       (rewrite-async-assert env)
+       (rewrite-doc env)
+       (rewrite-star env)
+       (rewrite-repl env)
+       (autoquote-lvars env)
+       (rewrite-is-support env)
+       (add-done-support env)
+       (rewrite-cljs-test env)
+       (rewrite-overload-is env)))
+
+(defn tests-cljs* [env exprs]
+  (let [env (ana/to-env env)]
+    (binding [ana/*emit-options* {:simplify-do true}]
+      (->> (cons 'do exprs)
+           (ana/analyze env)
+           (ana/resolve-syms-pass)
+           (ana/macroexpand-pass)
+           (rewrite env)
+           (ana/emit)))))
+
+(defn tests*
+  ([exprs] (tests* nil exprs))
+  ([env exprs]
+   (if (ana/cljs? env)
+     (tests-cljs* env exprs)
+     `(binding [*ns* ~*ns*]
+        ~(let [env (ana/to-env env)]
+           (binding [ana/*emit-options* {:simplify-do true}]
+             (->> (cons 'do exprs)
+                  (ana/analyze env)
+                  (ana/resolve-syms-pass)
+                  (ana/macroexpand-pass)
+                  (rewrite env)
+                  (ana/emit))))))))
+
+;; Nested test support
+(defmethod ana/macroexpand-hook `hyperfiddle.rcf/tests [_the-var _&form _&env args] `(do ~@args))
+;; clojure.test/is support
+(defmethod ana/macroexpand-hook `t/is [_the-var _&form _&env args] `(t/is ~@args))
+
+;; Skip these DSLs, their macroexpansion is not rewritable as clojure. 
+(defmethod ana/macroexpand-hook 'clojure.core/case [_ _ _ args] `(case ~@args))
+(defmethod ana/macroexpand-hook 'cljs.core/case [_ _ _ args] `(case ~@args))
+(defmethod ana/macroexpand-hook 'clojure.core.async/go [_ _ _ args] `(clojure.core.async/go ~@args))(defmethod ana/macroexpand-hook 'clojure.core.async/go-loop [_ _ _ args] `(clojure.core.async/go-loop ~@args))
+(defmethod ana/macroexpand-hook 'cljs.core.async/go [_ _ _ args] `(cljs.core.async/go ~@args))
+
+(defn quoted? [form] (and (seq? form) (= 'quote (first form))))
+
+(defn original-form [form]
+  (walk/prewalk (fn [form]
+                  (if (ana/has-meta? form)
+                    (if-some [form (last (:hyperfiddle.rcf.analyzer/macroexpanded (meta form)))]
+                      (if (quoted? form) (second form) form)
+                      form)
+                    form))
+                form))
+
+(defmethod t/assert-expr 'hyperfiddle.rcf/thrown? [msg form]
+  ;; (is (thrown? c expr))
+  ;; Asserts that evaluating expr throws an exception of class c.
+  ;; Returns the exception thrown.
+  (let [[body klass] (rest form)]
+    `(try ~body
+          (do-report {:type :hyperfiddle.rcf/fail, :message ~msg,
+                      :expected '~form, :actual nil})
+          (catch ~klass e#
+            (do-report {:type :hyperfiddle.rcf/pass, :message ~msg,
+                        :expected '~form, :actual e#})
+            e#))))
+
 
 (defn- stacktrace-file-and-line
   [stacktrace]
   (if (seq stacktrace)
-    (let [^StackTraceElement s (first stacktrace)]
-      {:file (.getFileName s) :line (.getLineNumber s)})
+    (let [^StackTraceElement s (first stacktrace)
+          file-name (.getFileName s)
+          file-name (if (= "NO_SOURCE_FILE" file-name) (str (ns-name *ns*)) file-name)]
+      {:file file-name :line (.getLineNumber s)})
     {:file nil :line nil}))
 
-(defn do-report-clj [m]
+(defn do-report [m]
   (t/report
    (case
-       (:type m)
-     :hyperfiddle.rcf/fail (merge (stacktrace-file-and-line (drop-while
-                                                             #(let [cl-name (.getClassName ^StackTraceElement %)]
-                                                                (or (str/starts-with? cl-name "java.lang.")
-                                                                    (str/starts-with? cl-name "clojure.test")
-                                                                    (str/starts-with? cl-name "hyperfiddle.rcf")
-                                                                    (str/starts-with? cl-name "clojure.core$ex_info")))
-                                                             (.getStackTrace (Thread/currentThread)))) m)
-     :hyperfiddle.rcf/error (merge (stacktrace-file-and-line (.getStackTrace ^Throwable (:actual m))) m)
+    (:type m)
+     (:fail :hyperfiddle.rcf/fail) (merge (stacktrace-file-and-line (drop-while
+                                                                     #(let [cl-name (.getClassName ^StackTraceElement %)]
+                                                                        (or (str/starts-with? cl-name "java.lang.")
+                                                                            (str/starts-with? cl-name "clojure.test$")
+                                                                            (str/starts-with? cl-name "clojure.core$ex_info")
+                                                                            (str/starts-with? cl-name "hyperfiddle.rcf")))
+                                                                     (.getStackTrace (Thread/currentThread)))) m)
+     (:error :hyperfiddle.rcf/error) (merge (stacktrace-file-and-line (.getStackTrace ^Throwable (:actual m))) m)
      m)))
 
-(defmacro do-report [m]
-  (if (ana/cljs? &env)
-    `(cljs.test/do-report ~m)
-    `(do-report-clj ~m)))
-
-(defmacro deftest-cljs [name & body]
-  (when a/*load-tests*
-    `(do
-       (def ~(vary-meta name assoc :test `(fn [] ~@body))
-         (fn [] (cljs.test/test-var (.-cljs$lang$var ~name))))
-       (set! (.-cljs$lang$var ~name) (var ~name))
-       #_(when *enabled* (t/test-var (var ~name))))))
-
-(defn test-var [v]
+(defn test-var
+  "Like `clojure.test/test-var` but return actual result."
+  [v]
   (when-let [t (:test (meta v))]
     (binding [t/*testing-vars* (conj t/*testing-vars* v)]
-      (let [result (try (t)
-                        (catch Throwable e
-                          (do-report {:type :hyperfiddle.rcf/error, :message "Uncaught exception, not in assertion."
-                                      :expected nil, :actual e, :ns *ns*
-                                      :testing-contexts (str v)})))]
-        (t/do-report {:type :end-test-var, :var v})
-        result))))
-
-(defmacro deftest-clj [name & body]
-  (when t/*load-tests*
-    `(do (def ~(vary-meta name assoc :hyperfiddle/rcf true, :test `(fn ~name [] ~@body))
-             (fn [] (test-var (var ~name))))
-         (when hyperfiddle.rcf/*enabled* (test-var (var ~name))))))
-
-(defn deftest [&env name & body]
-  (if (ana/cljs? &env)
-    `(deftest-cljs ~name ~(apply tests-cljs &env body))
-    `(deftest-clj  ~name ~(apply tests-clj &env body))))
-
-(defn original-form [form]
-  (or (::form (meta form)) form))
-
-(defn recover [form] (prewalk original-form form))
-
-(defn assert-unify [m pred [_op lhs rhs :as form]]
-  (let [{:keys [:message :type]} m]
-    `(let [lhs#           (identity ~lhs) ;; guard against `clojure.core/let` spec invalid on `(let [_ ::s/invalid])``
-           rhs#           (identity ~rhs)
-           [result# env#] (unifier* lhs# rhs#)]
-       (if (~pred true (u/failed? env#))
-         (do (do-report {:type     ~(or type :hyperfiddle.rcf/fail), :message ~message,
-                         :expected '~(recover form),      :actual  { ;;:lhs       '~(original-form lhs)
-                                                                    :lhs-value lhs#
-                                                                    ;;:rhs       '~(original-form rhs)
-                                                                    :rhs-value rhs#
-                                                                    :env       env#}
-                         :ns *ns*
-                         :testing-contexts ~'RCF__testing-contexts})
-             lhs#)
-         (do (do-report {:type     :hyperfiddle.rcf/pass, :message ~message,
-                         :expected '~(recover form),      :actual  result#
-                         :ns *ns*
-                         :testing-contexts ~'RCF__testing-contexts})
-             (if (u/failed? env#)
-               lhs#
-               result#))))))
-
-(defmacro assert-expr [& args]
-  (if (ana/cljs? &env)
-    `(cljs.test/assert-expr ~@args)
-    `(clojure.test/assert-expr ~@args)))
-
-(defmacro try-expr* [msg form]
-  `(try ~(assert-expr msg form)
-        (catch ~(if (ana/cljs? &env) :default 'Throwable) err#
-          (do-report {:type     :hyperfiddle.rcf/error, :message ~msg,
-                      :expected '~form, :actual err#}))))
-
-(defmacro is
-  ([form]     `(try-expr*  nil ~form))
-  ([form msg] `(try-expr* ~msg ~form)))
-
-(defmacro testing [doc & body]
-  `(let [~'RCF__testing-contexts ~doc]
-     ~@body))
-
+      (do-report {:type :begin-test-var, :var v})
+      (t/inc-report-counter :test)
+      (try (t)
+           (catch Throwable e
+             (do-report {:type :error, :message "Uncaught exception, not in assertion."
+                         :expected nil, :actual e}))
+           (finally (do-report {:type :end-test-var, :var v}))))))

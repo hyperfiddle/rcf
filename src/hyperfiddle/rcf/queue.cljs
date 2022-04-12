@@ -28,21 +28,31 @@
 (defn get-queue [^js q]
   (seq (.-arr q)))
 
-(defn poll! [^js q start timeout missing-value callback]
-  (let [now (time/current-time)]
-    (if (time/timeout? now start timeout)
-      (callback missing-value)
-      (let [resolved? (volatile! false)
-            resolve   (fn [val] (when-not @resolved?
-                                  (vreset! resolved? true)
-                                  (callback val)))]
-        (if (-empty? q)
-          (do (observe! q resolve)
-              (js/setTimeout (fn []
-                               (unobserve! q resolve)
-                               (resolve missing-value))
-                             (time/remaining now start timeout)))
-          (resolve (take! q)))))))
+(defn poll! 
+  ([_ _ _ _] (throw (ex-info "Blocking poll not available on a JS runtime." {})))
+  ([^js q start timeout missing-value callback]
+   (let [now (time/current-time)]
+     (if (time/timeout? now start timeout)
+       (callback missing-value)
+       (let [resolved? (volatile! false)
+             resolve   (fn [val] (when-not @resolved?
+                                   (vreset! resolved? true)
+                                   (callback val)))]
+         (if (-empty? q)
+           (do (observe! q resolve)
+               (js/setTimeout (fn []
+                                (unobserve! q resolve)
+                                (resolve missing-value))
+                              (time/remaining now start timeout)))
+           (resolve (take! q))))))))
+
+(defn poll-n! [^js q start timeout missing-value n callback]
+  (assert (nat-int? n))
+  (poll! q start timeout missing-value
+         (fn [x]
+           (if (= 1 n)
+             (callback x)
+             (poll-n! q start timeout missing-value (dec n) (partial callback x))))))
 
 (defn offer! [q v]
   (put! q v)

@@ -29,14 +29,14 @@
   (inc 1) := 2
 
   "wildcards"
-  {:a :b, :b [2 :b]} := '{:a _, _ [2 _]}
+  {:a :b, :b [2 :b]} := {:a _, _ [2 _]}
 
   "unification"
-  {:a :b, :b [2 :b]} := '{:a ?b, ?b [2 ?b]}
+  {:a :b, :b [2 :b]} := {:a ?b, ?b [2 ?b]}
 
   "unification on reference types"
   (def x (atom nil))
-  {:a x, :b x} := '{:a ?x, :b ?x}
+  {:a x, :b x} := {:a ?x, :b ?x}
 
   "REPL bindings work"
   (inc 1)
@@ -67,6 +67,7 @@
             % := 2
             % := ::rcf/timeout
             )))
+
 
 
 (tests

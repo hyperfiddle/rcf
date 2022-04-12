@@ -2,7 +2,10 @@
 ;; Adapted from  https://github.com/clojure/tools.analyzer
 (ns hyperfiddle.rcf.analyzer
   (:refer-clojure :exclude [macroexpand-1 macroexpand update-vals resolve])
+  (:require [cljs.analyzer.api :as cljs-ana])
   (:import (clojure.lang IObj)))
+
+(defn cljs? [env] (some? (:js-globals env)))
 
 (defn empty-env
   "Returns an empty env"
@@ -41,27 +44,45 @@
       (or (get-in namespaces [ns :aliases ns-sym])
           (:ns (namespaces ns-sym))))))
 
+(defn var?' [maybe-var] (or (var? maybe-var) (= ::var (type maybe-var))))
+
+(defn to-var [{:keys [macro meta ns name]}]
+  (with-meta {:ns ns, :name name} (assoc meta :type ::var)))
+
 (defn resolve-sym
   "Resolves the value mapped by the given sym in the global env"
   [sym {:keys [ns] :as env}]
-  (when (symbol? sym)
-    (let [sym-ns (when-let [ns (namespace sym)]
-                   (symbol ns))
-          full-ns (resolve-ns sym-ns env)]
-      (when (or (not sym-ns) full-ns)
-        (let [name (if sym-ns (-> sym name symbol) sym)]
-          (-> (global-env) :namespaces (get (or full-ns ns)) :mappings (get name)))))))
+  (if (cljs? env)
+    (let [resolved (cljs-ana/resolve env sym)]
+      (if (or (:macro resolved) (= :var (:op resolved)))
+        (resolve-sym (:name resolved) (dissoc env :js-globals))
+        (to-var resolved)))
+    (when (symbol? sym)
+      (let [sym-ns (when-let [ns (namespace sym)]
+                     (symbol ns))
+            full-ns (resolve-ns sym-ns env)]
+        (when (or (not sym-ns) full-ns)
+          (let [name (if sym-ns (-> sym name symbol) sym)]
+            (-> (global-env) :namespaces (get (or full-ns ns)) :mappings (get name))))))))
 
 (def specials "Set of special forms common to every clojure variant"
   '#{do if new quote set! try var catch throw finally def . let* letfn* loop* recur fn*})
 
-(defn var-sym [v] (when v (symbol (name (.name (.ns v))) (name (.sym v)))))
+(defn var-sym [v] 
+  (cond
+    (var? v) (symbol (name (.name (.ns v))) (name (.sym v)))
+    (var?' v) (symbol (str (:ns v)) (str (:name v)))))
 
 (defmulti macroexpand-hook (fn [the-var _&form _&env _args] (var-sym the-var)))
 (defmethod macroexpand-hook :default [the-var &form &env args]
-  ;; TODO in cljs, pass whole env, in clj, pass only locals
-  ;; (prn "macroexpand" (var-sym the-var))
-  (apply the-var &form (:locals &env) args))
+  (if (cljs? &env)
+    (if (:cljs.analyzer/numeric (meta the-var))
+      (reduced &form)
+      (let [mform (apply the-var &form &env args)]
+        (if (and (seq? mform) (= 'js* (first mform)))
+          (reduced &form)
+          mform)))
+    (apply the-var &form (:locals &env) args)))
 
 (defn has-meta? [o] (instance? clojure.lang.IMeta o))
 
@@ -373,19 +394,23 @@
        :children [:fn :args]})
     (analyze env form)))
 
+(defn ns-sym [ns] (cond (symbol? ns) ns
+                        (map? ns) (:name ns)
+                        :else (ns-name ns)))
+
 (defn create-var
   "Creates a Var for sym and returns it.
    The Var gets interned in the env namespace."
   [sym {:keys [ns] :as env}]
   (let [v (get-in (global-env) [:namespaces ns :mappings (symbol (name sym))])]
     (if (and v (or (class? v)
-                   (= ns (ns-name (.ns ^clojure.lang.Var v) ))))
+                   (= ns (ns-name (.ns ^clojure.lang.Var v)))))
       v
-      (let [meta (dissoc (meta sym) :inline :inline-arities :macro)
+      (let [meta (dissoc (meta sym) :inline :inline-arities #_:macro)
             #_#_meta (if-let [arglists (:arglists meta)]
                        (assoc meta :arglists (qualify-arglists arglists))
                        meta)]
-        (intern ns (with-meta sym meta))))))
+        (intern (ns-sym ns) (with-meta sym meta))))))
 
 (defmethod -parse 'def [{:keys [ns] :as env} [_ sym & expr :as form]]
   (let [pfn  (fn
@@ -478,7 +503,9 @@
   (let [form (-emit ast)]
     (if-let [original-forms (seq (:raw-forms ast))]
       (if (has-meta? form)
-        form #_(vary-meta form assoc ::macroexpanded (vec original-forms)) ;; breaks clojure compiler with MetaExpr is not a ObjExpr
+        (if (cljs? (:env ast)) ;; FIXME breaks clojure compiler with MetaExpr is not a ObjExpr
+          form #_(vary-meta form assoc ::macroexpanded (vec original-forms))
+          form) 
         form)
       form)))
 
@@ -498,13 +525,13 @@
 (defmethod -emit :vector [ast] (mapv emit (:items ast)))
 (defmethod -emit :set [ast] (set (mapv emit (:items ast))))
 (defmethod -emit :map [ast] (zipmap (mapv emit (:keys ast))
-                                   (mapv emit (:vals ast))))
+                                    (mapv emit (:vals ast))))
 
 (defmethod -emit :with-meta [ast] (with-meta (emit (:expr ast)) (:meta ast)))
 
 (defmethod -emit :try [ast] (list* 'try (emit (:body ast))
-                                  (concat (mapv emit (:catches ast))
-                                          (mapv emit (:finally ast)))))
+                                   (concat (mapv emit (:catches ast))
+                                           (mapv emit (:finally ast)))))
 (defmethod -emit :catch [ast] (list 'catch (emit (:class ast)) (emit (:local ast)) (emit (:body ast))))
 
 (defmethod -emit :binding [ast]
@@ -582,14 +609,14 @@
   (if (:local? ast)
     ast
     (if-let [v (resolve-sym (:form ast) env)]
-      (if (var? v)
+      (if (var?' v)
         (assoc ast :op :var, :var v)
         ast)
       ast)))
 
 (defn resolve-syms-pass [ast] (prewalk (only-nodes #{:symbol} resolve-sym-node) ast))
 
-(defn- tag-with-form [ast form] (update ast :raw-forms (fnil conj ()) (list 'quote form)))
+(defn- tag-with-form [ast parent form] (assoc ast :raw-forms (conj (:raw-forms parent ()) (list 'quote form))))
 
 (defn macroexpand-node [{:keys [env] :as ast}]
   (let [{:keys [op var]} (:fn ast)
@@ -603,8 +630,8 @@
         (if (= form mform)
           (reduced ast)
           (-> (if (reduced? mform)
-                (reduced (tag-with-form (parse env (unreduced mform)) form))
-                (tag-with-form (analyze env mform) form)))))
+                (reduced (tag-with-form (parse env (unreduced mform)) ast form))
+                (tag-with-form (analyze env mform) ast form)))))
       (reduced ast))))
 
 (defn macroexpand-pass

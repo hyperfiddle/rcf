@@ -1,4 +1,4 @@
-(ns hyperfiddle.analyzer-test
+(ns hyperfiddle.rcf.analyzer-test
   (:require [hyperfiddle.rcf.analyzer :as ana]
             [clojure.test :as t :refer [deftest are testing]]))
 

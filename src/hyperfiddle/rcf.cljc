@@ -1,11 +1,21 @@
 (ns hyperfiddle.rcf
-  #?(:cljs (:require-macros [hyperfiddle.rcf :refer [tests]]))
+  (:refer-clojure :exclude [=])
+  #?(:cljs (:require-macros [hyperfiddle.rcf :refer [tests deftest async]]
+                            [hyperfiddle.rcf.impl :refer [make-queue]]
+                            [cljs.test :as t :refer [assert-expr]]))
   (:require #?(:clj [hyperfiddle.rcf.impl :as impl])
-            [clojure.test :as t]
+            #?(:clj [clojure.test :as t]
+               :cljs [cljs.test :as t])
+            #?(:clj [cljs.test :as cljs-test])
+            #?(:clj [hyperfiddle.rcf.analyzer :as ana])
+            #?(:clj [clojure.walk :as walk])
+            [clojure.string :as str]
             [hyperfiddle.rcf.reporters]
             [hyperfiddle.rcf.queue]
             [hyperfiddle.rcf.time]
-            [hyperfiddle.rcf.unify]))
+            [hyperfiddle.rcf.unify :as u]))
+
+(def = clojure.core/=)
 
 #?(:cljs (goog-define ^boolean ENABLED true))
 #?(:cljs (goog-define ^boolean TIMEOUT 1000))
@@ -28,7 +38,7 @@
   #?(:clj (alter-var-root #'*timeout* (constantly ms))
      :cljs (set! *timeout* ms)))
 
-#?(:clj  (def ^:dynamic *generate-tests* (= "true" (System/getProperty "hyperfiddle.rcf.generate-tests")))
+#?(:clj  (def ^:dynamic *generate-tests*  (= "true" (System/getProperty "hyperfiddle.rcf.generate-tests")))
    :cljs (def ^boolean ^:dynamic *generate-tests* GENERATE-TESTS))
 
 (def ^{:doc "
@@ -39,36 +49,118 @@ convenience, defaults to println outside of tests context."}
 (def ^{:doc "Queue behaving as a value. Assert `% := _` to pop from it. Async, will time out after `:timeout` option, default to 1000 (ms)."}
   %)
 
-(defmacro tests [& body]
-  (if *generate-tests*
-    `(deftest ~(gensym "rcf") ~@body)
-    (when *enabled*
-      (apply impl/tests &env body))))
-
-(defmacro deftest
-  "Like `clojure.test/deftest`, but:
-   - will run when evaluated at the REPL,
-   - var is tagged with the `:hyperfiddle/rcf` test selector.
-
-  `clojure -M:test/cognitect --exclude :hyperfiddle/rcf`  will skip RCF tests"
-  [name & body]
-  (apply impl/deftest &env name body))
-
 (defn- push-binding [q d] (let [[c b _a] q] [d c b]))
 
-(defn push! [bindings val] (swap! bindings push-binding val))
+(defn binding-queue []
+  (let [!q    (atom [nil nil nil])
+        push! (partial swap! !q push-binding)
+        peek! #(get (deref !q) %)]
+    [push! peek!]))
 
-#?(:clj (defmethod t/assert-expr := [msg form] (impl/assert-unify {:message msg} `= form)))
-#?(:clj (defmethod t/assert-expr :<> [msg form] (impl/assert-unify {:message msg} `not= form)))
+(defn gen-name [form]
+  (let [{:keys [line _column]} (meta form)
+        file (str/replace (name (ns-name *ns*)) #"[-\.]" "_")]
+    (symbol (str file "_" line))))
 
-#?(:clj (defmethod t/assert-expr ::fails-with [msg form] (impl/assert-unify {:message msg
-                                                                             :type    :hyperfiddle.rcf/expected-to-fail} `= form)))
+(defmacro tests [& body]
+  (cond
+    *generate-tests* `(deftest ~(gen-name &form) ~(impl/tests* &env body))
+    *enabled*        (impl/tests* &env body)
+    :else            nil))
 
-#_(defn run-ns-tests [ns]
-  (remove-ns ns)
-  (binding [*generate-tests* true
-            *enabled*        false]
-    (prn "Compiling…")
-    (require ns :reload)
-    (prn "Running tests…")
-    (clojure.test/run-tests ns)))
+(defmacro deftest
+  "When *load-tests* is false, deftest is ignored."
+  [name & body]
+  (if (:js-globals &env)
+    `(cljs.test/deftest ~name ~@body)
+    (when t/*load-tests*
+      `(def ~(vary-meta name assoc :test `(fn [] ~@body))
+         (fn [] (impl/test-var (var ~name)))))))
+
+(defn comment->tests [form]
+  (if (seq? form)
+    (with-meta (cons `tests (rest form)) (meta form))
+    form))
+
+(defn done [])
+
+(defmacro async [done & body]
+  (if (ana/cljs? &env)
+    `(cljs-test/async ~done ~@body)
+    `(let [~done (constantly nil)]
+       ~@body)))
+
+(defn async-notifier [n done]
+  (let [!seen (atom 0)]
+    (fn []
+      (swap! !seen inc)
+      (when (= @!seen n)
+        (done)))))
+
+(defmacro make-queue [& args] (apply impl/make-queue args))
+
+(defmacro is
+  ([form] `(is ~form nil))
+  ([form msg] `(try-expr ~msg ~form)))
+
+(defmacro try-expr
+  [msg form]
+  (let [cljs? (ana/cljs? &env)
+        {:keys [file line end-line column end-column]} (meta form)]
+    `(try ~(if cljs?
+             (cljs-test/assert-expr &env msg form)
+             (t/assert-expr msg form))
+          (catch ~(if cljs? :default 'Throwable) t#
+            (do-report {:type :error, :message ~msg,
+                        :file ~file :line ~line :end-line ~end-line :column ~column :end-column ~end-column
+                        :expected '~form, :actual t#}))
+          (finally
+            (~'RCF__done!)))))
+
+;; Same as default `=` behavior, but returns the first argument instead of a boolean.
+
+(defmacro do-report [m]
+  (if (:js-globals &env)
+    `(cljs.test/do-report ~m)
+    `(impl/do-report ~m)))
+
+#?(:clj (defn- assert-= [menv msg form]
+          (let [[_= & args] form
+                form        (cons '= (map impl/original-form args))]
+            `(let [values# (list ~@args)
+                   result# (apply = values#)]
+               (if result#
+                 (do-report {:type     :hyperfiddle.rcf/pass
+                             :message  ~msg,
+                             :expected '~form
+                             :actual   (cons '= values#)})
+                 (do-report {:type     :hyperfiddle.rcf/fail
+                             :message  ~msg,
+                             :expected '~form
+                             :actual   (list '~'not (cons '~'= values#))}))
+               (first values#)))))
+
+#?(:clj (defmethod t/assert-expr 'hyperfiddle.rcf/= [msg form] (assert-= nil msg form)))
+#?(:clj (defmethod cljs-test/assert-expr 'hyperfiddle.rcf/= [menv msg form] (assert-= menv msg form)))
+
+#?(:clj
+   (defn- assert-unify [menv msg form]
+     (let [[_= & args] form
+           form        (cons := (map impl/original-form args))]
+       `(let [lhs#           (identity ~(first args))
+              rhs#           (identity ~(second args))
+              [result# env#] (u/unifier* lhs# rhs#)]
+          (if-not (u/failed? env#)
+            (do (do-report {:type     :hyperfiddle.rcf/pass
+                            :message  ~msg,
+                            :expected '~form
+                            :actual   result#})
+                result#)
+            (do (do-report {:type     :hyperfiddle.rcf/fail
+                            :message  ~msg,
+                            :expected '~form
+                            :actual   env#})
+                lhs#))))))
+
+#?(:clj (defmethod t/assert-expr :hyperfiddle.rcf/= [msg form] (assert-unify nil msg form)))
+#?(:clj (defmethod cljs-test/assert-expr :hyperfiddle.rcf/= [menv msg form] (assert-unify menv msg form)))

@@ -1,4 +1,4 @@
-(ns hyperfiddle.example-test
+(ns hyperfiddle.rcf.example-test
   (:require [clojure.core.async :refer [chan >! go go-loop <! timeout close!]]
             [hyperfiddle.rcf :as rcf :refer [tests ! %]]
             [missionary.core :as m]))
