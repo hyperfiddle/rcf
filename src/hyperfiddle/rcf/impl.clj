@@ -322,11 +322,21 @@
 (defn original-form [form]
   (walk/prewalk (fn [form]
                   (if (ana/has-meta? form)
-                    (if-some [form (last (:hyperfiddle.rcf.analyzer/macroexpanded (meta form)))]
+                    (if-some [form (::ana/macroexpanded (meta form))]
                       (if (quoted? form) (second form) form)
                       form)
                     form))
                 form))
+
+;; Tag asserted forms with the original user input (form before macroexpand)
+;; so t/is can report it as typed by user, not as rewritten by RCF.
+(defmethod ana/-emit :invoke [ast]
+  (if (sigil? (:fn ast))
+    (list* (ana/emit (:fn ast)) (map (fn [arg] (let [form (ana/emit arg)]
+                                                 (if-some [original-form (some-> arg :raw-forms seq last)]
+                                                   (with-meta form {::ana/macroexpanded original-form})
+                                                   form))) (:args ast)))
+    (ana/emit-invoke ast)))
 
 (defmethod t/assert-expr 'hyperfiddle.rcf/thrown? [msg form]
   ;; (is (thrown? c expr))

@@ -499,22 +499,15 @@
 
 (defmulti -emit (fn [ast] (:op ast)))
 
-(defn emit [ast]
-  (let [form (-emit ast)]
-    (if-let [original-forms (seq (:raw-forms ast))]
-      (if (has-meta? form)
-        (if (cljs? (:env ast)) ;; FIXME breaks clojure compiler with MetaExpr is not a ObjExpr
-          form #_(vary-meta form assoc ::macroexpanded (vec original-forms))
-          form) 
-        form)
-      form)))
+(defn emit [ast] (-emit ast))
 
 (defmethod -emit :const [ast] (:form ast))
 
 (defmethod -emit :symbol [ast] (:form ast))
 (defmethod -emit :var [ast] (:form ast))
 
-(defmethod -emit :invoke [ast] (list* (emit (:fn ast)) (mapv emit (:args ast))))
+(defn emit-invoke [ast] (list* (emit (:fn ast)) (mapv emit (:args ast))))
+(defmethod -emit :invoke [ast] (emit-invoke ast))
 
 (defmethod -emit :do [ast]
   (if (and (:simplify-do *emit-options*)
