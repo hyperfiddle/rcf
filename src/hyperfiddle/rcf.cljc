@@ -17,8 +17,8 @@
 
 (def = clojure.core/=)
 
-#?(:cljs (goog-define ^boolean ENABLED true))
-#?(:cljs (goog-define ^boolean TIMEOUT 1000))
+#?(:cljs (goog-define ^boolean ENABLED false))
+#?(:cljs (goog-define ^boolean TIMEOUT 400))
 #?(:cljs (goog-define ^boolean GENERATE-TESTS false))
 
 ;; "Set to true if you want to generate clojure.test compatible tests. This
@@ -60,11 +60,11 @@ convenience, defaults to println outside of tests context."}
 (defn gen-name [form]
   (let [{:keys [line _column]} (meta form)
         file (str/replace (name (ns-name *ns*)) #"[-\.]" "_")]
-    (symbol (str file "_" line))))
+    (symbol (str "generated__" file "_" line))))
 
 (defmacro tests [& body]
   (cond
-    *generate-tests* `(deftest ~(gen-name &form) ~(impl/tests* &env body))
+    *generate-tests* `(deftest ~(gen-name &form) ~@body)
     *enabled*        (impl/tests* &env body)
     :else            nil))
 
@@ -72,10 +72,11 @@ convenience, defaults to println outside of tests context."}
   "When *load-tests* is false, deftest is ignored."
   [name & body]
   (if (:js-globals &env)
-    `(cljs.test/deftest ~name ~@body)
+    `(cljs.test/deftest ~name ~(impl/tests* &env body))
     (when t/*load-tests*
-      `(def ~(vary-meta name assoc :test `(fn [] ~@body))
-         (fn [] (impl/test-var (var ~name)))))))
+      `(do (def ~(vary-meta name assoc :test `(fn [] ~(impl/tests* &env body)))
+             (fn [] (impl/test-var (var ~name))))
+           (when *enabled* (~name))))))
 
 (defn comment->tests [form]
   (if (seq? form)
