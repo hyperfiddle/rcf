@@ -78,11 +78,6 @@ convenience, defaults to println outside of tests context."}
              (fn [] (impl/test-var (var ~name))))
            (when *enabled* (~name))))))
 
-(defn comment->tests [form]
-  (if (seq? form)
-    (with-meta (cons `tests (rest form)) (meta form))
-    form))
-
 (defn done [])
 
 (defmacro async [done & body]
