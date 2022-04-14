@@ -406,9 +406,16 @@
    The Var gets interned in the env namespace."
   [sym {:keys [ns] :as env}]
   (let [v (get-in (global-env) [:namespaces ns :mappings (symbol (name sym))])]
-    (if (and v (or (class? v)
-                   (= ns (ns-name (.ns ^clojure.lang.Var v)))))
-      v
+    (if (some? v)
+      (cond
+        (class? v) v
+        (and (var? v) (= ns (ns-name (.ns ^clojure.lang.Var v)))) (do (when-some [m (meta sym)] (.setMeta v m))
+                                                                      v)
+        :else (throw (ex-info (str "(def " sym " ...) resolved to an existing mapping of an unexpected type.")
+                              {:sym         sym
+                               :ns          ns
+                               :resolved-to v
+                               :type        (type v)})))
       (let [meta (dissoc (meta sym) :inline :inline-arities #_:macro)
             #_#_meta (if-let [arglists (:arglists meta)]
                        (assoc meta :arglists (qualify-arglists arglists))
