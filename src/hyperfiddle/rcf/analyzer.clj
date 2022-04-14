@@ -1,8 +1,7 @@
 ;; A simpler tools.analyzer for the restricted use case of RCF
 ;; Adapted from  https://github.com/clojure/tools.analyzer
 (ns hyperfiddle.rcf.analyzer
-  (:refer-clojure :exclude [macroexpand-1 macroexpand update-vals resolve])
-  (:require [cljs.analyzer.api :as cljs-ana])
+  (:refer-clojure :exclude [macroexpand-1 macroexpand update-vals])
   (:import (clojure.lang IObj)))
 
 (defn cljs? [env] (some? (:js-globals env)))
@@ -49,11 +48,15 @@
 (defn to-var [{:keys [macro meta ns name]}]
   (with-meta {:ns ns, :name name} (assoc meta :type ::var)))
 
+(defn cljs-resolve [env sym]
+  (require '[cljs.analyzer.api])
+  ((resolve 'cljs.analyzer.api/resolve) env sym))
+
 (defn resolve-sym
   "Resolves the value mapped by the given sym in the global env"
   [sym {:keys [ns] :as env}]
   (if (cljs? env)
-    (let [resolved (cljs-ana/resolve env sym)]
+    (let [resolved (cljs-resolve env sym)]
       (if (or (:macro resolved) (= :var (:op resolved)))
         (resolve-sym (:name resolved) (dissoc env :js-globals))
         (to-var resolved)))

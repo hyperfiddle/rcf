@@ -1,12 +1,10 @@
 (ns hyperfiddle.rcf
   (:refer-clojure :exclude [=])
   #?(:cljs (:require-macros [hyperfiddle.rcf :refer [tests deftest async]]
-                            [hyperfiddle.rcf.impl :refer [make-queue]]
-                            [cljs.test :as t :refer [assert-expr]]))
+                            [hyperfiddle.rcf.impl :refer [make-queue]]))
   (:require #?(:clj [hyperfiddle.rcf.impl :as impl])
             #?(:clj [clojure.test :as t]
                :cljs [cljs.test :as t])
-            #?(:clj [cljs.test :as cljs-test])
             #?(:clj [hyperfiddle.rcf.analyzer :as ana])
             #?(:clj [clojure.walk :as walk])
             [clojure.string :as str]
@@ -19,7 +17,6 @@
 
 #?(:cljs (goog-define ^boolean ENABLED false))
 #?(:cljs (goog-define ^boolean TIMEOUT 400))
-#?(:cljs (goog-define ^boolean GENERATE-TESTS false))
 
 ;; "Set to true if you want to generate clojure.test compatible tests. This
 ;; will define testing functions in your namespace using `deftest`. Defaults to
@@ -38,8 +35,7 @@
   #?(:clj (alter-var-root #'*timeout* (constantly ms))
      :cljs (set! *timeout* ms)))
 
-#?(:clj  (def ^:dynamic *generate-tests*  (= "true" (System/getProperty "hyperfiddle.rcf.generate-tests")))
-   :cljs (def ^boolean ^:dynamic *generate-tests* GENERATE-TESTS))
+#?(:clj  (def ^:dynamic *generate-tests*  (= "true" (System/getProperty "hyperfiddle.rcf.generate-tests"))))
 
 (def ^{:doc "
 Function to push value to async queue, e.g. `(! 42)`. RCF redefines this var in tests context. For REPL
@@ -63,16 +59,21 @@ convenience, defaults to println outside of tests context."}
     (symbol (str "generated__" file "_" line))))
 
 (defmacro tests [& body]
-  (cond
-    *generate-tests* `(deftest ~(gen-name &form) ~@body)
-    *enabled*        (impl/tests* &env body)
-    :else            nil))
+  (let [name (gen-name &form)]
+    (cond
+      *generate-tests* `(deftest ~name ~@body)
+      *enabled*         (if (:js-globals &env)
+                          `(do (defn ~name [] ~(impl/tests* &env body))
+                               (when *enabled* (cljs.test/run-block (cljs.test/test-var-block* (var ~name) ~name))))
+                          (impl/tests* &env body))
+      :else             nil)))
 
 (defmacro deftest
   "When *load-tests* is false, deftest is ignored."
   [name & body]
   (if (:js-globals &env)
-    `(cljs.test/deftest ~name ~(impl/tests* &env body))
+    `(do (cljs.test/deftest ~name ~(impl/tests* &env body))
+         (when *enabled* (~name)))
     (when t/*load-tests*
       `(do (def ~(vary-meta name assoc :test `(fn [] ~(impl/tests* &env body)))
              (fn [] (impl/test-var (var ~name))))
@@ -82,7 +83,7 @@ convenience, defaults to println outside of tests context."}
 
 (defmacro async [done & body]
   (if (ana/cljs? &env)
-    `(cljs-test/async ~done ~@body)
+    `(cljs.test/async ~done ~@body)
     `(let [~done (constantly nil)]
        ~@body)))
 
@@ -103,9 +104,7 @@ convenience, defaults to println outside of tests context."}
   [msg form]
   (let [cljs? (ana/cljs? &env)
         {:keys [file line end-line column end-column]} (meta form)]
-    `(try ~(if cljs?
-             (cljs-test/assert-expr &env msg form)
-             (t/assert-expr msg form))
+    `(try ~(t/assert-expr msg form)
           (catch ~(if cljs? :default 'Throwable) t#
             (do-report {:type :error, :message ~msg,
                         :file ~file :line ~line :end-line ~end-line :column ~column :end-column ~end-column
@@ -137,7 +136,6 @@ convenience, defaults to println outside of tests context."}
                (first values#)))))
 
 #?(:clj (defmethod t/assert-expr 'hyperfiddle.rcf/= [msg form] (assert-= nil msg form)))
-#?(:clj (defmethod cljs-test/assert-expr 'hyperfiddle.rcf/= [menv msg form] (assert-= menv msg form)))
 
 #?(:clj
    (defn- assert-unify [menv msg form]
@@ -159,4 +157,3 @@ convenience, defaults to println outside of tests context."}
                 lhs#))))))
 
 #?(:clj (defmethod t/assert-expr :hyperfiddle.rcf/= [msg form] (assert-unify nil msg form)))
-#?(:clj (defmethod cljs-test/assert-expr :hyperfiddle.rcf/= [menv msg form] (assert-unify menv msg form)))
