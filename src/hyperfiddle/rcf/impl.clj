@@ -108,7 +108,6 @@
 (defmulti replace-sigil identity)
 (defmethod replace-sigil :default [sym] sym)
 (defmethod replace-sigil := [_sym] :hyperfiddle.rcf/=)
-(defmethod replace-sigil '= [_sym] 'hyperfiddle.rcf/=)
 (defmethod replace-sigil 'thrown? [_sym] 'hyperfiddle.rcf/thrown?)
 
 (defn replace-sigil* [sym]
@@ -131,11 +130,9 @@
 
 (defn simplify-sigil [left center right]
   (cond
-    (and (= :var (:op center))
-         (= 'hyperfiddle.rcf/= (ana/var-sym (:var center)))) '=
     (and (= := (:form center))
          (not (has-lvars? left))
-         (not (has-lvars? right))) '=
+         (not (has-lvars? right))) 'hyperfiddle.rcf/=
     :else (:form center)))
 
 (defmulti rewrite-infix (fn [_env _left center _right] (:form center)))
@@ -144,10 +141,13 @@
     (make-is env l sigil-ast r)))
 
 (defn sigil? [ast]
-  (let [form (if (= :var (:op ast))
-               (ana/var-sym (:var ast))
-               (:form ast))]
-    (contains? (methods t/assert-expr) (replace-sigil* form))))
+  (let [methods (methods t/assert-expr)
+        sigil   (replace-sigil* (if (= :var (:op ast))
+                                  (ana/var-sym (:var ast))
+                                  (:form ast)))]
+    (or (contains? methods sigil)
+        (when (or (keyword? sigil) (symbol? sigil))
+          (contains? methods (symbol (name sigil)))))))
 
 (defn rewrite-infix-pass [env ast]
   (ana/prewalk
@@ -171,7 +171,8 @@
   (ana/prewalk
    (ana/only-nodes #{:invoke}
                    (fn [ast]
-                     (if-not (= `t/is (:form (:fn ast)))
+                     (if-not (and (= `t/is (:form (:fn ast)))
+                                  (= :hyperfiddle.rcf/= (-> ast :args first :fn :form)))
                        ast
                        (ana/postwalk
                         (ana/only-nodes #{:var :symbol}

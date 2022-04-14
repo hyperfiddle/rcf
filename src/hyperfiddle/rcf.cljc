@@ -153,7 +153,7 @@ convenience, defaults to println outside of tests context."}
             (do (do-report {:type     :hyperfiddle.rcf/fail
                             :message  ~msg,
                             :expected '~form
-                            :actual   env#})
+                            :actual   (u/explain env#)})
                 lhs#))))))
 
 #?(:clj (defmethod t/assert-expr :hyperfiddle.rcf/= [msg form] (assert-unify nil msg form)))

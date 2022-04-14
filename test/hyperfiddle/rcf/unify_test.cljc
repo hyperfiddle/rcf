@@ -12,7 +12,7 @@
 (tests
  "Basics"
  (u/unify 1 1) := {}
- (u/unify 1 2) := (u/->Fail {})
+ (u/failed? (u/unify 1 2)) := true
  (u/unify 1 _) := '{_ [1]}
  (u/unify 1 ?a) := '{?a 1}
  (u/unify [1 2 3] '[_ _ ?a]) := '{_ [1 2], ?a 3}
@@ -45,7 +45,7 @@
           '[(?a * 5 | 2) + (4 * 5) + 3])                    := '{?c 3, ?b 4, ?x 5}
  (u/unify '[(?a * 5 | 2) + (4 * 5) + 3]
           '[?z + (4 * 5) + 3])                              := '{?z (?a * 5 | 2)}
- (u/unify '[?a ?a] [1 2])                                   := (u/->Fail '{?a ::u/fail})
+ (u/unify '[?a ?a] [1 2])                                   := {'?a 1, ::u/fail {'?a [1 2]} ::u/path _}
 
  "Spread"
  (u/unify [1 2 3] '[?x & ?more])                            := '{?more (2 3), ?x 1}

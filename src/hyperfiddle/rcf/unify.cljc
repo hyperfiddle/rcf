@@ -11,11 +11,7 @@
 
 (defn lvar? [x] (and (symbol? x) (= \? (first (name x)))))
 
-(defrecord Fail [env])
-
-(defn failed? [env] (instance? Fail env))
-
-#?(:clj (defmethod print-method Fail [o w] (.write w (pr-str (.env o)))))
+(defn failed? [env] (contains? env ::fail))
 
 (defn unify-in-env [x y env]
   (if (contains? env x)
@@ -24,7 +20,7 @@
         env
         (if (lvar? y')
           (unify-in-env y' y env)
-          (Fail. (assoc env x ::fail)))))
+          (assoc env ::fail {x [y' y]}))))
     (assoc env x y)))
 
 (defn wildcard-in-env [v env]
@@ -90,26 +86,29 @@
 (defn unify
   ([x y] (unify x y {}))
   ([x y env]
-   (cond
-     (failed? env)              env
-     (wildcard? x)              (wildcard-in-env y env)
-     (wildcard? y)              (wildcard-in-env x env)
-     (= x y)                    env
-     (&? x)                     (if (seq y)
-                                  (unify (second x) (seq y) env)
-                                  env)
-     (&? y)                     (if (seq x)
-                                  (unify (second y) (seq x) env)
-                                  env)
-     (lvar? x)                  (unify-in-env x y env)
-     (lvar? y)                  (unify-in-env y x env)
-     (and (set? x) (set y))     (unify-set x y env)
-     (and (map? x) (map? y))    (unify-map x y env)
-     (every? collection? [x y]) (let [env (unify (first x) (first y) env)]
-                                  (if (failed? env)
-                                    env
-                                    (unify (rest x) (rest y) env)))
-     :else                      (Fail. env))))
+   (let [env (cond
+               (failed? env)              env
+               (wildcard? x)              (wildcard-in-env y env)
+               (wildcard? y)              (wildcard-in-env x env)
+               (= x y)                    env
+               (&? x)                     (if (seq y)
+                                            (unify (second x) (seq y) env)
+                                            env)
+               (&? y)                     (if (seq x)
+                                            (unify (second y) (seq x) env)
+                                            env)
+               (lvar? x)                  (unify-in-env x y env)
+               (lvar? y)                  (unify-in-env y x env)
+               (and (set? x) (set y))     (unify-set x y env)
+               (and (map? x) (map? y))    (unify-map x y env)
+               (every? collection? [x y]) (let [env (unify (first x) (first y) env)]
+                                            (if (failed? env)
+                                              env
+                                              (unify (rest x) (rest y) env)))
+               :else                      (assoc env ::fail {::root [x y]}))]
+     (if (failed? env)
+       (update env ::path (fnil conj ()) x)
+       env))))
 
 (defn subst [form env]
   (let [idx      (volatile! -1)
@@ -131,3 +130,12 @@
 
 (def unifier (comp first unifier*))
 
+(defn explain [env]
+  (when-let [fail (::fail env)]
+    (str "Failed to unify "
+         (if-some [[a b] (::root fail)]
+           (str (pr-str a) " and " (pr-str b))
+           (let [[lvar [a b]] (first fail)]
+             (str (pr-str lvar) " with " (pr-str a) " and " (pr-str b))))
+         (when-some [path (seq (->> (::path env) (filter map-entry?) (map key)))]
+           (str " in " (into [] path))))))

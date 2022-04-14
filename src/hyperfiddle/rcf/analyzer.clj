@@ -68,7 +68,7 @@
           (let [name (if sym-ns (-> sym name symbol) sym)]
             (-> (global-env) :namespaces (get (or full-ns ns)) :mappings (get name))))))))
 
-(def specials "Set of special forms common to every clojure variant"
+(def specials "Set of special forms common to every clojure variant" ;; TODO replace with cc/special-symbol?
   '#{do if new quote set! try var catch throw finally def . let* letfn* loop* recur fn*})
 
 (defn var-sym [v] 
