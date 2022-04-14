@@ -314,8 +314,8 @@
 ;; Skip these DSLs, their macroexpansion is not rewritable as clojure. 
 (defmethod ana/macroexpand-hook 'clojure.core/case [_ _ _ args] `(case ~@args))
 (defmethod ana/macroexpand-hook 'cljs.core/case [_ _ _ args] `(case ~@args))
-(defmethod ana/macroexpand-hook 'clojure.core.async/go [_ _ _ args] `(clojure.core.async/go ~@args))(defmethod ana/macroexpand-hook 'clojure.core.async/go-loop [_ _ _ args] `(clojure.core.async/go-loop ~@args))
-(defmethod ana/macroexpand-hook 'cljs.core.async/go [_ _ _ args] `(cljs.core.async/go ~@args))
+(defmethod ana/macroexpand-hook 'clojure.core.async/go [_ _ _ args] (reduced `(clojure.core.async/go (do ~@args))))
+(defmethod ana/macroexpand-hook 'cljs.core.async/go [_ _ _ args] (reduced `(cljs.core.async/go (do ~@args))))
 
 (defn quoted? [form] (and (seq? form) (= 'quote (first form))))
 
