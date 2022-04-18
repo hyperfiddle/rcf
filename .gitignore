@@ -10,3 +10,7 @@ out/js
 *.DS_Store
 node_modules
 /target
+.clj-kondo/
+.lsp/
+scratch/
+.calva/

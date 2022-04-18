@@ -1,7 +1,6 @@
 (ns hyperfiddle.rcf.reporters
-  (:require [clojure.stacktrace :as stack]
-            [clojure.test :as t]
-            [hyperfiddle.rcf.utils :as utils :refer [pprint testing-vars-str]]))
+  (:require [clojure.test :as t]
+            [clojure.string :as str]))
 
 (defmethod t/report :hyperfiddle.rcf/pass [_m]
   (t/with-test-out
@@ -9,45 +8,7 @@
     (print "✅")))
 
 (defmethod t/report :hyperfiddle.rcf/fail [m]
-  (t/with-test-out
-    (t/inc-report-counter :fail)
-    (prn)
-    (print "❌ ")
-    (println (str (testing-vars-str m) " "))
-    (when (seq t/*testing-contexts*) (println (t/testing-contexts-str)))
-    (when-let [message (:message m)] (println message))
-    (prn)
-    (pprint (:actual m))
-    (prn)
-    (print (case (:assert-type m)
-             :<> ":="
-             ":<>"))
-    (prn)
-    (pprint (:expected m))
-    (prn)
-    (prn)))
-
-(defmethod t/report :hyperfiddle.rcf/error [m]
-  (t/with-test-out
-    (t/inc-report-counter :error)
-    (prn)
-    (print "🔥 ")
-    (print (str (testing-vars-str m) " "))
-    (prn)
-    (when (seq t/*testing-contexts*) (println (t/testing-contexts-str)))
-    (when-let [message (:message m)] (println message))
-    (let [actual (:actual m)]
-      (if (instance? Throwable actual)
-        (stack/print-cause-trace actual t/*stack-trace-depth*)
-        (pprint actual)))
-    (prn)
-    (print ":<> ")
-    (prn)
-    (pprint (:expected m))
-    (prn)
-    ))
-
-(defmethod t/report :begin-test-var [_m])
-
-(defmethod t/report :end-test-var [_m]
-  (print \.))
+  (print "❌ ")
+  (print (str/triml (with-out-str
+                      (binding [t/*test-out* *out*]
+                        (t/report (assoc m :type :fail)))))))

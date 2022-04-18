@@ -20,14 +20,11 @@ jobs:
       - name: Use Node.js
         uses: actions/setup-node@v2
         with:
-          node-version: 14.x
+          node-version: 17.8.0
 
       - name: Install Shadow
         run: npm install shadow-cljs
 
-      - name: Compile Tests
-        run: ./node_modules/.bin/shadow-cljs -A:cljs:test compile :test
-
       - name: Run Tests
-        run: node out/node-tests.js
+        run: ./ci/run_tests_node.sh
 

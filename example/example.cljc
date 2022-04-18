@@ -1,6 +1,7 @@
 (ns example
-  (:require [hyperfiddle.rcf :as rcf :refer [tests ! %]]
-            [clojure.core.async :refer [chan >! go go-loop <! timeout close!]]
+  (:require [clojure.core.async :refer [chan >! go go-loop <! timeout close!]]
+            [clojure.test :as t]
+            [hyperfiddle.rcf :as rcf :refer [tests ! %]]
             [missionary.core :as m]))
 
 (defn get-extension [path]
@@ -22,7 +23,6 @@
   (get-extension "image.blah.png") := "png"
   (get-extension "image.blah..png") := "png")
 
-; features
 
 (tests
   "equality"
@@ -62,24 +62,28 @@
     (symbol *2) := 'c                                         ; this does affect history
     (symbol *2) := 'd))
 
-(tests {:timeout 100}
+(tests
+  (rcf/set-timeout! 100)
   "async tests"
   #?(:clj  (tests
-             (future
-               (rcf/! 1) (Thread/sleep 10)
-               (rcf/! 2) (Thread/sleep 200)
-               (rcf/! 3))
-             % := 1
-             % := 2
-             % := ::rcf/timeout)
+            (future
+              (rcf/! 1) (Thread/sleep 10)
+              (rcf/! 2) (Thread/sleep 200)
+              (rcf/! 3))
+            % := 1
+            % := 2
+            % := ::rcf/timeout)
      :cljs (tests
-             (defn setTimeout [f ms] (js/setTimeout ms f))
-             (rcf/! 1) (setTimeout 10 (fn []
-             (rcf/! 2) (setTimeout 200 (fn []
-             (rcf/! 3)))))
-             % := 1
-             % := 2
-             % := ::rcf/timeout)))
+            (defn set-timeout [f ms] (js/setTimeout ms f))
+            (rcf/! 1) (set-timeout 10 (fn []
+                                       (rcf/! 2) (set-timeout 200 (fn []
+                                                                   (rcf/! 3)))))
+            % := 1
+            % := 2
+            % := ::rcf/timeout
+            )))
+
+
 
 (tests
   "core.async"
@@ -92,8 +96,9 @@
   (go (>! c :hello) (>! c :world))
   % := :hello
   % := :world
-  (close! c)
+  (close! c))
 
+(tests
   "missionary"
   (def !x (atom 0))
   (def dispose ((m/reactor (m/stream! (m/ap (! (inc (m/?< (m/watch !x)))))))
