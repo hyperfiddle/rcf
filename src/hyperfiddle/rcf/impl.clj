@@ -87,6 +87,12 @@
                          var-ast)))
      ast)))
 
+(defn- inspect-star-only? [ast]
+  (and (= `t/is (:form (:fn ast)))
+       (let [[left right] (some-> ast :args first :args)]
+         (or (and (star? left) (not (has-stars? right)))
+             (and (star? right) (not (has-stars? left)))))))
+
 (defn rewrite-repl [env ast]
   (ana/prewalk (ana/only-nodes #{:do}
                                (fn [do-ast]
@@ -99,9 +105,11 @@
                                               (nil? s) r
                                               (empty? ss) (recur ss (conj r s))
                                               :else
-                                              (let [invoke-ast (-> (ana/analyze env '(RCF__push!))
-                                                                   (update :args conj s))]
-                                                (recur ss (conj r invoke-ast)))))))))
+                                              (if-not (inspect-star-only? s)
+                                                (let [invoke-ast (-> (ana/analyze env '(RCF__push!))
+                                                                     (update :args conj s))]
+                                                  (recur ss (conj r invoke-ast)))
+                                                (recur ss (conj r s)))))))))
                ast))
 
 
