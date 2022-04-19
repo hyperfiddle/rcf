@@ -624,18 +624,16 @@
 (defn macroexpand-node [{:keys [env] :as ast}]
   (let [{:keys [op var]} (:fn ast)
         [f & args :as form] (:form ast)]
-    (if (and (= :var op)
-             (:macro (meta var)))
+    (if (and (= :var op) (:macro (meta var)) (not (::prevent-macroexpand (meta f))))
       (let [mform (macroexpand-hook var form env args)
-            mform (if (has-meta? mform)
-                    (vary-meta mform merge (meta form))
-                    mform)]
-        (if (= form mform)
-          (reduced ast)
-          (-> (if (reduced? mform)
-                (reduced (tag-with-form (parse env (unreduced mform)) ast form))
-                (tag-with-form (analyze env mform) ast form)))))
-      (reduced ast))))
+            var'  (when (seq? mform) (resolve-sym (first mform) env))]
+        (cond
+          (= form mform)   (reduced ast)
+          (reduced? mform) (reduced (tag-with-form (parse env (unreduced mform)) ast form))
+          (= var var')     (tag-with-form (analyze env (cons (vary-meta (first mform) assoc ::prevent-macroexpand true) (rest mform)))
+                                          ast form)
+          :else            (tag-with-form (analyze env mform) ast form)))
+      ast)))
 
 (defn macroexpand-pass
   ([ast] (macroexpand-pass ##Inf ast))
@@ -644,15 +642,17 @@
      (prewalk (only-nodes #{:invoke} (fn rec [ast]
                                        (if-not (pos? @state)
                                          (reduced ast) ;; stop walking
-                                         (let [ast (macroexpand-node ast)]
+                                         (let [ast' (macroexpand-node ast)]
                                            (binding [*global-env* (build-ns-map)]
-                                             (let [ast' (resolve-syms-pass (unreduced ast))]
-                                               (if (reduced? ast) ast'
-                                                   (if (pos? (swap! state dec))
-                                                     (if (= :invoke (:op ast'))
-                                                       (rec ast')
-                                                       ast')
-                                                     ast'))))))))
+                                             (let [ast'-resolved (resolve-syms-pass (unreduced ast'))]
+                                               (cond
+                                                 (reduced? ast') (reduced ast'-resolved)
+                                                 (= ast ast')    ast'-resolved
+                                                 :else           (if (pos? (swap! state dec))
+                                                                   (if (= :invoke (:op ast'-resolved))
+                                                                     (rec ast'-resolved)
+                                                                     ast'-resolved)
+                                                                   ast'-resolved))))))))
               ast))))
 
 (defn macroexpand-n
