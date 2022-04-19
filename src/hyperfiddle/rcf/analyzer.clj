@@ -55,14 +55,13 @@
 (defn resolve-sym
   "Resolves the value mapped by the given sym in the global env"
   [sym {:keys [ns] :as env}]
-  (if (cljs? env)
-    (let [resolved (cljs-resolve env sym)]
-      (if (or (:macro resolved) (= :var (:op resolved)))
-        (resolve-sym (:name resolved) (dissoc env :js-globals))
-        (to-var resolved)))
-    (when (symbol? sym)
-      (let [sym-ns (when-let [ns (namespace sym)]
-                     (symbol ns))
+  (when (symbol? sym)
+    (if (cljs? env)
+      (let [resolved (cljs-resolve env sym)]
+        (if (or (:macro resolved) (= :var (:op resolved)))
+          (resolve-sym (:name resolved) (dissoc env :js-globals))
+          (to-var resolved)))
+      (let [sym-ns  (when-let [ns (namespace sym)] (symbol ns))
             full-ns (resolve-ns sym-ns env)]
         (when (or (not sym-ns) full-ns)
           (let [name (if sym-ns (-> sym name symbol) sym)]
