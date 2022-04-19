@@ -16,7 +16,7 @@
                             (loop [[s & ss] (:statements do-ast)
                                    r []]
                               (if (nil? s) r
-                                  (if (string? (:form s))
+                                  (if (and (string? (:form s)) (seq ss))
                                     (let [testing-ast (ana/analyze env `(~`t/testing ~(:form s)))]
                                       (->> (assoc do-ast :statements (vec ss))
                                            (update testing-ast :args conj)
