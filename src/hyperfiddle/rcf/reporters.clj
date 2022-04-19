@@ -5,7 +5,8 @@
 (defmethod t/report :hyperfiddle.rcf/pass [_m]
   (t/with-test-out
     (t/inc-report-counter :pass)
-    (print "✅")))
+    (print "✅")
+    (flush)))
 
 (defmethod t/report :hyperfiddle.rcf/fail [m]
   (print "❌ ")
