@@ -400,6 +400,16 @@
                         (map? ns) (:name ns)
                         :else (ns-name ns)))
 
+(defn unquote' [form]
+  (if (and (seq? form) (= 'quote (first form)))
+    (second form)
+    form))
+
+(defn update-vals
+  "Applies f to all the vals in the map"
+  [m f]
+  (reduce-kv (fn [m k v] (assoc m k (f v))) {} (or m {})))
+
 (defn create-var
   "Creates a Var for sym and returns it.
    The Var gets interned in the env namespace."
@@ -408,14 +418,16 @@
     (if (some? v)
       (cond
         (class? v) v
-        (and (var? v) (= ns (ns-name (.ns ^clojure.lang.Var v)))) (do (when-some [m (meta sym)] (.setMeta v m))
+        (and (var? v) (= ns (ns-name (.ns ^clojure.lang.Var v)))) (do (when-some [m (meta sym)] 
+                                                                        (.setMeta v (update-vals m unquote')))
                                                                       v)
         :else (throw (ex-info (str "(def " sym " ...) resolved to an existing mapping of an unexpected type.")
                               {:sym         sym
                                :ns          ns
                                :resolved-to v
                                :type        (type v)})))
-      (let [meta (dissoc (meta sym) :inline :inline-arities #_:macro)
+      (let [meta (-> (dissoc (meta sym) :inline :inline-arities #_:macro)
+                     (update-vals unquote'))
             #_#_meta (if-let [arglists (:arglists meta)]
                        (assoc meta :arglists (qualify-arglists arglists))
                        meta)]
@@ -467,11 +479,6 @@
             (when n
               {:local name-expr})
             {:children (conj (if n [:local] []) :methods)}))))
-
-(defn update-vals
-  "Applies f to all the vals in the map"
-  [m f]
-  (reduce-kv (fn [m k v] (assoc m k (f v))) {} (or m {})))
 
 (defmethod -parse 'letfn* [env [_ bindings & body :as form]]
   (validate-bindings env form)
