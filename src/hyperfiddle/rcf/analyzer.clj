@@ -631,13 +631,17 @@
   (let [{:keys [op var]} (:fn ast)
         [f & args :as form] (:form ast)]
     (if (and (= :var op) (:macro (meta var)) (not (::prevent-macroexpand (meta f))))
-      (let [mform (macroexpand-hook var form env args)
+      (let [
+            mform (macroexpand-hook var form env args)
             var'  (when (seq? mform) (resolve-sym (first mform) env))]
         (cond
           (= form mform)   (reduced ast)
           (reduced? mform) (reduced (tag-with-form (parse env (unreduced mform)) ast form))
-          (= var var')     (tag-with-form (analyze env (cons (vary-meta (first mform) assoc ::prevent-macroexpand true) (rest mform)))
-                                          ast form)
+          (= var var')     (let [[f & args] mform
+                                 f (if (contains? (methods macroexpand-hook) f)
+                                     (vary-meta f assoc ::prevent-macroexpand true)
+                                     f)]
+                             (tag-with-form (analyze env (cons f args)) ast form))
           :else            (tag-with-form (analyze env mform) ast form)))
       ast)))
 
