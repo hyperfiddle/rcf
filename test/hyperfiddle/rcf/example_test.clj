@@ -1,6 +1,6 @@
 (ns hyperfiddle.rcf.example-test
   (:require [clojure.core.async :refer [chan >! go go-loop <! timeout close!]]
-            [hyperfiddle.rcf :as rcf :refer [tests ! %]]
+            [hyperfiddle.rcf :as rcf :refer [tests ! % with]]
             [missionary.core :as m]))
 
 (tests
@@ -92,3 +92,9 @@
  % := :hello
  % := :world
  (close! c))
+
+(tests
+  (def task (fn [success! failure!] (success! 1) (fn cancel [] (! ::dispose))))
+  (with (task ! !)
+    % := 1)
+  % := ::dispose)

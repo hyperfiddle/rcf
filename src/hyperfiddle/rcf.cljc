@@ -157,3 +157,11 @@ convenience, defaults to println outside of tests context."}
                 lhs#))))))
 
 #?(:clj (defmethod t/assert-expr :hyperfiddle.rcf/= [msg form] (assert-unify nil msg form)))
+
+(defmacro with
+  "Resource cleanup helper, based on missionary's dependency-free Task protocol, see https://github.com/leonoel/task"
+  [dispose-fn & body]
+  `(let [dispose# ~dispose-fn
+         res# (do ~@body)]
+     (dispose#)
+     res#))
