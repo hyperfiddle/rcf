@@ -1,7 +1,25 @@
 (ns hyperfiddle.rcf-test
-  #_(:require [clojure.test :as t :refer [deftest is testing]]
+  (:require #_[clojure.test :as t :refer [deftest is testing]]
             [hyperfiddle.rcf :as rcf :refer [tests]]
-            [hyperfiddle.rcf.analyzer :as ana]))
+            #_[hyperfiddle.rcf.analyzer :as ana]))
+
+(defmacro my-def [x]
+  `(def ~(vary-meta x assoc 
+                    :form3 (inc 1)         ; evaluated now
+                    :form4 (quote (inc 1)) ; interpreted as if evaluated after code emission  
+                    :form5 (quote (quote (inc 1))) ; escaping interpretation
+                    )))
+
+(tests
+ "Custom var meta on def symbol are interpreted as if they were evaluated after emission."
+ (my-def ^{:form1 (quote (inc 1))
+           :form2 (inc 1)}        ; read and evaluated as usual
+         x)
+ (:form1 (meta #'x)) := '(inc 1)
+ (:form2 (meta #'x)) := 2
+ (:form3 (meta #'x)) := 2
+ (:form4 (meta #'x)) := 2
+ (:form5 (meta #'x)) := '(inc 1))
 
 
 ;; For an unknown reason, `macroexpand-1` acts as identity when runnning
