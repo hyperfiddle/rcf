@@ -21,7 +21,7 @@
 ;; "Set to true if you want to generate clojure.test compatible tests. This
 ;; will define testing functions in your namespace using `deftest`. Defaults to
 ;; `false`.
-#?(:clj  (def ^:dynamic *enabled* (= "true" (System/getProperty "hyperfiddle.rcf.enabled")))
+#?(:clj  (defonce ^:dynamic *enabled* (= "true" (System/getProperty "hyperfiddle.rcf.enabled")))
    :cljs (def ^boolean ^:dynamic *enabled* ENABLED))
 
 (defn enable! [& [v]]
