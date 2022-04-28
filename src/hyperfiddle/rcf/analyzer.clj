@@ -433,6 +433,21 @@
                        meta)]
         (intern (ns-sym ns) (with-meta sym meta))))))
 
+(defn- to-cljs-var [var]
+  (let [m (-> (meta var))
+        m (as-> m $ 
+            (update $ :ns ns-name)
+            (assoc $ :name (symbol (str (:ns $)) (str (:name $)))))]
+    (assoc m :meta m)))
+
+(defn- intern-cljs-var! [cljs-var]
+  (require 'cljs.env)
+  (let [ns (:ns cljs-var)
+        name (symbol (name (:name cljs-var)))
+        *compiler* (deref (resolve 'cljs.env/*compiler*))]
+    (swap! *compiler* assoc-in [:cljs.analyzer/namespaces ns :defs name] cljs-var)
+    nil))
+
 (defmethod -parse 'def [{:keys [ns] :as env} [_ sym & expr :as form]]
   (let [pfn  (fn
                ([])
@@ -444,7 +459,9 @@
         args (apply pfn expr)
         env (if (some? (namespace sym))
               env ;; Can't intern namespace-qualified symbol, ignore
-              (let [var (create-var sym env)] ;; side effect, FIXME should be a pass
+              (let [var (create-var sym env)] ;; side effect, FIXME should be a pass  
+                (when (cljs? env)
+                  (intern-cljs-var! (to-cljs-var var)))
                 (assoc-in env [:namespaces ns :mappings sym] var)))
         args (when-let [[_ init] (find args :init)]
                (assoc args :init (analyze env init)))]
