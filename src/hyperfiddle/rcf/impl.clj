@@ -180,7 +180,7 @@
    (ana/only-nodes #{:invoke}
                    (fn [ast]
                      (if-not (and (= `t/is (:form (:fn ast)))
-                                  (= :hyperfiddle.rcf/= (-> ast :args first :fn :form)))
+                                  (sigil? (-> ast :args first :fn))                                  )
                        ast
                        (ana/postwalk
                         (ana/only-nodes #{:var :symbol}
