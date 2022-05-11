@@ -40,7 +40,11 @@
 (def ^{:doc "
 Function to push value to async queue, e.g. `(! 42)`. RCF redefines this var in tests context. For REPL
 convenience, defaults to println outside of tests context."}
-  ! println)
+  ! (fn [x] (doto x println)))
+
+(comment
+  "! outside of tests macro"
+  (is (= (with-out-str (! 1)) "1\n")))
 
 (def ^{:doc "Queue behaving as a value. Assert `% := _` to pop from it. Async, will time out after `:timeout` option, default to 1000 (ms)."}
   %)

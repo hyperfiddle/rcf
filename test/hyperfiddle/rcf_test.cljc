@@ -1,7 +1,11 @@
 (ns hyperfiddle.rcf-test
-  (:require #_[clojure.test :as t :refer [deftest is testing]]
+  (:require [clojure.test :as t :refer [deftest is testing]]
             [hyperfiddle.rcf :as rcf :refer [tests]]
             #_[hyperfiddle.rcf.analyzer :as ana]))
+
+(deftest !-outside-tests
+  (is (= (with-out-str (rcf/! 1)) "1\n"))
+  (is (= (rcf/! 1) 1)))
 
 (defmacro my-def [x]
   `(def ~(vary-meta x assoc 
