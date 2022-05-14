@@ -206,8 +206,8 @@ Ran 1 tests containing 8 assertions.
 ; subsequent REPL interactions will run tests
 
 ; prevent test execution during cljs hot code reload
-#?(:cljs (defn ^:dev/before-load stop [] (hyperfiddle.rcf/enable!)))
-#?(:cljs (defn ^:dev/after-load start [] (hyperfiddle.rcf/enable! false)))
+#?(:cljs (defn ^:dev/before-load stop [] (hyperfiddle.rcf/enable! false)))
+#?(:cljs (defn ^:dev/after-load start [] (hyperfiddle.rcf/enable!)))
 ```
 
 # FAQ
