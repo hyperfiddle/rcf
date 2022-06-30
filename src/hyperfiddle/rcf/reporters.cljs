@@ -16,3 +16,10 @@
 
 (defmethod t/report [::t/default :hyperfiddle.rcf/fail] [m]
   (t/report (assoc m :type :fail)))
+
+;; Shadow cljs + karma test runner
+(defmethod t/report [:shadow.test.karma/karma :hyperfiddle.rcf/pass] [m]
+  (t/report (assoc m :type :pass)))
+
+(defmethod t/report [:shadow.test.karma/karma :hyperfiddle.rcf/fail] [m]
+  (t/report (assoc m :type :fail)))
