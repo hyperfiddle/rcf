@@ -6,7 +6,7 @@ git tag v$HYPERFIDDLE_RCF_DATE
 ```
 
 Clean 
-`clojure -T:clean`
+`clojure -T:build clean`
 
 Install jar in local maven repo:
 `clojure -T:build install :version '"'$HYPERFIDDLE_RCF_DATE'"'`
