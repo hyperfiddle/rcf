@@ -1,7 +1,8 @@
 (ns hyperfiddle.rcf-test
   (:require [clojure.test :as t :refer [deftest is testing]]
             [hyperfiddle.rcf :as rcf :refer [tests]]
-            #_[hyperfiddle.rcf.analyzer :as ana]))
+            #_[hyperfiddle.rcf.analyzer :as ana])
+  #?(:cljs (:require-macros [hyperfiddle.rcf-test])))
 
 (deftest !-outside-tests
   (is (= (with-out-str (rcf/! 1)) "1\n"))
@@ -14,16 +15,18 @@
                     :form5 (quote (quote (inc 1))) ; escaping interpretation
                     )))
 
-(tests
- "Custom var meta on def symbol are interpreted as if they were evaluated after emission."
- (my-def ^{:form1 (quote (inc 1))
-           :form2 (inc 1)}        ; read and evaluated as usual
-         x)
- (:form1 (meta #'x)) := '(inc 1)
- (:form2 (meta #'x)) := 2
- (:form3 (meta #'x)) := 2
- (:form4 (meta #'x)) := 2
- (:form5 (meta #'x)) := '(inc 1))
+#?(:clj
+   (tests
+     "Custom var meta on def symbol are interpreted as if they were evaluated after emission."
+     ;; CLJ only, no vars in cljs.
+     (my-def ^{:form1 (quote (inc 1))
+               :form2 (inc 1)}        ; read and evaluated as usual
+       x)
+     (:form1 (meta #'x)) := '(inc 1)
+     (:form2 (meta #'x)) := 2
+     (:form3 (meta #'x)) := 2
+     (:form4 (meta #'x)) := 2
+     (:form5 (meta #'x)) := '(inc 1)))
 
 
 ;; For an unknown reason, `macroexpand-1` acts as identity when runnning

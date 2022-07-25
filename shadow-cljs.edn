@@ -9,4 +9,4 @@
                       }
             :browser-test {:target    :karma
                            :output-to "out/karma-tests.js"
-                           :ns-regexp "^(hyperfiddle.rcf.tests|example.*)"}}}
+                           :ns-regexp "^(hyperfiddle.rcf.*|example.*)"}}}
