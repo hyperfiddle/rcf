@@ -48,9 +48,25 @@
 (defn to-var [{:keys [macro meta ns name]}]
   (with-meta {:ns ns, :name name} (assoc meta :type ::var)))
 
+(defmacro no-warn
+  "Localy disable a set of cljs compiler warning.
+  Usage: `(no-warn #{:undeclared-ns} (cljs/resolve env sym))`"
+  [disabled-warnings & body]
+  ;; Cannot use `cc/binding` as it relies on var which does a read-time resolve,
+  ;; while we want a runtime var resolve.
+  `(do (push-thread-bindings {(resolve 'cljs.analyzer/*cljs-warnings*)
+                            (reduce (fn [r# k#] (assoc r# k# false))
+                              (deref (resolve 'cljs.analyzer/*cljs-warnings*))
+                              ~disabled-warnings)})
+       (try ~@body
+            (finally (pop-thread-bindings)))))
+
 (defn cljs-resolve [env sym]
   (require '[cljs.analyzer.api])
-  ((resolve 'cljs.analyzer.api/resolve) env sym))
+  (require '[cljs.analyzer])
+  ;; RCF should try to resolve like the repl does, but is not in charge of
+  ;; handling invalid userland forms.
+  (no-warn #{:undeclared-ns} ((resolve 'cljs.analyzer.api/resolve) env sym)))
 
 (defn resolve-sym
   "Resolves the value mapped by the given sym in the global env"
