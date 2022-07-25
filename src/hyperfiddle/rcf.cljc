@@ -165,7 +165,6 @@ convenience, defaults to println outside of tests context."}
 (defmacro with
   "Resource cleanup helper, based on missionary's dependency-free Task protocol, see https://github.com/leonoel/task"
   [dispose-fn & body]
-  `(let [dispose# ~dispose-fn
-         res# (do ~@body)]
-     (dispose#)
-     res#))
+  `(let [dispose# ~dispose-fn]
+     ~@body
+     (dispose#)))
