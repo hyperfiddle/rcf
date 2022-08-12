@@ -80,6 +80,11 @@ Tests are run when you send a file or form to your Clojure/Script REPL. In Cursi
   "unification on reference types"
   (def x (atom nil))
   {:a x, :b x} := {:a ?x, :b ?x}
+  
+  "multiple tests on one value"
+  (let [v (conj ["a" "b"] "c")]
+    (count v) := 3
+    (last v) := "c")
 
   (tests
     "nested tests (is there a strong use case?)"
