@@ -6,44 +6,45 @@ RCF turns your Rich Comment Forms into tests (in the same file as your functions
 
 Features
 * Clojure/Script
-* Async tests (new!)
+* Async tests
 * No file watchers, no extra windows, no beeping, no latency
 * Natural REPL workflow
 * One key-chord to run tests
 * Zero boilerplate
 
 Deeper goal: **a notation for communication**
-* Documentation tool. RCF lets you share example usages next to the source code of the function (which is way better than docstrings). Figuring out what dense Clojure code does is actually really hard and RCF fixes that.
+* Documentation tool. RCF lets you share example usages next to the source code of the function (which is way better than docstrings). Figuring out what dense Clojure code does is actually really hard and RCF fixes that. [Example nextjournal notebook documentation using RCF](https://nextjournal.com/dustingetz/missionary-relieve-backpressure)
 * Pair programming tool. While pairing on Zoom, bang out some assertions quickly, right in the file you're working on. Watch your communication bandwidth improve.
 * Teaching tool. RCF helps beginners experiment and check their work.
 
-RCF is specifically engineered to support [hyperfiddle/photon, our upcoming reactive dialect of Clojure](https://hyperfiddle.notion.site/Reactive-Clojure-You-don-t-need-a-web-framework-you-need-a-web-language-44b5bfa526be4af282863f34fa1cfffc), that we intend to test, document and teach with RCF.
+RCF is specifically engineered to support [hyperfiddle/photon, our upcoming reactive dialect of Clojure](https://twitter.com/dustingetz/status/1520397540386091009), that we test, document and teach with RCF.
 
 Hype quotes:
-* "I think people make the mistake of comparing this with other methods of inlining tests near their function definitions (which has been possible, though uncommon, for a long time). The integration with the REPL, low syntax/interface, reduces friction and makes testing more attractive as a language of communication and verification."
 * "RCF has changed my habits with regards to tests. It is so much easier than flipping back and forth between files, you get my preferred work habits - work in a comment block until something works. But before RCF I never took the time to turn comment blocks into an automated test"
-* "I currently use this to do leetcode style questions as 'fun practice.' It certainly didn't feel fun before!"
-* "I used hyperfiddle/RCF in a recent successful interview. RCF was a massive help in communication and a fast tool for thought whilst under the conditions of technical interview."
+* "I think people make the mistake of comparing this with other methods of inlining tests near their function definitions (which has been possible, though uncommon, for a long time). The integration with the REPL, low syntax/interface, reduces friction and makes testing more attractive as a language of communication and verification."
+* "I used RCF in a successful interview. RCF was a massive help in communication and a fast tool for thought whilst under the conditions of technical interview."
+* "I use RCF to do leetcode style questions as 'fun practice.' It certainly didn't feel fun before!"
 
 # Dependency
 
-Project maturity: the stable release has external users.
+Project maturity: stable, external users
 
 ```clojure 
 ; stable
-{:deps {com.hyperfiddle/rcf {:mvn/version "20220405"}}}
+{:deps {com.hyperfiddle/rcf {:mvn/version "20220827-151056"}}}
 ```
 
 Breaking changes:
- * 2022 April 5: maven group-id renamed from `hyperfiddle` to `com.hyperfiddle` for security
- * 2021 Dec 18: clojurescript dependency is now under the :cljs alias, see #25
- * 2021 Oct 20: custom reporters now dispatch on qualified keywords, see #19
+* 2022 Aug: test forms no longer return final result, so this no longer passes: `(tests (tests (inc 1) := 2 (inc *1)) := 3`
+* `{:mvn/version "20220405"}` maven group-id renamed from `hyperfiddle` to `com.hyperfiddle` for security
+* 2021 Dec 18: clojurescript dependency is now under the :cljs alias, see #25
+* 2021 Oct 20: custom reporters now dispatch on qualified keywords, see #19
 
 We occasionally publish experimental technical alphas on master. The current development priority is improved support for deep assertions, including deep async assertions, which enables end-user macros to leverage RCF syntax in composed ways (e.g. resource disposal).
 
 ```Clojure
-; experimental - currently not published
-;{:deps {com.hyperfiddle/rcf {:git/url "https://github.com/hyperfiddle/rcf.git" :sha ...}}}
+; experimental
+{:deps {com.hyperfiddle/rcf {:git/url "https://github.com/hyperfiddle/rcf.git" :sha ...}}}
 ```
 [![JVM](https://github.com/hyperfiddle/rcf/actions/workflows/tests_clj.yml/badge.svg?branch=master)](https://github.com/hyperfiddle/rcf/actions/workflows/tests_clj.yml)
 [![NodeJS](https://github.com/hyperfiddle/rcf/actions/workflows/tests_node.yml/badge.svg?branch=master)](https://github.com/hyperfiddle/rcf/actions/workflows/tests_node.yml)
@@ -82,16 +83,16 @@ Tests are run when you send a file or form to your Clojure/Script REPL. In Cursi
   {:a x, :b x} := {:a ?x, :b ?x}
   
   "multiple tests on one value"
-  (let [v (conj ["a" "b"] "c")]
-    (count v) := 3
-    (last v) := "c")
+  (def xs [:a :b :c])
+  (count xs) := 3
+  (last xs) := :c
+  (let [xs (map identity xs)]
+    (last xs) := :c
+    (let [] (last xs) := :c))
 
   (tests
     "nested tests (is there a strong use case?)"
-    1 := 1
-
-    "tests form returns final result"
-    (tests (inc 1) := 2 (inc *1)) := 3)
+    1 := 1)
 
   (tests
     "REPL bindings work"
@@ -166,13 +167,14 @@ Loading src/example.cljc...
   % := 2
   % := 3
   (dispose))
+```
 
+Async tricks
+```clojure
 ; Async (tests) forms block and run serially. 
 ; They are async internally but the top (tests) form will block the thread until it completes (possibly by timeout).
 ; This is super convenient; it means you can use RCF to play with async forms at the REPL and bind the result:
-(tests 
-  (future (Thread/sleep 800) (! :a))
-  %)
+(tests (future (Thread/sleep 800) (! :a)) %)
 *1
 => :a
 
