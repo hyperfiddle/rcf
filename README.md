@@ -55,10 +55,10 @@ ClojureScript, DX and some experiments with unification.
 
 `(tests)` blocks erase by default (macroexpanding to nothing), which avoids a startup time performance penalty as well as keeps tests out of prod.
 
-It's an easy one-liner to turn on tests in your entrypoint:
+It's an easy one-liner to turn on tests in your dev entrypoint:
 
 ```clojure
-(ns user                           ; user ns is loaded by REPL startup
+(ns user ; user ns is loaded by REPL startup
   (:require [hyperfiddle.rcf]))
 
 (hyperfiddle.rcf/enable!)
@@ -168,19 +168,6 @@ Loading src/example.cljc...
   % := 2
   % := 3
   (dispose))
-```
-
-Async tricks
-```clojure
-; Async (tests) forms block and run serially. 
-; They are async internally but the top (tests) form will block the thread until it completes (possibly by timeout).
-; This is super convenient; it means you can use RCF to play with async forms at the REPL and bind the result:
-(tests (future (Thread/sleep 800) (! :a)) %)
-*1
-=> :a
-
-; Only the top (tests) form blocks, so this does not currently work
-(tests (tests (future (Thread/sleep 800) (! :a)) %) := :a)
 ```
 
 # CI
