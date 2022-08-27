@@ -35,16 +35,17 @@ Project maturity: stable, external users
 ```
 
 Breaking changes:
-* 2022 Aug: test forms no longer return final result, so this no longer passes: `(tests (tests (inc 1) := 2 (inc *1)) := 3`
-* `{:mvn/version "20220405"}` maven group-id renamed from `hyperfiddle` to `com.hyperfiddle` for security
+* `:mvn/version "20220827-151056"` test forms no longer return final result
+* `:mvn/version "20220405"` maven group-id renamed from `hyperfiddle` to `com.hyperfiddle` for security
 * 2021 Dec 18: clojurescript dependency is now under the :cljs alias, see #25
 * 2021 Oct 20: custom reporters now dispatch on qualified keywords, see #19
 
-We occasionally publish experimental technical alphas on master. The current development priority is improved support for deep assertions, including deep async assertions, which enables end-user macros to leverage RCF syntax in composed ways (e.g. resource disposal).
+Experimental (master): the current development priority is improving complex async tests in 
+ClojureScript, DX and some experiments with unification.
 
 ```Clojure
-; experimental
-{:deps {com.hyperfiddle/rcf {:git/url "https://github.com/hyperfiddle/rcf.git" :sha ...}}}
+; development - not currently published
+;{:deps {com.hyperfiddle/rcf {:git/url "https://github.com/hyperfiddle/rcf.git" :sha ...}}}
 ```
 [![JVM](https://github.com/hyperfiddle/rcf/actions/workflows/tests_clj.yml/badge.svg?branch=master)](https://github.com/hyperfiddle/rcf/actions/workflows/tests_clj.yml)
 [![NodeJS](https://github.com/hyperfiddle/rcf/actions/workflows/tests_node.yml/badge.svg?branch=master)](https://github.com/hyperfiddle/rcf/actions/workflows/tests_node.yml)
