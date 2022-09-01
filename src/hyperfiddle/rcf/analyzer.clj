@@ -580,7 +580,10 @@
   (case (:local ast)
     :catch        (:form ast)
     (:let :letfn) [(:name ast) (emit (:init ast))]
-    (:fn :arg)    (:name ast)))
+    :fn           (:name ast)
+    :arg          (if (:variadic? ast)
+                    ['& (:name ast)]
+                    [(:name ast)])))
 
 (defmethod -emit :quote [ast] (:form ast))
 
@@ -607,7 +610,7 @@
       `(~'fn* ~@methods))))
 
 (defmethod -emit :fn-method [ast]
-  (list (mapv emit (:params ast)) (emit (:body ast))))
+  (list (vec (mapcat emit (:params ast))) (emit (:body ast))))
 
 (defmethod -emit :letfn [ast]
   (list 'letfn* (vec (mapcat identity (mapv emit (:bindings ast)))) (emit (:body ast))))
