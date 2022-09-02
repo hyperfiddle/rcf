@@ -43,6 +43,16 @@
     (h 1 2)     := ['(1 2)]
     ))
 
+(tests
+  "Inline letfn support"
+  (letfn [(descent  [x] (cond (pos? x) (dec x)
+                              (neg? x) (inc x)
+                              :else    x))
+          (is-even? [x] (if (zero? x) true  (is-odd?  (descent x))))
+          (is-odd?  [x] (if (zero? x) false (is-even? (descent x))))]
+    [(is-even? 0) (is-even? 1) (is-even? 2) (is-even? -2)] := [true false true true]
+    [(is-odd?  0) (is-odd?  2) (is-odd?  3) (is-odd? -3)]  := [false false true true]))
+
 ;; For an unknown reason, `macroexpand-1` acts as identity when runnning
 ;; tests without a repl.
 
