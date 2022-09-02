@@ -29,6 +29,20 @@
      (:form5 (meta #'x)) := '(inc 1)))
 
 
+(tests
+  "Support for variadic fn" ; issue #65
+  (let [f (fn ([a]        [a])          ; also check multi arity
+            ([a b]      [a b])
+            ([a b & cs] [a b cs]))
+        g (fn [& args] args)
+        h #(vector %&)]
+    (f 1)       := [1]
+    (f 1 2)     := [1 2]
+    (f 1 2 3 4) := [1 2 '(3 4)]
+    (g 1 2)     := [1 2]
+    (h 1 2)     := ['(1 2)]
+    ))
+
 ;; For an unknown reason, `macroexpand-1` acts as identity when runnning
 ;; tests without a repl.
 
