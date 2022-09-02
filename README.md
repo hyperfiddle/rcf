@@ -31,7 +31,7 @@ Project maturity: stable, external users
 
 ```clojure 
 ; stable
-{:deps {com.hyperfiddle/rcf {:mvn/version "20220827-151056"}}}
+{:deps {com.hyperfiddle/rcf {:mvn/version "20220902-130636"}}}
 ```
 
 Breaking changes:
