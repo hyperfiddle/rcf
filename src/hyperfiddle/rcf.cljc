@@ -38,13 +38,15 @@
 #?(:clj  (def ^:dynamic *generate-tests*  (= "true" (System/getProperty "hyperfiddle.rcf.generate-tests"))))
 
 (def ^{:doc "
-Function to push value to async queue, e.g. `(! 42)`. RCF redefines this var in tests context. For REPL
+Function to push value to async queue, e.g. `(tap 42)`. RCF redefines this var in tests context. For REPL
 convenience, defaults to println outside of tests context."}
-  ! (fn [x] (doto x println)))
+  tap (fn [x] (doto x println)))
+
+(def ^{:doc "Deprecated alias for `tap`." :deprecated true} ! tap)
 
 (comment
-  "! outside of tests macro"
-  (is (= (with-out-str (! 1)) "1\n")))
+  "tap outside of tests macro"
+  (is (= (with-out-str (tap 1)) "1\n")))
 
 (def ^{:doc "Queue behaving as a value. Assert `% := _` to pop from it. Async, will time out after `:timeout` option, default to 1000 (ms)."}
   %)

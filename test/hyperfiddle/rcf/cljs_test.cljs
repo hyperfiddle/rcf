@@ -1,6 +1,6 @@
 (ns hyperfiddle.rcf.cljs-test
   (:require [clojure.core.async :refer [chan >! go go-loop <! timeout close!]]
-            [hyperfiddle.rcf :as rcf :refer [tests ! %]]
+            [hyperfiddle.rcf :as rcf :refer [tests tap %]]
             [missionary.core :as m]))
 
 (tests
@@ -62,9 +62,9 @@
  "async tests"
  (tests
   (defn set-timeout [f ms] (js/setTimeout ms f))
-  (rcf/! 1) (set-timeout 10 (fn []
-                              (rcf/! 2) (set-timeout 200 (fn []
-                                                           (rcf/! 3)))))
+  (rcf/tap 1) (set-timeout 10 (fn []
+                              (rcf/tap 2) (set-timeout 200 (fn []
+                                                           (rcf/tap 3)))))
   % := 1
   % := 2
   % := ::rcf/timeout))
@@ -75,7 +75,7 @@
  (go-loop [x (<! c)]
    (when x
      (<! (timeout 10))
-     (! x)
+     (tap x)
      (recur (<! c))))
  (go (>! c :hello) (>! c :world))
  % := :hello
@@ -85,7 +85,7 @@
 (tests
  "missionary"
  (def !x (atom 0))
- (def dispose ((m/reactor (m/stream! (m/ap (! (inc (m/?< (m/watch !x)))))))
+ (def dispose ((m/reactor (m/stream! (m/ap (tap (inc (m/?< (m/watch !x)))))))
                (fn [_] #_(prn ::done)) #(prn ::crash %)))
  % := 1
  (swap! !x inc)

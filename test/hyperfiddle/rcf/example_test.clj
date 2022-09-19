@@ -1,11 +1,13 @@
 (ns hyperfiddle.rcf.example-test
   (:require [clojure.core.async :refer [chan >! go go-loop <! timeout close!]]
-            [hyperfiddle.rcf :as rcf :refer [tests ! % with]]
+            [hyperfiddle.rcf :as rcf :refer [tests tap % with]]
             [missionary.core :as m]))
 
+(rcf/enable!)
+
 (tests
- "equality"
- (inc 1) := 2)
+  "equality"
+  (inc 1) := 2)
 
 (tests
  "nested tests"
@@ -58,19 +60,19 @@
 
 (tests
  "Async queue"
- (! 1) % := 1
- (future (Thread/sleep 300) (! 2))
+ (tap 1) % := 1
+ (future (Thread/sleep 300) (tap 2))
  % := 2
  )
 
 (tests
- (tests (future (Thread/sleep 100) (! :a) :b) %)
+ (tests (future (Thread/sleep 100) (tap :a) :b) %)
  := :a)
 
 (tests
  "missionary"
  (def !x (atom 0))
- (def dispose ((m/reactor (m/stream! (m/ap (! (inc (m/?< (m/watch !x)))))))
+ (def dispose ((m/reactor (m/stream! (m/ap (tap (inc (m/?< (m/watch !x)))))))
                (fn [_] (prn ::done)) #(prn ::crash %)))
  % := 1
  (swap! !x inc)
@@ -86,7 +88,7 @@
  (go-loop [x (<! c)]
    (when x
      (<! (timeout 10))
-     (! x)
+     (tap x)
      (recur (<! c))))
  (go  (>! c :hello) (>! c :world))
  % := :hello
@@ -94,7 +96,7 @@
  (close! c))
 
 (tests
-  (def task (fn [success! failure!] (success! 1) (fn cancel [] (! ::dispose))))
-  (with (task ! !)
+  (def task (fn [success! failure!] (success! 1) (fn cancel [] (tap ::dispose))))
+  (with (task tap tap)
     % := 1)
   % := ::dispose)

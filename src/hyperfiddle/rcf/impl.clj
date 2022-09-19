@@ -65,20 +65,20 @@
 (defn has-%? [ast] (some? (first (filter %? (ana/ast-seq ast)))))
 (defn maybe-add-queue-support [env ast]
   (if (has-%? ast)
-    (-> (ana/analyze env `(let [[~'RCF__! ~'RCF__% ~'RCF__set-timeout!] (hyperfiddle.rcf/make-queue :hyperfiddle.rcf/timeout)]))
+    (-> (ana/analyze env `(let [[~'RCF__tap ~'RCF__% ~'RCF__set-timeout!] (hyperfiddle.rcf/make-queue :hyperfiddle.rcf/timeout)]))
         (ana/resolve-syms-pass)
         (ana/macroexpand-pass)
         (update-in [:body :statements] conj ast))
     ast))
 
-(defn rewrite-!-% [env ast]
+(defn rewrite-tap-% [env ast]
   (if-not (has-%? ast)
     ast
     (ana/postwalk
      (ana/only-nodes #{:var}
                      (fn [var-ast]
                        (condp = (ana/var-sym (:var var-ast))
-                         'hyperfiddle.rcf/! (assoc var-ast :form 'RCF__!)
+                         'hyperfiddle.rcf/tap (assoc var-ast :form 'RCF__tap)
                          'hyperfiddle.rcf/set-timeout! (assoc var-ast :form 'RCF__set-timeout!)
                          'hyperfiddle.rcf/%  (if (ana/cljs? env)
                                                var-ast
@@ -278,7 +278,7 @@
   (->> ast
        (maybe-add-stars-support env)
        (maybe-add-queue-support env)
-       (rewrite-!-% env)
+       (rewrite-tap-% env)
        (rewrite-infix-pass env)
        (rewrite-async-assert env)
        (rewrite-doc env)

@@ -67,7 +67,7 @@ Tests are run when you send a file or form to your Clojure/Script REPL. In Cursi
 
 ```clojure
 (ns example
-  (:require [hyperfiddle.rcf :refer [tests ! %]]))
+  (:require [hyperfiddle.rcf :refer [tests tap %]]))
 
 (tests
   "equality"
@@ -122,7 +122,7 @@ Loading src/example.cljc...
 ```Clojure
 (ns example
   (:require [clojure.core.async :refer [chan >! go go-loop <! timeout close!]]
-            [hyperfiddle.rcf :as rcf :refer [tests ! %]]
+            [hyperfiddle.rcf :as rcf :refer [tests tap %]]
             [missionary.core :as m]))
 
 (rcf/set-timeout! 100)
@@ -131,17 +131,17 @@ Loading src/example.cljc...
   "async tests"
   #?(:clj  (tests
              (future
-               (rcf/! 1) (Thread/sleep 10)        ; tap value to queue
-               (rcf/! 2) (Thread/sleep 200)
-               (rcf/! 3))
+               (rcf/tap 1) (Thread/sleep 10)        ; tap value to queue
+               (rcf/tap 2) (Thread/sleep 200)
+               (rcf/tap 3))
              % := 1                               ; pop queue
              % := 2
              % := ::rcf/timeout)
      :cljs (tests
              (defn setTimeout [f ms] (js/setTimeout ms f))
-             (rcf/! 1) (setTimeout 10 (fn []
-             (rcf/! 2) (setTimeout 200 (fn []
-             (rcf/! 3)))))
+             (rcf/tap 1) (setTimeout 10 (fn []
+             (rcf/tap 2) (setTimeout 200 (fn []
+             (rcf/tap 3)))))
              % := 1
              % := 2
              % := ::rcf/timeout))
@@ -151,7 +151,7 @@ Loading src/example.cljc...
   (go-loop [x (<! c)]
     (when x
       (<! (timeout 10))
-      (! x)
+      (tap x)
       (recur (<! c))))
   (go (>! c :hello) (>! c :world))
   % := :hello

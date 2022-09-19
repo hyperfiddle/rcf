@@ -4,9 +4,9 @@
             #_[hyperfiddle.rcf.analyzer :as ana])
   #?(:cljs (:require-macros [hyperfiddle.rcf-test])))
 
-(deftest !-outside-tests
-  (is (= (with-out-str (rcf/! 1)) "1\n"))
-  (is (= (rcf/! 1) 1)))
+(deftest tap-outside-tests
+  (is (= (with-out-str (rcf/tap 1)) "1\n"))
+  (is (= (rcf/tap 1) 1)))
 
 (defmacro my-def [x]
   `(def ~(vary-meta x assoc 
