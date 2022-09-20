@@ -70,6 +70,11 @@
  := :a)
 
 (tests
+  ":throws"
+  (let [e (ex-info "" {})]
+    (throw e) :throws clojure.lang.ExceptionInfo))
+
+(tests
  "missionary"
  (def !x (atom 0))
  (def dispose ((m/reactor (m/stream! (m/ap (tap (inc (m/?< (m/watch !x)))))))

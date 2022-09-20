@@ -117,6 +117,7 @@
 (defmethod replace-sigil :default [sym] sym)
 (defmethod replace-sigil := [_sym] :hyperfiddle.rcf/=)
 (defmethod replace-sigil 'thrown? [_sym] 'hyperfiddle.rcf/thrown?)
+(defmethod replace-sigil :throws [_sym] 'hyperfiddle.rcf/thrown?)
 
 (defn replace-sigil* [sym]
   (let [sym' (replace-sigil sym)]
