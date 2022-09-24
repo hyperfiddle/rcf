@@ -1,4 +1,4 @@
-# RCF – asynchronous Rich Comment Forms and REPL-first test macro
+# RCF – asynchronous Rich Comment Forms and REPL-first test macro for Clojure/Script
 
 RCF turns your Rich Comment Forms into tests (in the same file as your functions). Send form or file to REPL to run tests and it squirts dopamine ✅✅✅. It's good, try it!
 
