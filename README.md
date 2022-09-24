@@ -1,4 +1,4 @@
-# RCF – a REPL-first test macro for Clojure/Script (now with async tests!)
+# RCF – asynchronous Rich Comment Forms and REPL-first test macro
 
 RCF turns your Rich Comment Forms into tests (in the same file as your functions). Send form or file to REPL to run tests and it squirts dopamine ✅✅✅. It's good, try it!
 
@@ -7,10 +7,10 @@ RCF turns your Rich Comment Forms into tests (in the same file as your functions
 Features
 * Clojure/Script
 * Async tests
-* No file watchers, no extra windows, no beeping, no latency
-* Natural REPL workflow
-* One key-chord to run tests
 * Zero boilerplate
+* Natural REPL workflow
+* No file watchers, no extra windows, no beeping, no latency
+* One key-chord to run tests, no hotkey configuring
 
 Deeper goal: **a notation for communication**
 * Documentation tool. RCF lets you share example usages next to the source code of the function (which is way better than docstrings). Figuring out what dense Clojure code does is actually really hard and RCF fixes that. [Example nextjournal notebook documentation using RCF](https://nextjournal.com/dustingetz/missionary-relieve-backpressure)
@@ -27,7 +27,7 @@ Hype quotes:
 
 # Dependency
 
-Project maturity: stable, external users
+Project maturity: CLJ is stable, external users. CLJS is alpha
 
 ```clojure 
 ; stable
