@@ -31,12 +31,13 @@ Project maturity: CLJ is stable, external users. CLJS is alpha
 
 ```clojure 
 ; stable
-{:deps {com.hyperfiddle/rcf {:mvn/version "20220902-130636"}}}
+{:deps {com.hyperfiddle/rcf {:mvn/version "20220926-202227"}}}
 ```
 
 Breaking changes:
-* `:mvn/version "20220827-151056"` test forms no longer return final result
-* `:mvn/version "20220405"` maven group-id renamed from `hyperfiddle` to `com.hyperfiddle` for security
+* `20220926-202227` `!` is deprecated, use `tap` instead
+* `20220827-151056` async test forms no longer guaranteed return final result
+* `20220405` maven group-id renamed from `hyperfiddle` to `com.hyperfiddle` for security
 * 2021 Dec 18: clojurescript dependency is now under the :cljs alias, see #25
 * 2021 Oct 20: custom reporters now dispatch on qualified keywords, see #19
 
