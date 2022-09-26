@@ -2,6 +2,7 @@
   (:require [clojure.test :as t :refer [deftest is testing]]
             [hyperfiddle.rcf :as rcf :refer [tests]]
             #_[hyperfiddle.rcf.analyzer :as ana])
+  #?(:clj (:import [clojure.lang ExceptionInfo]))
   #?(:cljs (:require-macros [hyperfiddle.rcf-test])))
 
 (deftest tap-outside-tests
@@ -57,6 +58,12 @@
   "! still works"
   (rcf/! 5)
   rcf/% := 5)
+
+(tests
+  ":throws works in clj(s)"
+  ;; inlining `thrower` leads to "unreachable code" warning
+  (let [thrower #(throw (ex-info "boom" {}))]
+    (thrower) :throws ExceptionInfo))
 
 ;; For an unknown reason, `macroexpand-1` acts as identity when runnning
 ;; tests without a repl.

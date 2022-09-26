@@ -349,20 +349,6 @@
                                                    form))) (:args ast)))
     (ana/emit-invoke ast)))
 
-(defmethod t/assert-expr 'hyperfiddle.rcf/thrown? [msg form]
-  ;; (is (thrown? c expr))
-  ;; Asserts that evaluating expr throws an exception of class c.
-  ;; Returns the exception thrown.
-  (let [[body klass] (rest form)]
-    `(try ~body
-          (do-report {:type :hyperfiddle.rcf/fail, :message ~msg,
-                      :expected '~form, :actual nil})
-          (catch ~klass e#
-            (do-report {:type :hyperfiddle.rcf/pass, :message ~msg,
-                        :expected '~form, :actual e#})
-            e#))))
-
-
 (defn- stacktrace-file-and-line
   [stacktrace]
   (if (seq stacktrace)
@@ -372,7 +358,8 @@
       {:file file-name :line (.getLineNumber s)})
     {:file nil :line nil}))
 
-(defn do-report [m]
+
+(defn do-report* [m]
   (t/report
    (case
     (:type m)
@@ -385,6 +372,24 @@
                                                                      (.getStackTrace (Thread/currentThread)))) m)
      (:error :hyperfiddle.rcf/error) (merge (stacktrace-file-and-line (.getStackTrace ^Throwable (:actual m))) m)
      m)))
+
+(defmacro do-report [m]
+  (if (:js-globals &env)
+    `(cljs.test/do-report ~m)
+    `(do-report* ~m)))
+
+(defmethod t/assert-expr 'hyperfiddle.rcf/thrown? [msg form]
+  ;; (is (thrown? c expr))
+  ;; Asserts that evaluating expr throws an exception of class c.
+  ;; Returns the exception thrown.
+  (let [[body klass] (rest form)]
+    `(try ~body
+          (do-report {:type :hyperfiddle.rcf/fail, :message ~msg,
+                      :expected '~form, :actual nil})
+          (catch ~klass e#
+            (do-report {:type :hyperfiddle.rcf/pass, :message ~msg,
+                        :expected '~form, :actual e#})
+            e#))))
 
 (defn test-var
   "Like `clojure.test/test-var` but return actual result."
