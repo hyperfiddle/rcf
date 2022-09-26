@@ -79,6 +79,7 @@
                      (fn [var-ast]
                        (condp = (ana/var-sym (:var var-ast))
                          'hyperfiddle.rcf/tap (assoc var-ast :form 'RCF__tap)
+                         'hyperfiddle.rcf/! (assoc var-ast :form 'RCF__tap)
                          'hyperfiddle.rcf/set-timeout! (assoc var-ast :form 'RCF__set-timeout!)
                          'hyperfiddle.rcf/%  (if (ana/cljs? env)
                                                var-ast

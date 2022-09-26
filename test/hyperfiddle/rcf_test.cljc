@@ -53,6 +53,11 @@
     [(is-even? 0) (is-even? 1) (is-even? 2) (is-even? -2)] := [true false true true]
     [(is-odd?  0) (is-odd?  2) (is-odd?  3) (is-odd? -3)]  := [false false true true]))
 
+(tests
+  "! still works"
+  (rcf/! 5)
+  rcf/% := 5)
+
 ;; For an unknown reason, `macroexpand-1` acts as identity when runnning
 ;; tests without a repl.
 
