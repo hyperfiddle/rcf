@@ -6,6 +6,7 @@
                                 "-Dhyperfiddle.rcf.generate-tests=true"]
                   :extra-paths ["test" "example"]
                   :extra-deps  {thheller/shadow-cljs   {:mvn/version "2.16.8"}
+                                nubank/matcher-combinators {:mvn/version "3.5.1"}
                                 missionary/missionary  {:mvn/version "b.26"}
                                 org.clojure/core.async {:mvn/version "1.5.648"}
                                 io.github.cognitect-labs/test-runner

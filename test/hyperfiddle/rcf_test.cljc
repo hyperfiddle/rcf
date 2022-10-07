@@ -1,6 +1,7 @@
 (ns hyperfiddle.rcf-test
   (:require [clojure.test :as t :refer [deftest is testing]]
             [hyperfiddle.rcf :as rcf :refer [tests]]
+            [matcher-combinators.test]
             #_[hyperfiddle.rcf.analyzer :as ana])
   #?(:clj (:import [clojure.lang ExceptionInfo]))
   #?(:cljs (:require-macros [hyperfiddle.rcf-test])))
@@ -64,6 +65,9 @@
   ;; inlining `thrower` leads to "unreachable code" warning
   (let [thrower #(throw (ex-info "boom" {}))]
     (thrower) :throws ExceptionInfo))
+
+(tests "matcher-combinators match? works infix"
+  {:a {:b 1}} match? {:a {:b int?}})
 
 ;; For an unknown reason, `macroexpand-1` acts as identity when runnning
 ;; tests without a repl.
