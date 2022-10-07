@@ -167,10 +167,10 @@
                             (loop [ss (:statements do-ast)
                                    r []]
                               (if (>= (count ss) 3)
-                                (let [[a b c] ss]
-                                  (if (sigil? b)
-                                    (recur (drop 3 ss) (conj r (rewrite-infix env a b c)))
-                                    (recur (rest ss) (conj r a))))
+                                (let [[?actual ?op ?expected] ss]
+                                  (if (sigil? ?op)
+                                    (recur (drop 3 ss) (conj r (rewrite-infix env ?expected ?op ?actual)))
+                                    (recur (rest ss) (conj r ?actual))))
                                 (into r ss))))))
    ast))
 
@@ -382,7 +382,7 @@
   ;; (is (thrown? c expr))
   ;; Asserts that evaluating expr throws an exception of class c.
   ;; Returns the exception thrown.
-  (let [[body klass] (rest form)]
+  (let [[klass body] (rest form)]
     `(try ~body
           (do-report {:type :hyperfiddle.rcf/fail, :message ~msg,
                       :expected '~form, :actual nil})
