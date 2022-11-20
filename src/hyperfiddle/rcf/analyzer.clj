@@ -88,7 +88,7 @@
 
 (defn var-sym [v] 
   (cond
-    (var? v) (symbol (name (.name (.ns v))) (name (.sym v)))
+    (var? v) (.toSymbol v)
     (var?' v) (symbol (str (:ns v)) (str (:name v)))))
 
 (defmulti macroexpand-hook (fn [the-var _&form _&env _args] (var-sym the-var)))
