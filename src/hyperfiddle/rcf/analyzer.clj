@@ -22,8 +22,7 @@
 
 (defn build-ns-map []
   {:namespaces (into {} (mapv #(vector (ns-name %)
-                                       {:mappings (merge (ns-map %) {'in-ns #'clojure.core/in-ns
-                                                                     'ns    #'clojure.core/ns})
+                                       {:mappings (merge (ns-map %) {'in-ns #'clojure.core/in-ns})
                                         :aliases  (reduce-kv (fn [a k v] (assoc a k (ns-name v)))
                                                              {} (ns-aliases %))
                                         :ns       (ns-name %)})
