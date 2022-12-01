@@ -1,5 +1,5 @@
 name: NodeJS
-on: [push]
+on: [push, pull_request]
 jobs:
   node:
     runs-on: [ubuntu-latest]

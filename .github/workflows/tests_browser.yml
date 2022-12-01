@@ -1,5 +1,5 @@
 name: Browser
-on: [push]
+on: [push, pull_request]
 jobs:
   browser:
     runs-on: [ubuntu-latest]

@@ -1,5 +1,5 @@
 name: JVM
-on: [push]
+on: [push, pull_request]
 jobs:
   clojure:
     runs-on: [ubuntu-latest]
