@@ -54,9 +54,9 @@
   ;; Cannot use `cc/binding` as it relies on var which does a read-time resolve,
   ;; while we want a runtime var resolve.
   `(do (push-thread-bindings {(resolve 'cljs.analyzer/*cljs-warnings*)
-                            (reduce (fn [r# k#] (assoc r# k# false))
-                              (deref (resolve 'cljs.analyzer/*cljs-warnings*))
-                              ~disabled-warnings)})
+                              (reduce (fn [r# k#] (assoc r# k# false))
+                                      (deref (resolve 'cljs.analyzer/*cljs-warnings*))
+                                      ~disabled-warnings)})
        (try ~@body
             (finally (pop-thread-bindings)))))
 
@@ -85,7 +85,7 @@
 (def specials "Set of special forms common to every clojure variant" ;; TODO replace with cc/special-symbol?
   '#{do if new quote set! try var catch throw finally def . let* letfn* loop* recur fn*})
 
-(defn var-sym [v] 
+(defn var-sym [v]
   (cond
     (var? v) (symbol v)
     (var?' v) (symbol (str (:ns v)) (str (:name v)))))
@@ -425,6 +425,10 @@
   [m f]
   (reduce-kv (fn [m k v] (assoc m k (f v))) {} (or m {})))
 
+(defmacro if-bb [then else]
+  (if (System/getProperty "babashka.version")
+    then else))
+
 (defn create-var
   "Creates a Var for sym and returns it.
    The Var gets interned in the env namespace."
@@ -433,9 +437,14 @@
     (if (some? v)
       (cond
         (class? v) v
-        (and (var? v) (= ns (ns-name (.ns ^clojure.lang.Var v)))) (do (when-some [m (meta sym)] 
-                                                                        (.setMeta v (update-vals m unquote')))
-                                                                      v)
+        (and (var? v) (= ns (ns-name (if-bb
+                                         (:ns (meta v))
+                                       (.ns ^clojure.lang.Var v)))))
+        (do (when-some [m (meta sym)]
+              (if-bb
+                  (alter-meta! v (constantly (update-vals m unquote')))
+                (.setMeta v (update-vals m unquote'))))
+            v)
         :else (throw (ex-info (str "(def " sym " ...) resolved to an existing mapping of an unexpected type.")
                               {:sym         sym
                                :ns          ns
@@ -450,7 +459,7 @@
 
 (defn- to-cljs-var [var]
   (let [m (-> (meta var))
-        m (as-> m $ 
+        m (as-> m $
             (update $ :ns ns-name)
             (assoc $ :name (symbol (str (:ns $)) (str (:name $)))))]
     (assoc m :meta m)))
@@ -474,7 +483,7 @@
         args (apply pfn expr)
         env (if (some? (namespace sym))
               env ;; Can't intern namespace-qualified symbol, ignore
-              (let [var (create-var sym env)] ;; side effect, FIXME should be a pass  
+              (let [var (create-var sym env)] ;; side effect, FIXME should be a pass
                 (when (cljs? env)
                   (intern-cljs-var! (to-cljs-var var)))
                 (assoc-in env [:namespaces ns :mappings sym] var)))

@@ -1,0 +1,4 @@
+{:paths ["bb" "src"]
+ :tasks {test:bb {:extra-paths ["test"]
+                  :extra-deps {nubank/matcher-combinators {:mvn/version "3.5.1"}}
+                  :task (exec 'runner/run-tests)}}}
