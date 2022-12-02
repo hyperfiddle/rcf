@@ -425,6 +425,8 @@
   [m f]
   (reduce-kv (fn [m k v] (assoc m k (f v))) {} (or m {})))
 
+(defmacro if-bb [then else] (if (System/getProperty "babashka.version") then else))
+
 (defn create-var
   "Creates a Var for sym and returns it.
    The Var gets interned in the env namespace."
@@ -433,9 +435,10 @@
     (if (some? v)
       (cond
         (class? v) v
-        (and (var? v) (= ns (ns-name (.ns ^clojure.lang.Var v)))) (do (when-some [m (meta sym)] 
-                                                                        (.setMeta v (update-vals m unquote')))
-                                                                      v)
+        (and (var? v) (= ns (ns-name (if-bb (:ns (meta v)) (.ns ^clojure.lang.Var v)))))
+        (do (when-some [m (meta sym)]
+              (if-bb (alter-meta! v (constantly (update-vals m unquote')))
+                (.setMeta v (update-vals m unquote')))) v)
         :else (throw (ex-info (str "(def " sym " ...) resolved to an existing mapping of an unexpected type.")
                               {:sym         sym
                                :ns          ns
