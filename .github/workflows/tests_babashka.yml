@@ -16,10 +16,7 @@ jobs:
         uses: DeLaGuardo/setup-clojure@3.4
         with:
           cli: 1.10.1.727
-
-      - name: Install bb (dev)
-        run: |
-          bash <(curl https://raw.githubusercontent.com/babashka/babashka/master/install) --version 1.0.168-SNAPSHOT
+          bb: latest
 
       - name: Run tests
         run: bb test:bb
