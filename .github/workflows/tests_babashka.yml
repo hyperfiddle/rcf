@@ -1,7 +1,7 @@
 name: Babashka
 on: [push, pull_request]
 jobs:
-  clojure:
+  babashka:
     runs-on: [ubuntu-latest]
     steps:
       - name: Checkout
