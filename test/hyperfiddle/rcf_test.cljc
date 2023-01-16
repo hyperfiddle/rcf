@@ -69,6 +69,14 @@
 (tests "matcher-combinators match? works infix"
   {:a {:b 1}} match? {:a {:b int?}})
 
+(tests "`with` discards in presence of exceptions, too"
+  (try
+    (rcf/with #(rcf/tap :ran)
+      (throw (ex-info "" {})))
+    (catch ExceptionInfo _))
+  rcf/% := :ran
+  )
+
 ;; For an unknown reason, `macroexpand-1` acts as identity when runnning
 ;; tests without a repl.
 
