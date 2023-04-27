@@ -7,6 +7,7 @@
                :cljs [cljs.test :as t])
             #?(:clj [hyperfiddle.rcf.analyzer :as ana])
             #?(:clj [clojure.walk :as walk])
+            #?(:clj [clojure.java.io :as io])
             [clojure.string :as str]
             [hyperfiddle.rcf.reporters]
             [hyperfiddle.rcf.queue]
@@ -64,10 +65,51 @@ convenience, defaults to println outside of tests context."}
         file (str/replace (name (ns-name *ns*)) #"[-\.]" "_")]
     (symbol (str "generated__" file "_" line))))
 
+(defn ns-filename "Given a symbol identifying a namespace, return the corresponding file path"
+  [sym]
+  (-> (name sym)
+    (str/replace #"\." "/")
+    (str/replace #"-" "_")))
+
+#?(:clj (defn find-file [relative-path]
+          (when-let [res (io/resource relative-path)]
+            (try (io/file res)
+                 (catch IllegalArgumentException _
+                   ;; resource is not a file on the classpath. E.g. jar:// sources are
+                   ;; not files. We also don’t want to reload them.
+                   nil)))))
+#?(:clj
+   (defn resolve-file
+     "Resolve a source file from namespace symbol.
+      Precedence:
+      - cljc,
+      - cljs if we are compiling clojurescript,
+      - clj otherwise."
+     [env ns-sym]
+     (let [file-name (ns-filename ns-sym)
+           cljc      (find-file (str file-name ".cljc"))
+           clj       (find-file (str file-name ".clj"))
+           cljs      (find-file (str file-name ".cljs"))]
+       (if (and cljc (.exists cljc))
+         cljc
+         (if (:js-globals env)
+           (when (and cljs (.exists cljs))
+             cljs)
+           (when (and clj (.exists clj))
+             clj))))))
+#?(:clj
+   (defn is-ns-in-current-project? [env ns-sym]
+     (let [current-dir (System/getProperty "user.dir")]
+       (when-some [file (resolve-file env ns-sym)]
+         (str/starts-with? (.getPath file) current-dir)))))
+
 (defmacro tests [& body]
-  (let [name (gen-name &form)]
+  (let [name (gen-name &form)
+        ns (if (:js-globals &env)
+             (:name (:ns &env))
+             (:ns &env (.getName *ns*)))]
     (cond
-      *generate-tests* `(deftest ~name ~@body)
+      (and *generate-tests* (is-ns-in-current-project? &env ns)) `(deftest ~name ~@body)
       *enabled*         (if (:js-globals &env)
                           `(do (defn ~name [] ~(impl/tests* &env body))
                                (when *enabled* (cljs.test/run-block (cljs.test/test-var-block* (var ~name) ~name))))
