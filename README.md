@@ -17,7 +17,7 @@ Deeper goal: **a notation for communication**
 * Pair programming tool. While pairing on Zoom, bang out some assertions quickly, right in the file you're working on. Watch your communication bandwidth improve.
 * Teaching tool. RCF helps beginners experiment and check their work.
 
-RCF is specifically engineered to support [hyperfiddle/photon, our upcoming reactive dialect of Clojure](https://twitter.com/dustingetz/status/1520397540386091009), that we test, document and teach with RCF.
+RCF is specifically engineered to support [hyperfiddle/electric](https://github.com/hyperfiddle/electric), that we test, document and teach with RCF.
 
 Hype quotes:
 * "RCF has changed my habits with regards to tests. It is so much easier than flipping back and forth between files, you get my preferred work habits - work in a comment block until something works. But before RCF I never took the time to turn comment blocks into an automated test"
