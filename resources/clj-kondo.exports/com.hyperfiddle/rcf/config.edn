@@ -1,0 +1,2 @@
+{;; Removes the warning that `:=` is an unused value in `tests`
+ :config-in-call {hyperfiddle.rcf/tests {:ignore [:unused-value]}}}
