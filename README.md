@@ -191,6 +191,8 @@ Ran 1 tests containing 8 assertions.
 
 # ClojureScript configuration
 
+For CLJS tests to run, `rcf/enable!` must be true in both CLJ (shadow-cljs macroexpansion time) and CLJS (JS runtime). Successful runs will print green checkboxes in the browser console, not the REPL, because REPLs don't properly intercept the async println. (Please file an issue or DM us on slack if you can help us understand why.)
+
 ```Clojure
 (ns dev-entrypoint
   (:require [example] ; transitive inline tests will erase
