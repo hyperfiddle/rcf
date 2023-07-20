@@ -107,7 +107,7 @@ convenience, defaults to println outside of tests context."}
   (let [name (gen-name &form)
         ns (if (:js-globals &env)
              (:name (:ns &env))
-             (:ns &env (.getName *ns*)))]
+             (:ns &env (ns-name *ns*)))]
     (cond
       (and *generate-tests* (is-ns-in-current-project? &env ns)) `(deftest ~name ~@body)
       *enabled*         (if (:js-globals &env)
