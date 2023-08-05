@@ -1,4 +1,4 @@
-# RCF – asynchronous Rich Comment Forms and REPL-first test macro for Clojure/Script
+# RCF – REPL-first async test macro for Clojure/Script
 
 RCF turns your Rich Comment Forms into tests (in the same file as your functions). Send form or file to REPL to run tests and it squirts dopamine ✅✅✅. It's good, try it!
 
@@ -6,48 +6,43 @@ RCF turns your Rich Comment Forms into tests (in the same file as your functions
 
 Features
 * Clojure/Script
-* Async tests
-* Zero boilerplate
-* Natural REPL workflow
-* No file watchers, no extra windows, no beeping, no latency
-* One key-chord to run tests, no hotkey configuring
+* async tests
+* zero boilerplate
+* natural REPL workflow
+* one key-chord to run tests, no hotkey configuring
+* same-file tests (examples are better than docstrings)
+* no file watchers, no extra windows, no beeping, no latency
+* notebook support – [example NextJournal notebook](https://nextjournal.com/dustingetz/missionary-relieve-backpressure)
+* it's fun! ✅✅✅
 
-Deeper goal: **a notation for communication**
-* Documentation tool. RCF lets you share example usages next to the source code of the function (which is way better than docstrings). Figuring out what dense Clojure code does is actually really hard and RCF fixes that. [Example nextjournal notebook documentation using RCF](https://nextjournal.com/dustingetz/missionary-relieve-backpressure)
-* Pair programming tool. While pairing on Zoom, bang out some assertions quickly, right in the file you're working on. Watch your communication bandwidth improve.
-* Teaching tool. RCF helps beginners experiment and check their work.
-
-RCF is specifically engineered to support [hyperfiddle/electric](https://github.com/hyperfiddle/electric), that we test, document and teach with RCF.
+RCF is specifically engineered to support [Electric Clojure](https://github.com/hyperfiddle/electric), which we test, document and teach with RCF.
 
 Hype quotes:
 * "RCF has changed my habits with regards to tests. It is so much easier than flipping back and forth between files, you get my preferred work habits - work in a comment block until something works. But before RCF I never took the time to turn comment blocks into an automated test"
-* "I think people make the mistake of comparing this with other methods of inlining tests near their function definitions (which has been possible, though uncommon, for a long time). The integration with the REPL, low syntax/interface, reduces friction and makes testing more attractive as a language of communication and verification."
-* "I used RCF in a successful interview. RCF was a massive help in communication and a fast tool for thought whilst under the conditions of technical interview."
 * "I use RCF to do leetcode style questions as 'fun practice.' It certainly didn't feel fun before!"
+* "I think people make the mistake of comparing this with other methods of inlining tests near their function definitions. The integration with the REPL, low syntax/interface, reduces friction and makes testing more attractive as a language of communication and verification."
+* "I used RCF in a successful interview. RCF was a massive help in communication and a fast tool for thought whilst under the conditions of technical interview."
 
 # Dependency
 
-Project maturity: CLJ is stable, external users. CLJS is alpha
+Project maturity: CLJ is stable, CLJS is experimental, bb is experimental.
 
 ```clojure 
-; stable
 {:deps {com.hyperfiddle/rcf {:mvn/version "20220926-202227"}}}
 ```
 
-Breaking changes:
+Changelog
+* :throws
+* babashka support (experimental)
+* **breaking** don't return final result return nil like comment
 * `20220926-202227` `!` is deprecated, use `tap` instead
 * `20220827-151056` async test forms no longer guaranteed return final result
 * `20220405` maven group-id renamed from `hyperfiddle` to `com.hyperfiddle` for security
 * 2021 Dec 18: clojurescript dependency is now under the :cljs alias, see #25
 * 2021 Oct 20: custom reporters now dispatch on qualified keywords, see #19
 
-Experimental (master): the current development priority is improving complex async tests in 
-ClojureScript, DX and some experiments with unification.
+Current dev priority is improving complex async tests in ClojureScript.
 
-```Clojure
-; development - not currently published
-;{:deps {com.hyperfiddle/rcf {:git/url "https://github.com/hyperfiddle/rcf.git" :sha ...}}}
-```
 [![JVM](https://github.com/hyperfiddle/rcf/actions/workflows/tests_clj.yml/badge.svg?branch=master)](https://github.com/hyperfiddle/rcf/actions/workflows/tests_clj.yml)
 [![NodeJS](https://github.com/hyperfiddle/rcf/actions/workflows/tests_node.yml/badge.svg?branch=master)](https://github.com/hyperfiddle/rcf/actions/workflows/tests_node.yml)
 [![Browser](https://github.com/hyperfiddle/rcf/actions/workflows/tests_browser.yml/badge.svg?branch=master)](https://github.com/hyperfiddle/rcf/actions/workflows/tests_browser.yml)
@@ -64,7 +59,7 @@ It's an easy one-liner to turn on tests in your dev entrypoint:
 
 (hyperfiddle.rcf/enable!)
 ```
-Tests are run when you send a file or form to your Clojure/Script REPL. In Cursive, that's cmd-shift-L to load the file.
+Tests are run when you send a file or form to your Clojure/Script REPL.
 
 ```clojure
 (ns example
@@ -126,7 +121,8 @@ Loading src/example.cljc...
 ```Clojure
 (ns example
   (:require [clojure.core.async :refer [chan >! go go-loop <! timeout close!]]
-            [hyperfiddle.rcf :as rcf :refer [tests tap %]]
+            [hyperfiddle.electric :as e]
+            [hyperfiddle.rcf :as rcf :refer [tests tap % with]]
             [missionary.core :as m]))
 
 (rcf/set-timeout! 100)
@@ -135,21 +131,38 @@ Loading src/example.cljc...
   "async tests"
   #?(:clj  (tests
              (future
-               (rcf/tap 1) (Thread/sleep 10)        ; tap value to queue
-               (rcf/tap 2) (Thread/sleep 200)
-               (rcf/tap 3))
+               (tap 1) (Thread/sleep 10)        ; tap value to queue
+               (tap 2) (Thread/sleep 200)
+               (tap 3))
              % := 1                               ; pop queue
              % := 2
              % := ::rcf/timeout)
      :cljs (tests
              (defn setTimeout [f ms] (js/setTimeout ms f))
-             (rcf/tap 1) (setTimeout 10 (fn []
-             (rcf/tap 2) (setTimeout 200 (fn []
-             (rcf/tap 3)))))
+             (tap 1) (setTimeout 10 (fn []
+             (tap 2) (setTimeout 200 (fn []
+             (tap 3)))))
              % := 1
              % := 2
-             % := ::rcf/timeout))
+             % := ::rcf/timeout)))
 
+(tests 
+  "electric"
+  (def !x (atom 0))
+  (def dispose
+    (e/run
+      (let [x (e/watch !x)
+            a (inc x)
+            b (inc x)]
+        (tap (+ a b)))))
+  % := 2
+  (swap! !x inc)
+  % := 4
+  (swap! !x inc)
+  % := 6
+  (dispose))
+
+(tests
   "core.async"
   (def c (chan))
   (go-loop [x (<! c)]
@@ -160,8 +173,9 @@ Loading src/example.cljc...
   (go (>! c :hello) (>! c :world))
   % := :hello
   % := :world
-  (close! c)
+  (close! c))
 
+(tests
   "missionary"
   (def !x (atom 0))
   (def dispose ((m/reactor (m/stream! (m/ap (! (inc (m/?< (m/watch !x)))))))
@@ -171,7 +185,7 @@ Loading src/example.cljc...
   (swap! !x inc)
   % := 2
   % := 3
-  (dispose))
+  (dispose)))
 ```
 
 # CI
@@ -194,7 +208,7 @@ Ran 1 tests containing 8 assertions.
 
 # ClojureScript configuration
 
-For CLJS tests to run, `rcf/enable!` must be true in both CLJ (shadow-cljs macroexpansion time) and CLJS (JS runtime). Successful runs will print green checkboxes in the browser console, not the REPL, because REPLs don't properly intercept the async println. (Please file an issue or DM us on slack if you can help us understand why.)
+For CLJS tests to run, `rcf/enable!` must be true **in both CLJ (shadow-cljs macroexpansion time) and CLJS (JS runtime)**. Reports may be printed to **browser console instead of the REPL**, because browser REPLs donn't intercept the async println.
 
 ```Clojure
 (ns dev-entrypoint
