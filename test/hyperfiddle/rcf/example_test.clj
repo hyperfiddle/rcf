@@ -71,8 +71,8 @@
 
 (tests
   ":throws"
-  (let [e (ex-info "" {})]
-    (throw e) :throws clojure.lang.ExceptionInfo))
+  (throw (ex-info "" {})) :throws clojure.lang.ExceptionInfo
+  (assert false "boom") :throws java.lang.AssertionError)
 
 (tests
  "missionary"

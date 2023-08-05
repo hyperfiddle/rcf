@@ -92,6 +92,9 @@ Tests are run when you send a file or form to your Clojure/Script REPL. In Cursi
     (last xs) := :c
     (let [] (last xs) := :c))
 
+  "exceptions"
+  (assert false "boom") :throws java.lang.AssertionError
+
   (tests
     "nested tests (is there a strong use case?)"
     1 := 1)
