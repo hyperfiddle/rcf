@@ -12,7 +12,9 @@
 ;; For js console.
 (defmethod t/report [::t/default :hyperfiddle.rcf/pass] [m]
   (t/inc-report-counter! :pass)
-  (js/console.log "✅"))
+  (print "✅")
+  (string-print "\n")) ; \n seems required to flush in cljs, turning above into println. *shrug*
+
 
 (defmethod t/report [::t/default :hyperfiddle.rcf/fail] [m]
   (t/report (assoc m :type :fail)))
