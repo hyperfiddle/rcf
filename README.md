@@ -235,6 +235,9 @@ For CLJS tests to run, `rcf/enable!` must be true **in both CLJ (shadow-cljs mac
 
 *How do I customize what’s printed at the REPL?* — see [reporters.clj](https://github.com/hyperfiddle/rcf/blob/03c821c3875c3dfe647c945430ecdc5a7c8b594f/src/hyperfiddle/rcf/reporters.clj), [reporters.cljs](https://github.com/hyperfiddle/rcf/blob/03c821c3875c3dfe647c945430ecdc5a7c8b594f/src/hyperfiddle/rcf/reporters.cljs)
 
+*How do I run RCF tests in a polylith app via `clojure -Srepo -M:poly test` ?* see [https://github.com/ieugen/poly-rcf](https://github.com/ieugen/poly-rcf) for an example repo.
+Short story: Add `:jvm-opts ["-Dhyperfiddle.rcf.generate-tests=true"]` to `:poly` alias in `./deps.edn` and for tests under `src/` add "src" to `:test :extra-paths` for each brick with tests.
+
 # Community
 
 &#35;hyperfiddle @ clojurians.net
