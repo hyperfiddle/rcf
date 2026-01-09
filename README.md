@@ -34,7 +34,7 @@ Project maturity: CLJ is stable, CLJS is experimental, bb is experimental.
 Changelog
 * :throws
 * babashka support (experimental)
-* **breaking** don't return final result return nil like comment
+* **breaking** don't return final result as if by `do`, return `nil` like `comment`
 * `20220926-202227` `!` is deprecated, use `tap` instead
 * `20220827-151056` async test forms no longer guaranteed return final result
 * `20220405` maven group-id renamed from `hyperfiddle` to `com.hyperfiddle` for security

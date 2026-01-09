@@ -40,10 +40,7 @@
 
   (tests
     "nested tests (is there a strong use case?)"
-    1 := 1
-
-    "tests form returns final result"
-    (tests (inc 1) := 2 (inc *1)) := 3)
+    (inc 1) := 2)
 
   (tests
     "REPL bindings work"
