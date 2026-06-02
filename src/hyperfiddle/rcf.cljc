@@ -7,7 +7,6 @@
                :cljs [cljs.test :as t])
             #?(:clj [hyperfiddle.rcf.analyzer :as ana])
             #?(:clj [clojure.walk :as walk])
-            #?(:clj [clojure.java.io :as io])
             [clojure.string :as str]
             [hyperfiddle.rcf.reporters]
             [hyperfiddle.rcf.queue]
@@ -65,56 +64,22 @@ convenience, defaults to println outside of tests context."}
         file (str/replace (name (ns-name *ns*)) #"[-\.]" "_")]
     (symbol (str "generated__" file "_" line))))
 
-(defn ns-filename "Given a symbol identifying a namespace, return the corresponding file path"
-  [sym]
-  (-> (name sym)
-    (str/replace #"\." "/")
-    (str/replace #"-" "_")))
-
-#?(:clj (defn find-file [relative-path]
-          (when-let [res (io/resource relative-path)]
-            (try (io/file res)
-                 (catch IllegalArgumentException _
-                   ;; resource is not a file on the classpath. E.g. jar:// sources are
-                   ;; not files. We also don’t want to reload them.
-                   nil)))))
-#?(:clj
-   (defn resolve-file
-     "Resolve a source file from namespace symbol.
-      Precedence:
-      - cljc,
-      - cljs if we are compiling clojurescript,
-      - clj otherwise."
-     [env ns-sym]
-     (let [file-name (ns-filename ns-sym)
-           cljc      (find-file (str file-name ".cljc"))
-           clj       (find-file (str file-name ".clj"))
-           cljs      (find-file (str file-name ".cljs"))]
-       (if (and cljc (.exists cljc))
-         cljc
-         (if (:js-globals env)
-           (when (and cljs (.exists cljs))
-             cljs)
-           (when (and clj (.exists clj))
-             clj))))))
-#?(:clj
-   (defn is-ns-in-current-project? [env ns-sym]
-     (let [current-dir (System/getProperty "user.dir")]
-       (when-some [file (resolve-file env ns-sym)]
-         (str/starts-with? (.getPath file) current-dir)))))
-
 (defmacro tests [& body]
   (let [body `(~@body nil) ; return nil like comment, unlike do
-        name (gen-name &form)
-        ns (if (:js-globals &env)
-             (:name (:ns &env))
-             (:ns &env (ns-name *ns*)))]
+        name (gen-name &form)]
     (cond
-      (and *generate-tests* (is-ns-in-current-project? &env ns)) `(deftest ~name ~@body)
+      *generate-tests*  `(deftest ~name ~@body)
       *enabled*         (if (:js-globals &env)
-                          `(do (defn ~name [] ~(impl/tests* &env body))
+                          `(do (defn ~name []
+                                 (cljs.test/update-current-env!
+                                   [:hyperfiddle.rcf.reporters/block-state]
+                                   (fn [_#] (atom {:pass 0 :fail 0 :fails []})))
+                                 ~(impl/tests* &env body))
                                (when *enabled* (cljs.test/run-block (cljs.test/test-var-block* (var ~name) ~name))))
-                          (impl/tests* &env body))
+                          `(binding [hyperfiddle.rcf.reporters/*block-state* (atom {:pass 0 :fail 0 :fails []})]
+                             (try ~(impl/tests* &env body)
+                                  (finally (t/report (assoc @hyperfiddle.rcf.reporters/*block-state*
+                                                            :type :hyperfiddle.rcf/summary))))))
       :else             nil)))
 
 (defmacro deftest
@@ -136,12 +101,12 @@ convenience, defaults to println outside of tests context."}
     `(let [~done (constantly nil)]
        ~@body)))
 
-(defn async-notifier [n done]
-  (let [!seen (atom 0)]
-    (fn []
-      (swap! !seen inc)
-      (when (= @!seen n)
-        (done)))))
+(defn once
+  "Wrap `f` so it runs at most once. Fires cljs.test `done` exactly once at the end of
+   the CPS chain (rcf#56), guarding against a double-fire from convergent branches."
+  [f]
+  (let [!fired (atom false)]
+    (fn [] (when (compare-and-set! !fired false true) (f)))))
 
 (defmacro make-queue [& args] (apply impl/make-queue args))
 
@@ -157,9 +122,7 @@ convenience, defaults to println outside of tests context."}
           (catch ~(if cljs? :default 'Throwable) t#
             (do-report {:type :error, :message ~msg,
                         :file ~file :line ~line :end-line ~end-line :column ~column :end-column ~end-column
-                        :expected '~form, :actual t#}))
-          (finally
-            (~'RCF__done!)))))
+                        :expected '~form, :actual t#})))))
 
 ;; Same as default `=` behavior, but returns the first argument instead of a boolean.
 

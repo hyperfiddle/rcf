@@ -237,24 +237,195 @@
   (and (= :invoke (:op ast))
        (= `t/is (:form (:fn ast)))))
 
-(defn rewrite-async-assert [env ast]
+(defn- do-resequence
+  "Original per-`:do` sequencing: the first %-assertion captures the statements
+   that follow it within this `:do` into its poll callback."
+  [env stmts]
+  (loop [r [] [s & ss] stmts]
+    (cond
+      (nil? s)             r
+      (not (assertion? s)) (recur (conj r s) ss)
+      :else (let [%-count (count (filter %? (ana/ast-seq s)))]
+              (if (zero? %-count)
+                (recur (conj r s) ss)
+                (let [s' (-> (ana/analyze (ana/empty-env) '(do))
+                             (update :statements into (cons s ss)))]
+                  (conj r (make-poll-n %-count env s'))))))))
+
+(defn- within-do-resequence
+  "Fallback preserving original behavior: resequence each `:do` in the subtree
+   independently, without threading a continuation across `:do` boundaries."
+  [env node]
+  (ana/prewalk (ana/only-nodes #{:do}
+                 (fn [d] (assoc d :statements (do-resequence env (:statements d)))))
+    node))
+
+(defn- try-cleanup-stmts
+  "Cleanup statement ASTs of a finally-only `:try` node."
+  [try-node]
+  (vec (mapcat :args (:finally try-node))))
+
+(declare cps-statements)
+
+(defn- wrap-do
+  "Wrap a statement vector into a single node (for a branch / expression position)."
+  [env stmts]
+  (if (= 1 (count stmts))
+    (first stmts)
+    (assoc (ana/analyze env '(do)) :statements (vec stmts))))
+
+(defn- cps-if
+  "rcf#56: thread continuation `k` into both branches of an `:if`. `k` is bound once
+   as a thunk so it runs after whichever branch's async `%` resolves — without
+   duplicating `k` (which would double-count its assertions). Assumes no `%` in the
+   test (ANF lifts it). Returns a one-node vector."
+  [env node k]
+  (if (empty? k)
+    [(assoc node
+       :then (wrap-do env (cps-statements env [(:then node)] []))
+       :else (wrap-do env (cps-statements env [(:else node)] [])))]
+    (let [ksym (gensym "RCF__k")
+          call [(ana/analyze env (list ksym))]
+          if'  (assoc node
+                 :then (wrap-do env (cps-statements env [(:then node)] call))
+                 :else (wrap-do env (cps-statements env [(:else node)] call)))]
+      [(-> (ana/analyze env `(let [~ksym (fn [])]))
+           (ana/resolve-syms-pass)
+           (ana/macroexpand-pass)
+           (update-in [:bindings 0 :init :methods 0 :body :statements] into k)
+           (assoc-in [:body :statements] [if']))])))
+
+(def ^:private ^:dynamic *recur-target*
+  "Inside a threaded `:loop` body, the gensym of the self-calling step fn; `recur`
+   rewrites to a call to it. nil outside a loop." nil)
+
+(defn- recur-invoke? [ast]
+  (and (= :invoke (:op ast)) (= 'recur (:form (:fn ast)))))
+
+(defn- cps-loop
+  "rcf#56: rewrite a `:loop` whose body contains `%` into a self-calling step fn —
+   `recur` becomes a normal call (legal inside a poll callback) and the loop exit runs
+   the continuation `k`. Completion fires once at the exit (the CPS tail), not
+   per-iteration, so N iterations are not over/under-counted."
+  [env node k]
+  (let [params (mapv :name (:bindings node))
+        inits  (mapv :init (:bindings node))
+        step   (gensym "RCF__step__")
+        ksym   (gensym "RCF__loopk__")
+        exit   [(ana/analyze env (list ksym))]
+        body   (binding [*recur-target* step]
+                 (wrap-do env (cps-statements env (:statements (:body node)) exit)))]
+    [(-> (ana/analyze env `(let [~ksym (fn []) ~step (fn ~step [~@params])]
+                             (~step ~@(repeat (count params) nil))))
+         (ana/resolve-syms-pass)
+         (ana/macroexpand-pass)
+         (update-in [:bindings 0 :init :methods 0 :body :statements] into k)
+         (assoc-in  [:bindings 1 :init :methods 0 :body :statements] [body])
+         (assoc-in  [:body :statements 0 :args] inits))]))
+
+(defn- cps-try-finally
+  "rcf#56 + exception-safety: a finally-only `:try` runs cleanup once — in the body's
+   continuation after the async `%` resolves (success), or in a sync `catch` that
+   reruns it and rethrows if the body throws before registering (failure). The two
+   paths are mutually exclusive, so cleanup runs exactly once."
+  [env node k]
+  (let [cleanup  (try-cleanup-stmts node)
+        cps-body (vec (cps-statements env (:statements (:body node)) (into cleanup k)))]
+    [(-> (ana/analyze env `(try (do) (catch :default e# (throw e#))))
+         (ana/resolve-syms-pass)
+         (ana/macroexpand-pass)
+         (assoc-in  [:body :statements] cps-body)
+         (update-in [:catches 0 :body :statements] #(into (vec cleanup) %)))]))
+
+(defn- cps-node
+  "Rewrite a %-bearing control node so continuation `k` (vector of statement
+   ASTs) runs after it — including after its async body resolves. rcf#56: a
+   finally-only `:try` threads its cleanup as the head of the body's
+   continuation, so the async sequencer pulls cleanup into the `%` callback
+   (instead of leaving it in a `finally` that fires before the body resolves).
+   Returns a vector of statement ASTs."
+  [env node k]
+  (case (:op node)
+    :do  (cps-statements env (:statements node) k)
+    :let [(update-in node [:body :statements] #(vec (cps-statements env % k)))]
+    :try (cond
+           (seq (:catches node))   ; try/catch not yet threaded — frontier
+           (if (seq k)
+             (throw (ex-info "rcf#56: cannot sequence % across try/catch" {:form (:form node)}))
+             [(within-do-resequence env node)])
+           (seq (:finally node))   ; finally-only: thread cleanup + keep sync exception-safety
+           (cps-try-finally env node k)
+           :else                   ; bare try (no catch/finally): just thread the body
+           (cps-statements env (:statements (:body node)) k))
+    :if   (cps-if env node k)
+    :loop (cps-loop env node k)
+    ;; rcf#56 frontier: an unsupported construct with a continuation `k` would run
+    ;; `k` before its async `%` resolves — refuse to emit mis-sequenced code. With no
+    ;; continuation (k empty) the within-`:do` fallback is safe.
+    (if (seq k)
+      (throw (ex-info (str "rcf#56: cannot sequence % across " (:op node)
+                        "; a step after the async % would run early "
+                        "(supported: do/let/if/when/cond/try)")
+               {:op (:op node), :form (:form node)}))
+      [(within-do-resequence env node)])))
+
+(def ^:private control-flow-ops
+  "Ops that sequence control rather than yield a pollable value — routed to `cps-node`
+   (threaded when supported, else the frontier error). Any other %-bearing expression
+   is a value whose `%`s are polled in place (ANF — covers `%` in non-assertion
+   positions like `(tap (inc %))`, not just `% := …`)."
+  #{:do :let :try :if :loop :letfn :fn})
+
+(defn- cps-statements
+  "Thread continuation `k` through `stmts` in CPS. A %-bearing value expression
+   (assertion or arbitrary) is polled in place via `make-poll-n`; a %-bearing
+   control-flow op is routed to `cps-node` to thread `k` through its tail. Returns a
+   vector of statement ASTs."
+  [env stmts k]
+  (if (empty? stmts)
+    (vec k)
+    (let [[s & ss] stmts
+          ss       (vec ss)]
+      (cond
+        (and *recur-target* (recur-invoke? s))   ; loop tail: recur → (step …); jump, discard k
+        (if (has-%? s)
+          (throw (ex-info "rcf#56: % in recur arguments is not supported" {:form (:form s)}))
+          [(assoc-in s [:fn :form] *recur-target*)])
+
+        (not (has-%? s))
+        (into [s] (cps-statements env ss k))
+
+        (control-flow-ops (:op s))
+        (cps-node env s (cps-statements env ss k))
+
+        :else
+        (let [%-count (count (filter %? (ana/ast-seq s)))
+              s'      (-> (ana/analyze (ana/empty-env) '(do))
+                          (assoc :statements (into [s] (cps-statements env ss k))))]
+          [(make-poll-n %-count env s')])))))
+
+(defn rewrite-async-assert
+  "cljs: rewrite the test body into continuation-passing style so each async `%`
+   assertion's continuation = the rest of the computation, threaded through
+   enclosing control-flow tails (notably `:finally`). Fixes rcf#56. clj is
+   untouched — blocking `%` makes ordering irrelevant.
+
+   The root is the `:let` injected by `maybe-add-queue-support` /
+   `maybe-add-stars-support` (a `:do` only when neither wrapped the body), so
+   thread the continuation through both."
+  [env ast]
   (if-not (ana/cljs? env)
     ast
-    (ana/prewalk
-     (ana/only-nodes #{:do}
-                     (fn [ast]
-                       (assoc ast :statements
-                              (loop [r        []
-                                     [s & ss] (:statements ast)]
-                                (cond
-                                  (nil? s)             r
-                                  (not (assertion? s)) (recur (conj r s) ss)
-                                  :else (let [%-count (count (filter %? (ana/ast-seq s)))]
-                                          (if (zero? %-count)
-                                            (recur (conj r s) ss)
-                                            (let [s' (-> (ana/analyze (ana/empty-env) '(do))
-                                                         (update :statements into (cons s ss)))]
-                                              (conj r (make-poll-n %-count env s')))))))))) ast)))
+    ;; rcf#56 completion: seed the continuation with a single `(RCF__done!)` so it
+    ;; runs at the CPS tail (once, regardless of branches/loops), replacing the
+    ;; static assertion count. `add-done-support` binds RCF__done! = (once done).
+    (let [k0 (if (some assertion? (ana/ast-seq ast))
+               [(ana/analyze env '(RCF__done!))]
+               [])]
+      (case (:op ast)
+        :do  (assoc ast :statements (vec (cps-statements env (:statements ast) k0)))
+        :let (update-in ast [:body :statements] #(vec (cps-statements env % k0)))
+        (within-do-resequence env ast)))))
 
 (defn rewrite-overload-is [env ast]
   (ana/prewalk
@@ -269,7 +440,7 @@
     (if (zero? count-is)
       ast
       (let [done-sym (gensym "done-")
-            body (-> (ana/analyze env `(let [~'RCF__done! (hyperfiddle.rcf/async-notifier ~count-is ~done-sym)]))
+            body (-> (ana/analyze env `(let [~'RCF__done! (hyperfiddle.rcf/once ~done-sym)]))
                      (ana/resolve-syms-pass)
                      (ana/macroexpand-pass)
                      (update-in [:body :statements] conj ast))]
@@ -317,14 +488,34 @@
                   (rewrite env)
                   (ana/emit))))))))
 
+(defn- case->cond
+  "Expand `(case e clause...)` to `(let [v e] (cond ...))` so the cljs CPS rewrite
+   sequences case branches via the `if` rule. Preserves test order; drops case's
+   constant-time dispatch (irrelevant for tests). No-match without a default yields nil
+   (case would throw) — acceptable in test bodies."
+  [args]
+  (let [[e & clauses] args
+        v        (gensym "case__")
+        default? (odd? (count clauses))
+        default  (when default? (last clauses))
+        pairs    (partition 2 (if default? (butlast clauses) clauses))
+        branches (mapcat (fn [[test result]]
+                           [(if (seq? test)
+                              `(contains? (quote ~(set test)) ~v)
+                              `(= ~v (quote ~test)))
+                            result])
+                   pairs)]
+    `(let [~v ~e]
+       (cond ~@branches ~@(when default? [:else default])))))
+
 ;; Nested test support
 (defmethod ana/macroexpand-hook `hyperfiddle.rcf/tests [_the-var _&form _&env args] `(do ~@args))
 ;; clojure.test/is support
 (defmethod ana/macroexpand-hook `t/is [_the-var _&form _&env args] `(t/is ~@args))
 
 ;; Skip these DSLs, their macroexpansion is not rewritable as clojure. 
-(defmethod ana/macroexpand-hook 'clojure.core/case [_ _ _ args] `(case ~@args))
-(defmethod ana/macroexpand-hook 'cljs.core/case [_ _ _ args] `(case ~@args))
+(defmethod ana/macroexpand-hook 'clojure.core/case [_ _ _ args] `(case ~@args)) ; clj: opaque (blocking, unchanged)
+(defmethod ana/macroexpand-hook 'cljs.core/case [_ _ _ args] (case->cond args)) ; cljs: expand for CPS
 (defmethod ana/macroexpand-hook 'clojure.core.async/go [_ _ _ args] (reduced `(clojure.core.async/go (do ~@args))))
 (defmethod ana/macroexpand-hook 'cljs.core.async/go [_ _ _ args] (reduced `(cljs.core.async/go (do ~@args))))
 
