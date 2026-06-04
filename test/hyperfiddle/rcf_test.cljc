@@ -172,3 +172,50 @@
 
 ;; (macroexpand-1 `(tests* (do (rcf/! 1) rcf/% := 1)))
 
+;; term-equivalence — `%` ≡ `(let [o %] o)` ≡ nested lets; every form must
+;; sequence identically (Geoffrey). clj passes by blocking `%`; cljs by the CPS
+;; poll-bind. The binding-init forms fail on cljs until True ANF lands (rcf#56 residual).
+(tests "% directly"
+  (rcf/tap 1) rcf/% := 1)
+
+(tests "(let [o %] o) as the asserted value"
+  (rcf/tap 1) (let [o rcf/%] o) := 1)
+
+(tests "(let [o %] …) wrapping the assertion"
+  (rcf/tap 1) (let [o rcf/%] o := 1))
+
+(tests "nested let, 1 deep"
+  (rcf/tap 1) (let [n rcf/%] (let [o n] o := 1)))
+
+(tests "nested let, 2 deep"
+  (rcf/tap 1) (let [m rcf/%] (let [n m] (let [o n] o := 1))))
+
+;; True-ANF — % in non-statement positions (Phase 1–4): headers and value exprs
+;; lift to bare-% poll-binds so they sequence from anywhere.
+(tests "loop binding-init"
+  (rcf/tap 5) (loop [o rcf/%] o := 5))
+
+(tests "if-test %"
+  (rcf/tap 1) (if (= rcf/% 1) (rcf/tap :yes) (rcf/tap :no)) rcf/% := :yes)
+
+(tests "non-trivial binding-init (inc %)"
+  (rcf/tap 1) (let [o (inc rcf/%)] o := 2))
+
+(tests "multi-% in one value expr"
+  (rcf/tap 1) (rcf/tap 2) [rcf/% rcf/%] := [1 2])
+
+(tests "case — % in the case expr"
+  (rcf/tap 1) (case rcf/% 1 (rcf/tap :one) (rcf/tap :other)) rcf/% := :one)
+
+(tests "if both branches assert % — completion at the CPS tail"
+  (if (odd? 1)
+    (do (rcf/tap :a) rcf/% := :a)
+    (do (rcf/tap :b) rcf/% := :b))
+  (rcf/tap :late) rcf/% := :late)
+
+(tests "loop + recur asserts % each iteration"
+  (loop [i 0]
+    (when (< i 3)
+      (rcf/tap i) rcf/% := i
+      (recur (inc i)))))
+
