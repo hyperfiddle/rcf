@@ -8,7 +8,13 @@
             [hyperfiddle.rcf.unify :as u]
             [hyperfiddle.rcf.reporters]))
 
-(defn rewrite-doc [env ast]
+(defn rewrite-doc
+  "Wrap doc-string sections in `clojure.test/testing`. A string statement followed by at
+   least one statement is a doc string; it labels the statements up to the NEXT doc
+   string (or block end) — sections are siblings, not nested, so a failing assertion
+   reports only its own section. A string in final position is a value, not a doc (it
+   has nothing to label). Consecutive doc strings yield an empty section, silently."
+  [env ast]
   (ana/prewalk
    (ana/only-nodes #{:do}
                    (fn [do-ast]
@@ -17,10 +23,21 @@
                                    r []]
                               (if (nil? s) r
                                   (if (and (string? (:form s)) (seq ss))
-                                    (let [testing-ast (ana/analyze env `(~`t/testing ~(:form s)))]
-                                      (->> (assoc do-ast :statements (vec ss))
-                                           (update testing-ast :args conj)
-                                           (conj r)))
+                                    (let [ss      (vec ss)
+                                          n       (count ss)
+                                          ;; the next doc string closes this section; a
+                                          ;; final-position string is a value, stays inside
+                                          close-i (first (keep-indexed
+                                                           (fn [i x]
+                                                             (when (and (string? (:form x))
+                                                                        (< (inc i) n))
+                                                               i))
+                                                           ss))
+                                          section (if close-i (subvec ss 0 close-i) ss)
+                                          testing-ast (ana/analyze env `(~`t/testing ~(:form s)))]
+                                      (recur (when close-i (seq (subvec ss close-i)))
+                                             (conj r (->> (assoc do-ast :statements section)
+                                                          (update testing-ast :args conj)))))
                                     (recur ss (conj r s))))))))
    ast))
 
