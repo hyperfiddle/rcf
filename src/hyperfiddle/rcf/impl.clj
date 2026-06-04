@@ -622,7 +622,15 @@
 
 (defmacro do-report [m]
   (if (:js-globals &env)
-    `(cljs.test/do-report ~m)
+    ;; mirror do-report* below: cljs.test/do-report stitches file/line only for the
+    ;; standard :fail/:error types, so rcf-typed fails arrive without source location —
+    ;; stitch from the JS stack here, at the assertion site (depth 1 skips the V8
+    ;; "Error" header line). Explicit keys in m win (merge is right-biased).
+    `(let [m# ~m]
+       (cljs.test/do-report
+         (if (= :hyperfiddle.rcf/fail (:type m#))
+           (merge (cljs.test/file-and-line (js/Error.) 1) m#)
+           m#)))
     `(do-report* ~m)))
 
 (defmethod t/assert-expr 'hyperfiddle.rcf/thrown? [msg form]

@@ -128,7 +128,14 @@ convenience, defaults to println outside of tests context."}
 
 (defmacro do-report [m]
   (if (:js-globals &env)
-    `(cljs.test/do-report ~m)
+    ;; rcf-typed fails bypass cljs.test's file/line stitch (it matches :fail/:error
+    ;; only) — stitch from the JS stack at the assertion site, like impl/do-report*
+    ;; does from the JVM stack on clj. Explicit keys in m win (merge is right-biased).
+    `(let [m# ~m]
+       (cljs.test/do-report
+         (if (= :hyperfiddle.rcf/fail (:type m#))
+           (merge (cljs.test/file-and-line (js/Error.) 1) m#)
+           m#)))
     `(impl/do-report ~m)))
 
 #?(:clj (defn- assert-= [menv msg form]

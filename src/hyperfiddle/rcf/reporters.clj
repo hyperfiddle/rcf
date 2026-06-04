@@ -43,7 +43,13 @@
              (swap! *block-state*
                (fn [s] (-> s
                          (update :fail inc)
-                         (update :fails conj (select-keys m [:file :line :expected :actual])))))))
+                         (update :fails conj
+                           ;; snapshot the report-time dynamics (doc string = testing
+                           ;; context, enclosing deftest var) — both are popped by the
+                           ;; time :summary prints, so :summary cannot read them itself
+                           (-> (select-keys m [:file :line :column :expected :actual])
+                               (assoc :doc      (when (seq t/*testing-contexts*) (t/testing-contexts-str))
+                                      :test-var (some-> (first t/*testing-vars*) meta :name)))))))))
    :summary (fn [m]
               (let [{:keys [pass fail fails]} m]
                 (when (or (pos? pass) (pos? fail))
@@ -51,8 +57,12 @@
                     (when (pos? pass) (println (str "Pass: " pass)))
                     (when (pos? fail)
                       (println (str "Failed: " fail))
-                      (doseq [{:keys [file line expected actual]} fails]
-                        (println (str "- " file ":" line))
+                      ;; location format mirrors cljs.test's testing-vars-str:
+                      ;; (var) (file:line[:column])
+                      (doseq [{:keys [file line column expected actual doc test-var]} fails]
+                        (println (str "- " (when test-var (str "(" test-var ") "))
+                                      "(" file ":" line (when column (str ":" column)) ")"))
+                        (when doc (println (str "   - doc: " doc)))
                         (println (str "   - expected: " (pr-str expected)))
                         (println (str "   - actual: " (pr-str actual)))))))))})
 
