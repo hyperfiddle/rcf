@@ -8,7 +8,7 @@
             #?(:clj [hyperfiddle.rcf.analyzer :as ana])
             #?(:clj [clojure.walk :as walk])
             [clojure.string :as str]
-            [hyperfiddle.rcf.reporters]
+            [hyperfiddle.rcf.reporters :as reporters]
             [hyperfiddle.rcf.queue]
             [hyperfiddle.rcf.time]
             [hyperfiddle.rcf.unify :as u]))
@@ -27,6 +27,51 @@
 (defn enable! [& [v]]
   #?(:clj  (alter-var-root #'*enabled* (constantly (if (some? v) v true)))
      :cljs (set! *enabled* (if (some? v) v true))))
+
+(defn enabled?
+  "True when RCF currently runs `tests` blocks (reads the dynamic `*enabled*`)."
+  []
+  *enabled*)
+
+#?(:clj
+   (defn run-tests!
+     "Run `ns-sym`'s rcf tests on the JVM; returns
+      `{:ns ns-sym :pass N :fail [entry …]}` where entry =
+      `{:file :line :column :doc :test-var :expected :actual}`.
+
+      Reloads the ns under a binding-scoped enable — the `*enabled*` root is never
+      touched, so nothing leaks into other sessions or hot reloads. The reporter
+      active at call time still prints as usual; the returned map is additive.
+      A `tests` block that binds its own reporter (`with-reporter`) bypasses the
+      capture and is not counted. Side effect: `def`s inside `tests` blocks
+      remount into the ns and persist.
+
+      JVM-only: an nREPL eval compiles the `:clj` arms of a .cljc — a namespace's
+      cljs tests are compiled and run by the cljs build (browser / karma), not here."
+     [ns-sym]
+     (let [!acc   (atom {:pass 0 :fails []})
+           active (get @reporters/reporter-registry reporters/*reporter-key*)
+           ;; count via compact's block-state accumulator, print via the active
+           ;; reporter — without running compact's fns twice when it IS the active.
+           count-and-print
+           (fn [count-f print-f]
+             (if (identical? count-f print-f)
+               count-f
+               (fn [m] (count-f m) (print-f m))))
+           capture
+           {:pass    (count-and-print (:pass reporters/compact-reporter) (:pass active))
+            :fail    (count-and-print (:fail reporters/compact-reporter) (:fail active))
+            :summary (fn [m]            ; per-block summary: accumulate, then delegate
+                       (swap! !acc #(-> %
+                                        (update :pass + (:pass m 0))
+                                        (update :fails into (:fails m))))
+                       ((:summary active) m))}]
+       (reporters/register-reporter! :hyperfiddle.rcf/run-capture capture)
+       (reporters/with-reporter :hyperfiddle.rcf/run-capture
+         (binding [*enabled* true]
+           (require ns-sym :reload)))
+       (let [{:keys [pass fails]} @!acc]
+         {:ns ns-sym :pass pass :fail (vec fails)}))))
 
 #?(:clj (def ^:dynamic *timeout* (or (System/getProperty "hyperfiddle.rcf.timeout") 1000))
    :cljs (def ^:dynamic *timeout* TIMEOUT))
