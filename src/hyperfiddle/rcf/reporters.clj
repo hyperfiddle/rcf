@@ -35,10 +35,16 @@
      (binding [*reporter-key* k#] ~@body)))
 
 (def compact-reporter
+  ;; inc-report-counter bridges RCF's custom report types into clojure.test's pass/fail
+  ;; tally, so runner-based execution (bb/runner, cognitect test-runner) fails on a broken
+  ;; RCF assertion instead of silently passing. No-op when no run is active (REPL — the
+  ;; counters ref is unbound). Mirrors the cljs reporter and dopamine-reporter below.
   {:pass (fn [_m]
+           (t/inc-report-counter :pass)
            (when (thread-bound? #'*block-state*)
              (swap! *block-state* update :pass inc)))
    :fail (fn [m]
+           (t/inc-report-counter :fail)
            (when (thread-bound? #'*block-state*)
              (swap! *block-state*
                (fn [s] (-> s

@@ -33,10 +33,16 @@
   (get-in (t/get-current-env) block-state-path))
 
 (def compact-reporter
+  ;; inc-report-counter! bridges RCF's custom report types into cljs.test's pass/fail
+  ;; tally, so programmatic runners that check `successful?` (shadow.test.node, which
+  ;; exits on it) fail on a broken async `%`. Karma uses its own bridge (see below) and
+  ;; never invokes this reporter. The counter call is a no-op when no env is bound (REPL).
   {:pass (fn [_m]
+           (t/inc-report-counter! :pass)
            (when-let [!s (block-state-atom)]
              (swap! !s update :pass inc)))
    :fail (fn [m]
+           (t/inc-report-counter! :fail)
            (when-let [!s (block-state-atom)]
              (swap! !s
                (fn [s] (-> s
