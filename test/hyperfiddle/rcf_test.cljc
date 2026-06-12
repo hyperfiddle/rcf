@@ -219,3 +219,14 @@
       (rcf/tap i) rcf/% := i
       (recur (inc i)))))
 
+;; try/finally — cleanup threads into the % continuation, so it runs after the body's
+;; async % resolves, never before. cps-try-finally, impl.clj:298. (The synthesized
+;; sync-catch failure path is internal exception-safety; it is not surface-testable,
+;; since observing a throw needs a user catch and a catch around % is the frontier.)
+(tests "try/finally — cleanup runs after the async % resolves, not before"
+  (try
+    (rcf/tap 1)
+    rcf/% := 1
+    (finally (rcf/tap :cleanup)))
+  rcf/% := :cleanup)
+
