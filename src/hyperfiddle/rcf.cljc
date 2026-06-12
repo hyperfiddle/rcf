@@ -3,6 +3,8 @@
   #?(:cljs (:require-macros [hyperfiddle.rcf :refer [tests deftest async]]
                             [hyperfiddle.rcf.impl :refer [make-queue]]))
   (:require #?(:clj [hyperfiddle.rcf.impl :as impl])
+            #?(:clj [cloroutine.core])  ; rcf#56: load the `cr` macro into the compiler so emitted (cloroutine.core/cr …) resolves in user nses
+            [cloroutine.impl]           ; rcf#56: state-machine trampoline (cljs runtime) + safe/hint (compile)
             #?(:clj [clojure.test :as t]
                :cljs [cljs.test :as t])
             #?(:clj [hyperfiddle.rcf.analyzer :as ana])
@@ -148,10 +150,43 @@ convenience, defaults to println outside of tests context."}
 
 (defn once
   "Wrap `f` so it runs at most once. Fires cljs.test `done` exactly once at the end of
-   the CPS chain (rcf#56), guarding against a double-fire from convergent branches."
+   the coroutine (rcf#56), guarding against a double-fire from convergent branches."
   [f]
   (let [!fired (atom false)]
     (fn [] (when (compare-and-set! !fired false true) (f)))))
+
+;; rcf#56 — async-% driver over cloroutine (cljs only).
+;; A test body's `%` compiles to a `(park-tap)` suspension; `cloroutine.core/cr`
+;; turns the body into a state machine that sequences control flow across it
+;; (if/cond/loop/recur/try incl. catch); this driver feeds the async queue's
+;; values back into the machine. Mirrors missionary's park/unpark over `cr`.
+;; Single-threaded: a synchronously-available value re-enters the coroutine inline
+;; (its next-block state is already set), so no scheduling is needed.
+#?(:cljs
+   (do
+     (def ^:dynamic *poll-1*
+       "Bound by `drive-tap` to the test's queue poll fn `(fn [n cb])`; `park-tap` calls it with n=1." nil)
+     (def ^:dynamic *resume*
+       "Bound by `drive-tap` to a 1-arg fn re-entering the coroutine with a delivered value." nil)
+     (def ^:dynamic *tapped*
+       "Holds the value the queue delivered for the in-flight `park-tap`; read by `unpark-tap`." nil)
+
+     (defn park-tap
+       "Suspend var (rcf#56): register a one-shot poll of the async queue, then suspend.
+        The poll's callback re-enters the coroutine via `*resume*`."
+       [] (*poll-1* 1 *resume*) nil)
+
+     (defn unpark-tap
+       "Resume var (rcf#56): the value the queue delivered for the matching `park-tap`."
+       [] *tapped*)
+
+     (defn drive-tap
+       "Run an async-% test `coroutine`: start it, and each time the queue yields, re-enter
+        with that value bound, until the body completes (its tail calls `RCF__done!`).
+        `poll-1` is the test's `(fn [n cb])` queue poll."
+       [poll-1 coroutine]
+       (let [resume (fn resume [v] (binding [*poll-1* poll-1, *resume* resume, *tapped* v] (coroutine)))]
+         (binding [*poll-1* poll-1, *resume* resume, *tapped* nil] (coroutine))))))
 
 (defmacro make-queue [& args] (apply impl/make-queue args))
 

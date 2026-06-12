@@ -93,3 +93,20 @@
  % := 2
  % := 3
  (dispose))
+
+(tests
+ "rcf#56: % across try/catch (the in-house CPS refused this; cloroutine sequences it)"
+ (rcf/tap (ex-info "boom" {}))
+ (try (throw %) (catch :default e (ex-message e))) := "boom")
+
+(tests
+ "rcf#56: % in a recur argument (the in-house CPS refused this)"
+ (rcf/tap 1) (rcf/tap 2) (rcf/tap 3)
+ (loop [acc 0, n 3]
+   (if (zero? n) acc (recur (+ acc %) (dec n)))) := 6)
+
+(tests
+ "rcf#56: % in a letfn BODY (not a bound fn) sequences fine"
+ (rcf/tap 42)
+ (letfn [(double-it [n] (* 2 n))]
+   (double-it %)) := 84)

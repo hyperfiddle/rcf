@@ -232,13 +232,6 @@
   (and (= :invoke (:op ast))
        (= `t/is (:form (:fn ast)))))
 
-(defn- try-cleanup-stmts
-  "Cleanup statement ASTs of a finally-only `:try` node."
-  [try-node]
-  (vec (mapcat :args (:finally try-node))))
-
-(declare cps-statements)
-
 (defn- wrap-do
   "Wrap a statement vector into a single node (for a branch / expression position)."
   [env stmts]
@@ -246,259 +239,88 @@
     (first stmts)
     (assoc (ana/analyze env '(do)) :statements (vec stmts))))
 
-(defn- cps-if
-  "rcf#56: thread continuation `k` into both branches of an `:if`. `k` is bound once
-   as a thunk so it runs after whichever branch's async `%` resolves — without
-   duplicating `k` (which would double-count its assertions). Assumes no `%` in the
-   test (ANF lifts it). Returns a one-node vector."
-  [env node k]
-  (if (empty? k)
-    [(assoc node
-       :then (wrap-do env (cps-statements env [(:then node)] []))
-       :else (wrap-do env (cps-statements env [(:else node)] [])))]
-    (let [ksym (gensym "RCF__k")
-          call [(ana/analyze env (list ksym))]
-          if'  (assoc node
-                 :then (wrap-do env (cps-statements env [(:then node)] call))
-                 :else (wrap-do env (cps-statements env [(:else node)] call)))]
-      [(-> (ana/analyze env `(let [~ksym (fn [])]))
-           (ana/resolve-syms-pass)
-           (ana/macroexpand-pass)
-           (update-in [:bindings 0 :init :methods 0 :body :statements] into k)
-           (assoc-in [:body :statements] [if']))])))
+(def ^:private escaping-op?
+  "Ops cloroutine compiles via `add-closing` — a break var inside one becomes an ordinary
+   call that never suspends. `%` here would silently never poll, so RCF refuses it. RCF's
+   analyzer renders `fn` as `:fn`; `reify`/`deftype` macroexpand to `reify*`/`deftype*`
+   which it leaves as `:invoke` (caught by symbol below). A `letfn`-bound fn is an `:fn`
+   `:init`, so it is covered; a `%` in a `letfn` *body* is fine (cloroutine sequences it)."
+  #{:fn})
 
-(def ^:private ^:dynamic *recur-target*
-  "Inside a threaded `:loop` body, the gensym of the self-calling step fn; `recur`
-   rewrites to a call to it. nil outside a loop." nil)
+(def ^:private escaping-invoke-syms
+  "Macroexpanded escaping constructs RCF's analyzer leaves as `:invoke` (no `-parse`)."
+  '#{reify* deftype* proxy})
 
-(defn- recur-invoke? [ast]
-  (and (= :invoke (:op ast)) (= 'recur (:form (:fn ast)))))
+(defn- escaping-node? [n]
+  (or (escaping-op? (:op n))
+      (and (= :invoke (:op n))
+           (let [f (:form (:fn n))]
+             (and (symbol? f) (escaping-invoke-syms (symbol (name f))))))))
 
-(defn- cps-loop
-  "rcf#56: rewrite a `:loop` whose body contains `%` into a self-calling step fn —
-   `recur` becomes a normal call (legal inside a poll callback) and the loop exit runs
-   the continuation `k`. Completion fires once at the exit (the CPS tail), not
-   per-iteration, so N iterations are not over/under-counted."
-  [env node k]
-  (let [params (mapv :name (:bindings node))
-        inits  (mapv :init (:bindings node))
-        step   (gensym "RCF__step__")
-        ksym   (gensym "RCF__loopk__")
-        exit   [(ana/analyze env (list ksym))]
-        body   (binding [*recur-target* step]
-                 (wrap-do env (cps-statements env (:statements (:body node)) exit)))]
-    [(-> (ana/analyze env `(let [~ksym (fn []) ~step (fn ~step [~@params])]
-                             (~step ~@(repeat (count params) nil))))
-         (ana/resolve-syms-pass)
-         (ana/macroexpand-pass)
-         (update-in [:bindings 0 :init :methods 0 :body :statements] into k)
-         (assoc-in  [:bindings 1 :init :methods 0 :body :statements] [body])
-         (assoc-in  [:body :statements 0 :args] inits))]))
+(defn- assert-no-%-in-fns!
+  "rcf#56 frontier: refuse `%` inside an escaping fn body (`fn`, a `letfn`/`reify`/`deftype`
+   bound fn). cloroutine treats a break var inside an escaping fn as an ordinary call (it
+   never suspends there), so such a `%` would silently never poll — we throw a clear
+   compile error instead. A `%` in a `letfn` *body* is fine and is not refused here."
+  [ast]
+  (when-let [n (first (filter (fn [n] (and (escaping-node? n) (has-%? n)))
+                              (ana/ast-seq ast)))]
+    (throw (ex-info "rcf#56: % inside a fn cannot be sequenced — it would never poll (cloroutine ignores breaks in escaping fns)"
+                    {:op (:op n) :form (:form n)}))))
 
-(defn- cps-try-finally
-  "rcf#56 + exception-safety: a finally-only `:try` runs cleanup once — in the body's
-   continuation after the async `%` resolves (success), or in a sync `catch` that
-   reruns it and rethrows if the body throws before registering (failure). The two
-   paths are mutually exclusive, so cleanup runs exactly once."
-  [env node k]
-  (let [cleanup  (try-cleanup-stmts node)
-        cps-body (vec (cps-statements env (:statements (:body node)) (into cleanup k)))]
-    [(-> (ana/analyze env `(try (do) (catch :default e# (throw e#))))
-         (ana/resolve-syms-pass)
-         (ana/macroexpand-pass)
-         (assoc-in  [:body :statements] cps-body)
-         (update-in [:catches 0 :body :statements] #(into (vec cleanup) %)))]))
-
-(defn- anf-lift-%
-  "ANF (rcf#56): replace each `%` in `ast` with a fresh temp, left-to-right, returning
-   `[temps ast']` — `temps` the gensyms in poll order, `ast'` referencing them. Prunes
-   user `fn`/`letfn` bodies: a `%` inside one is the frontier (it can't poll at definition
-   time), so it is left untouched. A non-empty `%` remaining despite `has-%?` therefore
-   means an unsequenceable `%` — the caller rejects it (no temps were produced)."
+(defn- rewrite-%->park
+  "Replace each `%` (a `hyperfiddle.rcf/%` var ref) with a `(park-tap)` call — cloroutine's
+   suspension site. Assumes `assert-no-%-in-fns!` already passed, so every remaining `%`
+   sits where cloroutine can sequence it (do/let/if/cond/loop/recur/try)."
   [env ast]
-  (let [!temps (atom [])
-        ast'   (ana/prewalk
-                 (fn [n]
-                   (cond
-                     (#{:fn :letfn} (:op n)) (reduced n)        ; don't lift % out of a user fn
-                     (%? n) (let [t (gensym "RCF__t__")]
-                              (swap! !temps conj t)
-                              (-> (ana/analyze env t) (assoc :raw-forms (list (:form n)))))
-                     :else n))
-                 ast)]
-    [@!temps ast']))
+  (ana/postwalk
+   (ana/only-nodes %?
+                   (fn [var-ast]
+                     (-> (ana/analyze env `(hyperfiddle.rcf/park-tap))
+                         (assoc :raw-forms (list (:form var-ast))))))
+   ast))
 
-(defn- anf-lift-inits
-  "Lift `%`s out of each binding `:init` (left-to-right) into temps; returns `[temps
-   node']` with the inits de-`%`'d. For `:loop`, whose inits become step-fn arguments and
-   so cannot carry a raw `%`."
-  [env node]
-  (let [!temps    (atom [])
-        bindings' (mapv (fn [b]
-                          (if (has-%? (:init b))
-                            (let [[ts init'] (anf-lift-% env (:init b))]
-                              (swap! !temps into ts)
-                              (assoc b :init init'))
-                            b))
-                    (:bindings node))]
-    [@!temps (assoc node :bindings bindings')]))
+(defn- wrap-coroutine
+  "Wrap test-body `stmts` (already %→park rewritten) in a cloroutine driven by the async
+   queue. Emits, verbatim — RCF does NOT macroexpand cloroutine; the cljs compiler does:
 
-(defn- wrap-poll-binds
-  "Wrap `body-node` in a `:let` binding each temp to `%` (`(let [t1 % t2 %] body)`) so
-   `cps-let` polls them left-to-right before `body` runs — the ANF reduction of any
-   `%`-bearing header/value to bare-`%` binding-inits. Returns the `:let` node."
-  [env temps body-node]
-  (-> (ana/analyze env `(let [~@(mapcat (fn [t] [t 'hyperfiddle.rcf/%]) temps)]))
-      (ana/resolve-syms-pass)
-      (ana/macroexpand-pass)
-      (assoc-in [:body :statements] [body-node])))
+     (drive-tap RCF__% (cloroutine.core/cr {park-tap unpark-tap} (do stmts… [(RCF__done!)])))
 
-(defn- cps-let
-  "rcf#56 True-ANF: thread `k` through a `:let`, sequencing any `%`-bearing binding-init.
-   Bindings are peeled left-to-right at the first init containing `%`:
-   - bare `%` (`(let [o %] …)`) → poll-bind `(RCF__% 1 (fn [o] <rest + body>))`;
-   - non-trivial `%` (`(let [o (inc %)] …)`) → ANF: lift its `%`s to bare-`%` binds
-     immediately before this binding (preserving evaluation order), then bind `o` to the
-     de-`%`'d init.
-   The remaining bindings (recursively) and body live inside the poll callback, so
-   sequential scope holds. A `:let` with no `%` in any init threads `k` through its body
-   (the prior `:let` behavior).
-
-   Term-equivalence (Geoffrey): `(let [o %] o)` ≡ `%`, making bare-`%` the canonical
-   poll-bind; nested `(let [n %] (let [o n] …))` sequences identically."
-  [env node k]
-  (let [bindings (vec (:bindings node))
-        i        (first (keep-indexed (fn [idx b] (when (has-%? (:init b)) idx)) bindings))]
-    (if (nil? i)
-      [(update-in node [:body :statements] #(vec (cps-statements env % k)))]
-      (let [b      (nth bindings i)
-            prefix (subvec bindings 0 i)
-            suffix (subvec bindings (inc i))
-            rest-stmts
-            (if (%? (:init b))
-              (let [cont (if (seq suffix)
-                           (cps-let env (assoc node :bindings suffix) k)
-                           (cps-statements env (:statements (:body node)) k))
-                    f    (-> (ana/analyze env `(fn [~(:name b)]))
-                             (ana/resolve-syms-pass)
-                             (ana/macroexpand-pass)
-                             (assoc-in [:methods 0 :body :statements] (vec cont)))
-                    poll (-> (ana/analyze env `(~'RCF__% 1))
-                             (update-in [:args] conj f))]
-                [poll])
-              (let [[temps init'] (anf-lift-% env (:init b))]
-                (when (empty? temps)
-                  (throw (ex-info "rcf#56: % inside a fn in a binding-init cannot be sequenced"
-                           {:form (:form b)})))
-                (cps-let env
-                  (wrap-poll-binds env temps
-                    (assoc node :bindings (into [(assoc b :init init')] suffix)))
-                  k)))]
-        (if (seq prefix)
-          [(-> node (assoc :bindings prefix)
-                    (assoc-in [:body :statements] (vec rest-stmts)))]
-          (vec rest-stmts))))))
-
-(defn- cps-node
-  "Rewrite a %-bearing control node so continuation `k` (vector of statement
-   ASTs) runs after it — including after its async body resolves. rcf#56: a
-   finally-only `:try` threads its cleanup as the head of the body's
-   continuation, so the async sequencer pulls cleanup into the `%` callback
-   (instead of leaving it in a `finally` that fires before the body resolves).
-   Returns a vector of statement ASTs."
-  [env node k]
-  (case (:op node)
-    :do  (cps-statements env (:statements node) k)
-    :let (cps-let env node k)
-    :try (cond
-           (seq (:catches node))   ; try/catch threading unsupported — frontier (Phase 4)
-           (throw (ex-info "rcf#56: cannot sequence % across try/catch" {:form (:form node)}))
-           (seq (:finally node))   ; finally-only: thread cleanup + keep sync exception-safety
-           (cps-try-finally env node k)
-           :else                   ; bare try (no catch/finally): just thread the body
-           (cps-statements env (:statements (:body node)) k))
-    :if   (if (has-%? (:test node))    ; ANF: lift the test's %s, then thread the %-free if
-            (let [[temps test'] (anf-lift-% env (:test node))]
-              (when (empty? temps)
-                (throw (ex-info "rcf#56: % inside a fn in an if-test cannot be sequenced"
-                         {:form (:form node)})))
-              (cps-node env (wrap-poll-binds env temps (assoc node :test test')) k))
-            (cps-if env node k))
-    :loop (if (some #(has-%? (:init %)) (:bindings node))   ; ANF: lift init %s, then the loop
-            (let [[temps node'] (anf-lift-inits env node)]
-              (when (empty? temps)
-                (throw (ex-info "rcf#56: % inside a fn in a loop binding-init cannot be sequenced"
-                         {:form (:form node)})))
-              (cps-node env (wrap-poll-binds env temps node') k))
-            (cps-loop env node k))
-    ;; rcf#56 frontier (Phase 4): post-ANF, a `%` reaching an unsupported construct (a user
-    ;; `fn`/`letfn`, `recur` arg, `try/catch`) can't be sequenced — refuse to emit, rather
-    ;; than leave the unbound `%` var or mis-order. A clear compile error, never silent.
-    (throw (ex-info (str "rcf#56: cannot sequence % across " (:op node)
-                      "; a step after the async % would run early "
-                      "(supported: do/let/if/when/cond/loop/try-finally)")
-             {:op (:op node), :form (:form node)}))))
-
-(def ^:private control-flow-ops
-  "Ops that sequence control rather than yield a pollable value — routed to `cps-node`
-   (threaded when supported, else the frontier error). Any other %-bearing expression
-   is a value whose `%`s are polled in place (ANF — covers `%` in non-assertion
-   positions like `(tap (inc %))`, not just `% := …`)."
-  #{:do :let :try :if :loop :letfn :fn})
-
-(defn- cps-statements
-  "Thread continuation `k` through `stmts` in CPS. A %-bearing value expression
-   (assertion or arbitrary) is ANF-lifted to bare-% poll-binds and routed through
-   `cps-let`; a %-bearing control-flow op is routed to `cps-node` to thread `k` through
-   its tail. Returns a vector of statement ASTs."
-  [env stmts k]
-  (if (empty? stmts)
-    (vec k)
-    (let [[s & ss] stmts
-          ss       (vec ss)]
-      (cond
-        (and *recur-target* (recur-invoke? s))   ; loop tail: recur → (step …); jump, discard k
-        (if (has-%? s)
-          (throw (ex-info "rcf#56: % in recur arguments is not supported" {:form (:form s)}))
-          [(assoc-in s [:fn :form] *recur-target*)])
-
-        (not (has-%? s))
-        (into [s] (cps-statements env ss k))
-
-        (control-flow-ops (:op s))
-        (cps-node env s (cps-statements env ss k))
-
-        :else   ; %-bearing value expr — ANF-lift its %s to bare-% poll-binds, then the rest
-        (let [[temps s'] (anf-lift-% env s)]
-          (when (empty? temps)
-            (throw (ex-info "rcf#56: % cannot be sequenced from this position (inside a fn?)"
-                     {:form (:form s)})))
-          (cps-node env (wrap-poll-binds env temps s') (cps-statements env ss k)))))))
+   `RCF__%` (the make-queue poll closure, in scope from `maybe-add-queue-support`) feeds
+   the resume var; `(RCF__done!)` is the completing tail (only when assertions exist —
+   `add-done-support` binds it then). Returns a one-statement vector."
+  [env stmts done?]
+  (let [body  (cond-> (vec stmts) done? (conj (ana/analyze env `(~'RCF__done!))))
+        shell (ana/analyze env `(hyperfiddle.rcf/drive-tap ~'RCF__%
+                                  (cloroutine.core/cr {hyperfiddle.rcf/park-tap hyperfiddle.rcf/unpark-tap}
+                                    (do))))]
+    [(assoc-in shell [:args 1 :args 1 :statements] body)]))
 
 (defn rewrite-async-assert
-  "cljs: rewrite the test body into continuation-passing style so each async `%`
-   assertion's continuation = the rest of the computation, threaded through
-   enclosing control-flow tails (notably `:finally`). Fixes rcf#56. clj is
-   untouched — blocking `%` makes ordering irrelevant.
+  "cljs: drive the test body as a cloroutine (rcf#56). Each `%` becomes a `(park-tap)`
+   suspension; `cloroutine.core/cr` sequences control flow across it — if/cond/loop/recur
+   and try (including catch, which the in-house CPS refused); `drive-tap` feeds the async
+   queue's values back in; `(RCF__done!)` completes once at the tail. clj is untouched —
+   blocking `%` makes ordering irrelevant.
 
-   The root is the `:let` injected by `maybe-add-queue-support` /
-   `maybe-add-stars-support` (a `:do` only when neither wrapped the body), so
-   thread the continuation through both."
+   The root is the `:let` injected by `maybe-add-queue-support` / `maybe-add-stars-support`
+   (a `:do` only when neither wrapped the body — i.e. no `%`)."
   [env ast]
   (if-not (ana/cljs? env)
     ast
-    ;; rcf#56 completion: seed the continuation with a single `(RCF__done!)` so it
-    ;; runs at the CPS tail (once, regardless of branches/loops), replacing the
-    ;; static assertion count. `add-done-support` binds RCF__done! = (once done).
-    (let [k0 (if (some assertion? (ana/ast-seq ast))
-               [(ana/analyze env '(RCF__done!))]
-               [])]
-      (case (:op ast)
-        :do  (assoc ast :statements (vec (cps-statements env (:statements ast) k0)))
-        :let (update-in ast [:body :statements] #(vec (cps-statements env % k0)))
-        ;; `tests-cljs*` wraps the body in `(do …)`, so the root is `:do` (or the `:let`
-        ;; from queue/stars support). Any other root: sequence it as a lone statement.
-        (wrap-do env (cps-statements env [ast] k0))))))
+    (let [has-%      (has-%? ast)
+          has-assert (some assertion? (ana/ast-seq ast))]
+      (when has-% (assert-no-%-in-fns! ast))
+      (let [ast      (if has-% (rewrite-%->park env ast) ast)
+            seq-tail (fn [stmts]
+                       (cond
+                         has-%      (wrap-coroutine env stmts has-assert)  ; coroutine + done tail
+                         has-assert (conj (vec stmts) (ana/analyze env `(~'RCF__done!)))
+                         :else      (vec stmts)))]
+        (case (:op ast)
+          :do  (assoc ast :statements (seq-tail (:statements ast)))
+          :let (update-in ast [:body :statements] seq-tail)
+          (wrap-do env (seq-tail [ast])))))))
 
 (defn rewrite-overload-is [env ast]
   (ana/prewalk
