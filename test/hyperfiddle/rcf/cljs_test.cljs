@@ -110,3 +110,11 @@
  (rcf/tap 42)
  (letfn [(double-it [n] (* 2 n))]
    (double-it %)) := 84)
+
+(tests
+ "% (coroutine) and *N (REPL history) coexist in one async block"
+ (rcf/tap 10) (rcf/tap 20)
+ % := 10
+ % := 20
+ *1 := 20
+ *2 := 10)

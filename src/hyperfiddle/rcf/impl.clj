@@ -111,6 +111,16 @@
          (or (and (star? left) (not (has-stars? right)))
              (and (star? right) (not (has-stars? left)))))))
 
+(defn- scaffold-let?
+  "True when `ast` is the stars-support `let` (binds `RCF__push!`, injected by
+   `maybe-add-stars-support`). `rewrite-repl` must not wrap it in `(RCF__push! …)`: the
+   coroutine pass (rcf#56) nests this `let` as a non-final statement of a stars-bearing
+   `do`, and wrapping it would place the call outside its own binding scope (undeclared
+   var). User `let`s are wrapped fine — only RCF's own push scaffolding must be skipped."
+  [ast]
+  (and (= :let (:op ast))
+       (some #(= 'RCF__push! (:name %)) (:bindings ast))))
+
 (defn rewrite-repl [env ast]
   (ana/prewalk (ana/only-nodes #{:do}
                                (fn [do-ast]
@@ -123,11 +133,11 @@
                                               (nil? s) r
                                               (empty? ss) (recur ss (conj r s))
                                               :else
-                                              (if-not (inspect-star-only? s)
+                                              (if (or (inspect-star-only? s) (scaffold-let? s))
+                                                (recur ss (conj r s))
                                                 (let [invoke-ast (-> (ana/analyze env '(RCF__push!))
                                                                      (update :args conj s))]
-                                                  (recur ss (conj r invoke-ast)))
-                                                (recur ss (conj r s)))))))))
+                                                  (recur ss (conj r invoke-ast))))))))))
                ast))
 
 
