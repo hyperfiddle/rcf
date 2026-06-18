@@ -32,6 +32,30 @@
 (defn- block-state-atom []
   (get-in (t/get-current-env) block-state-path))
 
+(defn testing-vars-str
+  "Returns a string representation of the current test.  Renders names
+  in *testing-vars* as a list, then the source file and line of
+  current assertion."
+  [m]
+  (let [{:keys [file line column]} m]
+    (str file ":" line (when column (str ":" column)))))
+
+(defn- print-failure-entry
+  "Print a failure/error entry labelled by the enclosing test's own :doc metadata
+   (set by hyperfiddle.rcf/tests), not cljs.test's global testing-contexts stack —
+   which leaks doc-strings across interleaved async tests in node CI. Print only; the
+   caller owns the report counter."
+  [kind m]
+  (let [{:keys [name line test-ns doc]} (meta (first (:testing-vars (t/get-current-env))))
+        ;; prefer the test's source location (set by hyperfiddle.rcf/tests); m's :file/:line
+        ;; are the compiled-JS coordinates, useless for navigating back to the .cljc.
+        loc (if test-ns (str test-ns ":" line) (testing-vars-str m))]
+    (println (str "\n" kind " in (" name ") (" loc ")"))
+    (when doc (println (str "  " doc))))
+  (when-let [message (:message m)] (println message))
+  (println "expected:" (pr-str (:expected m)))
+  (println "  actual:" (pr-str (:actual m))))
+
 (def compact-reporter
   ;; inc-report-counter! bridges RCF's custom report types into cljs.test's pass/fail
   ;; tally, so programmatic runners that check `successful?` (shadow.test.node, which
@@ -43,7 +67,8 @@
              (swap! !s update :pass inc)))
    :fail (fn [m]
            (t/inc-report-counter! :fail)
-           (when-let [!s (block-state-atom)]
+           (if-let [!s (block-state-atom)]
+             ;; REPL: accumulate into the block, printed together at :end-test-var.
              (swap! !s
                (fn [s] (-> s
                          (update :fail inc)
@@ -53,7 +78,10 @@
                            ;; time :summary prints (:end-test-var), so capture here
                            (-> (select-keys m [:file :line :column :expected :actual])
                                (assoc :doc      (let [ctx (t/testing-contexts-str)] (when (seq ctx) ctx))
-                                      :test-var (some-> (:testing-vars (t/get-current-env)) first meta :name)))))))))
+                                      :test-var (some-> (:testing-vars (t/get-current-env)) first meta :name)))))))
+             ;; Generate-tests mode (node CI): no block aggregates, so print now —
+             ;; otherwise the failure is counted but invisible.
+             (print-failure-entry "FAIL" m)))
    :summary (fn [m]
               (let [{:keys [pass fail fails]} m]
                 (when (or (pos? pass) (pos? fail))
@@ -80,14 +108,6 @@
 (register-reporter! :compact compact-reporter)
 (register-reporter! :dopamine dopamine-reporter)
 
-(defn testing-vars-str
-  "Returns a string representation of the current test.  Renders names
-  in *testing-vars* as a list, then the source file and line of
-  current assertion."
-  [m]
-  (let [{:keys [file line column]} m]
-    (str file ":" line (when column (str ":" column)))))
-
 (defmethod t/report [::t/default :hyperfiddle.rcf/pass] [m]
   ((:pass (get @reporter-registry *reporter-key*)) m))
 
@@ -101,6 +121,17 @@
   (when-let [!s (block-state-atom)]
     (t/report (assoc @!s :type :hyperfiddle.rcf/summary))
     (t/update-current-env! block-state-path (constantly nil))))
+
+;; Override cljs.test's built-in :error/:fail (uncaught exceptions, plain `is`) so node CI
+;; labels failures with the test's own doc rather than the leaked testing-contexts stack.
+;; Scoped to the ::t/default reporter key; karma uses its own key and is unaffected.
+(defmethod t/report [::t/default :error] [m]
+  (t/inc-report-counter! :error)
+  (print-failure-entry "ERROR" m))
+
+(defmethod t/report [::t/default :fail] [m]
+  (t/inc-report-counter! :fail)
+  (print-failure-entry "FAIL" m))
 
 (defmethod t/report [:shadow.test.karma/karma :hyperfiddle.rcf/pass] [m]
   (t/report (assoc m :type :pass)))

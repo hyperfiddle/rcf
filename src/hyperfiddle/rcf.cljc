@@ -112,8 +112,12 @@ convenience, defaults to println outside of tests context."}
     (symbol (str "generated__" file "_" line))))
 
 (defmacro tests [& body]
-  (let [body `(~@body nil) ; return nil like comment, unlike do
-        name (gen-name &form)]
+  (let [doc  (when (string? (first body)) (first body)) ; leading string labels the block
+        line (:line (meta &form)) ; source line, so reports point at .cljc not compiled JS
+        body `(~@body nil) ; return nil like comment, unlike do
+        name (cond-> (gen-name &form)
+               line (vary-meta assoc :line line :test-ns (list 'quote (ns-name *ns*)))
+               doc  (vary-meta assoc :doc doc))]
     (cond
       *generate-tests*  `(deftest ~name ~@body)
       *enabled*         (if (:js-globals &env)
