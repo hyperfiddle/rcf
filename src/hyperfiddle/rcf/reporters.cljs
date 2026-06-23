@@ -133,8 +133,25 @@
   (t/inc-report-counter! :fail)
   (print-failure-entry "FAIL" m))
 
+(defn- enclosing-test-doc
+  "The enclosing test's own :doc (set by hyperfiddle.rcf/tests), or nil. Same source as
+   print-failure-entry uses for node CI — the test var's metadata, not the global
+   testing-contexts stack."
+  []
+  (:doc (meta (first (:testing-vars (t/get-current-env))))))
+
 (defmethod t/report [:shadow.test.karma/karma :hyperfiddle.rcf/pass] [m]
   (t/report (assoc m :type :pass)))
 
+;; Pin the testing-context to this test's own :doc before re-dispatching to karma's
+;; built-in :fail, which derives its label from the env's :testing-contexts. RCF's
+;; async % rewrite breaks `testing`'s finally-pop, so contexts pile up across
+;; interleaved tests and the label concatenates unrelated doc-strings (the node-side
+;; leak fixed in commit 61e9c1e8a). We patch the env rather than override [::karma :fail]
+;; itself because karma is the build entry ns — its defmethod loads last and would win.
 (defmethod t/report [:shadow.test.karma/karma :hyperfiddle.rcf/fail] [m]
-  (t/report (assoc m :type :fail)))
+  (let [prev (:testing-contexts (t/get-current-env))]
+    (t/update-current-env! [:testing-contexts]
+      (constantly (if-let [doc (enclosing-test-doc)] (list doc) prev)))
+    (try (t/report (assoc m :type :fail))
+         (finally (t/update-current-env! [:testing-contexts] (constantly prev))))))
