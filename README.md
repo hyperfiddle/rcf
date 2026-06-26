@@ -32,7 +32,7 @@ Project maturity: CLJ is stable, CLJS is experimental, bb is experimental.
 ```
 
 Changelog
-* `20260626-105326` cljs async `%` now sequences across all control flow, delegated to cloroutine
+* `20260626` cljs async `%` now sequences across all control flow, delegated to cloroutine
 * :throws
 * babashka support (experimental)
 * **breaking** don't return final result as if by `do`, return `nil` like `comment`
