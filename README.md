@@ -25,14 +25,17 @@ Hype quotes:
 
 # Dependency
 
-Project maturity: CLJ is stable, CLJS is experimental, bb is experimental.
+Project maturity: CLJ is stable, CLJS is stable, bb is experimental.
 
 ```clojure 
 {:deps {com.hyperfiddle/rcf {:mvn/version "20260626-131050"}}}
 ```
+[![JVM](https://github.com/hyperfiddle/rcf/actions/workflows/tests_clj.yml/badge.svg?branch=master)](https://github.com/hyperfiddle/rcf/actions/workflows/tests_clj.yml)
+[![NodeJS](https://github.com/hyperfiddle/rcf/actions/workflows/tests_node.yml/badge.svg?branch=master)](https://github.com/hyperfiddle/rcf/actions/workflows/tests_node.yml)
+[![Browser](https://github.com/hyperfiddle/rcf/actions/workflows/tests_browser.yml/badge.svg?branch=master)](https://github.com/hyperfiddle/rcf/actions/workflows/tests_browser.yml)
 
 Changelog
-* `20260626-131050` cljs async `%` now sequences across all control flow, delegated to cloroutine
+* `20260626-131050` fixed issues in complex cljs tests (cljs async `%` now sequences across all control flow, delegated to [Cloroutine](https://github.com/leonoel/cloroutine)), cljs is now stable
 * :throws
 * babashka support (experimental)
 * **breaking** don't return final result as if by `do`, return `nil` like `comment`
@@ -42,11 +45,8 @@ Changelog
 * 2021 Dec 18: clojurescript dependency is now under the :cljs alias, see #25
 * 2021 Oct 20: custom reporters now dispatch on qualified keywords, see #19
 
-Current dev priority is improving complex async tests in ClojureScript.
-
-[![JVM](https://github.com/hyperfiddle/rcf/actions/workflows/tests_clj.yml/badge.svg?branch=master)](https://github.com/hyperfiddle/rcf/actions/workflows/tests_clj.yml)
-[![NodeJS](https://github.com/hyperfiddle/rcf/actions/workflows/tests_node.yml/badge.svg?branch=master)](https://github.com/hyperfiddle/rcf/actions/workflows/tests_node.yml)
-[![Browser](https://github.com/hyperfiddle/rcf/actions/workflows/tests_browser.yml/badge.svg?branch=master)](https://github.com/hyperfiddle/rcf/actions/workflows/tests_browser.yml)
+Known issues
+* CLJS configuration is fiddly due to needing `rcf/*enabled*` to be true at both macroexpansion time and runtime. Let us know if you can figure out a way to improve this.
 
 # Usage
 
