@@ -28,11 +28,11 @@ Hype quotes:
 Project maturity: CLJ is stable, CLJS is experimental, bb is experimental.
 
 ```clojure 
-{:deps {com.hyperfiddle/rcf {:mvn/version "20220926-202227"}}}
+{:deps {com.hyperfiddle/rcf {:mvn/version "20260626-131050"}}}
 ```
 
 Changelog
-* `20260626` cljs async `%` now sequences across all control flow, delegated to cloroutine
+* `20260626-131050` cljs async `%` now sequences across all control flow, delegated to cloroutine
 * :throws
 * babashka support (experimental)
 * **breaking** don't return final result as if by `do`, return `nil` like `comment`
