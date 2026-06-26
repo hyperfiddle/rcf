@@ -7,6 +7,13 @@
   <version>><!-- generated --></version>
   <name>rcf</name>
   <description>RCF – a REPL-first, async test macro for Clojure/Script</description>
+  <licenses>
+    <license>
+      <name>MIT License</name>
+      <url>https://github.com/hyperfiddle/rcf/blob/5d81fde08ce3f1ba72325b398303129a76e5e2a8/License.md</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
   <scm>
     <url>https://github.com/hyperfiddle/rcf</url>
     <connection>scm:git:git://github.com/hyperfiddle/rcf.git</connection>
